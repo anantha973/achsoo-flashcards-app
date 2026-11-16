@@ -1,0 +1,1787 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  /* ==========================================================================
+   * 1. LINEN NORDIC — LIGHT MODE (Scandinavian Linen, Terracotta & Sage Forest)
+   * ========================================================================== */
+  :root,
+  html[data-theme="nordic"],
+  html.theme-nordic {
+    /* Geometry, Typography, Motion & Density */
+    --radius-card: 24px;
+    --radius-control: 14px;
+    --radius-pill: 9999px;
+    --font-display: 'Fraunces', Georgia, serif;
+    --font-serif: 'Fraunces', Georgia, serif;
+    --font-body: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-sans: var(--font-body);
+    --ease: cubic-bezier(0.4, 0, 0.2, 1);
+    --ease-press: cubic-bezier(0.4, 0, 0.2, 1);
+    --density: 1;
+
+    /* Universal 5-Token Shadow System (Warm Umber Tint RGB: 60, 40, 20) */
+    --shadow-ring: 0 0 0 1px rgb(60 40 20 / 0.06);
+    --shadow-card: 0 0 0 1px rgb(60 40 20 / 0.03), 0 2px 6px rgb(60 40 20 / 0.05), 0 4px 12px rgb(60 40 20 / 0.10);
+    --shadow-hover: 0 0 0 1px rgb(60 40 20 / 0.05), 0 4px 10px rgb(60 40 20 / 0.07), 0 8px 20px rgb(60 40 20 / 0.13);
+    --shadow-overlay: 0 0 0 1px rgb(60 40 20 / 0.06), 0 4px 12px rgb(60 40 20 / 0.08), 0 16px 40px rgb(60 40 20 / 0.16), 0 2px 4px rgb(60 40 20 / 0.04);
+    --shadow-inset: inset 0 1px 2px rgb(60 40 20 / 0.06);
+
+    /* Surface Hierarchy */
+    --bg-canvas: #FAF8F5;
+    --surface-1: #FFFEFC;
+    --surface-2: #F3EFEA;
+    --surface-3: #E8E2D9;
+    --border-subtle: #E6E0D6;
+    --border-strong: #D8CFC2;
+
+    /* Foreground Hierarchy (WCAG AA ≥ 4.5:1 verified) */
+    --fg-primary: #1C1917;
+    --fg-secondary: #57534E;
+    --fg-muted: #756D64;
+
+    /* Primary & Secondary Theme Accents (Scandinavian Triad: Sage Primary, Coral Grammar, Fjord Blue Links) */
+    --intent-primary: #2E6650;
+    --intent-primary-hover: #275744;
+    --intent-primary-fg: #FFFEFC;
+    --intent-primary-soft: rgb(46 102 80 / 0.12);
+    --intent-primary-border: rgb(46 102 80 / 0.28);
+
+    --accent-secondary: #147188;
+    --accent-secondary-soft: rgb(20 113 136 / 0.11);
+    --accent-secondary-border: rgb(20 113 136 / 0.28);
+
+    --accent-terracotta: #C24E32;
+    --accent-terracotta-soft: rgb(194 78 50 / 0.12);
+
+    /* Semantic Status Intents (Scandinavian Mineral & Botanical Pigments) */
+    --intent-danger: #B23A32;
+    --intent-danger-soft: rgb(178 58 50 / 0.10);
+    --intent-danger-border: rgb(178 58 50 / 0.25);
+    --intent-warning: #9C5518;
+    --intent-warning-soft: rgb(156 85 24 / 0.10);
+    --intent-warning-border: rgb(156 85 24 / 0.25);
+    --intent-success: #2E6650;
+    --intent-success-soft: rgb(46 102 80 / 0.12);
+    --intent-success-border: rgb(46 102 80 / 0.26);
+
+    /* Grammar & Sentence Highlights */
+    --grammar-aux-sein: #147188;
+    --grammar-aux-haben: #9C5518;
+    --sentence-highlight-fg: #1C1917;
+    --sentence-highlight-bg: transparent;
+
+    /* German Noun Gender Tokens (Coherent Nordic Triad: Fjord Blue / Terracotta Coral / Sage Forest) */
+    --gender-m: #147188;
+    --gender-m-soft: rgb(20 113 136 / 0.11);
+    --gender-m-border: rgb(20 113 136 / 0.26);
+    --gender-f: #B8432E;
+    --gender-f-soft: rgb(184 67 46 / 0.11);
+    --gender-f-border: rgb(184 67 46 / 0.26);
+    --gender-n: #2E6650;
+    --gender-n-soft: rgb(46 102 80 / 0.11);
+    --gender-n-border: rgb(46 102 80 / 0.26);
+
+    /* 4-Button SRS Rating Dock */
+    --srs-again: #B23A32;
+    --srs-again-soft: rgb(178 58 50 / 0.06);
+    --srs-again-border: rgb(178 58 50 / 0.45);
+    --srs-hard: #9C5518;
+    --srs-hard-soft: rgb(156 85 24 / 0.06);
+    --srs-hard-border: rgb(156 85 24 / 0.45);
+    --srs-good: #147188;
+    --srs-good-soft: rgb(20 113 136 / 0.07);
+    --srs-good-border: rgb(20 113 136 / 0.48);
+    --srs-easy: #2E6650;
+    --srs-easy-soft: rgb(46 102 80 / 0.07);
+    --srs-easy-border: rgb(46 102 80 / 0.45);
+
+    /* Segmented Sliding Pill Switcher */
+    --seg-track: #F3EFEA;
+    --seg-track-border: #E2DBD0;
+    --seg-indicator: #FFFEFC;
+    --seg-text: #57534E;
+    --seg-text-active: #1C1917;
+
+    /* Charts & 5-Step D3 Recall Heatmap Ramp (Triad: Coral -> Amber -> Fjord Blue -> Sage) */
+    --chart-1: #147188;
+    --chart-2: #2E6650;
+    --chart-3: #C24E32;
+    --chart-4: #9C5518;
+    --chart-5: #6B705C;
+    --heat-0: #F3EFEA;
+    --heat-1: #F4D5CD;
+    --heat-2: #FDE6C4;
+    --heat-3: #D3E8EE;
+    --heat-4: #C4E2D4;
+
+    /* Focus, Selection & Scrollbar */
+    --focus-ring: rgb(46 102 80 / 0.42);
+    --selection-bg: rgb(46 102 80 / 0.18);
+    --scrollbar-thumb: #D8CFC2;
+
+    /* Nordic Canvas Personality: Subtle SVG paper grain + soft warm vignette */
+    --canvas-decor: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E"),
+      radial-gradient(circle at 50% 32%, transparent 52%, rgb(60 40 20 / 0.045) 100%);
+  }
+
+  /* ==========================================================================
+   * 2. LINEN NORDIC — DARK MODE (Warm Espresso & Peat Stone)
+   * ========================================================================== */
+  html[data-theme="nordic"].dark,
+  html.theme-nordic.dark {
+    /* Universal 5-Token Shadow System (Dark Mode: 1px light edge + inner top highlight + deep ambient) */
+    --shadow-ring: 0 0 0 1px rgb(255 255 255 / 0.07);
+    --shadow-card: 0 0 0 1px rgb(255 255 255 / 0.07), inset 0 1px 0 rgb(255 255 255 / 0.05), 0 2px 6px rgb(0 0 0 / 0.45), 0 8px 24px rgb(0 0 0 / 0.50);
+    --shadow-hover: 0 0 0 1px rgb(255 255 255 / 0.11), inset 0 1px 0 rgb(255 255 255 / 0.07), 0 4px 10px rgb(0 0 0 / 0.50), 0 12px 28px rgb(0 0 0 / 0.58);
+    --shadow-overlay: 0 0 0 1px rgb(255 255 255 / 0.10), inset 0 1px 0 rgb(255 255 255 / 0.06), 0 8px 20px rgb(0 0 0 / 0.55), 0 16px 40px rgb(0 0 0 / 0.68);
+    --shadow-inset: inset 0 1px 2px rgb(0 0 0 / 0.55), 0 0 0 1px rgb(255 255 255 / 0.05);
+
+    /* Surface Hierarchy */
+    --bg-canvas: #171412;
+    --surface-1: #211D1A;
+    --surface-2: #2A2521;
+    --surface-3: #36302A;
+    --border-subtle: rgb(245 239 230 / 0.09);
+    --border-strong: rgb(245 239 230 / 0.17);
+
+    /* Foreground Hierarchy (WCAG AA ≥ 4.5:1 verified) */
+    --fg-primary: #F5EFE6;
+    --fg-secondary: #B8AFA6;
+    --fg-muted: #968D83;
+
+    /* Primary & Secondary Theme Accents (Scandinavian Triad: Sage Primary, Coral Grammar, Fjord Blue Links) */
+    --intent-primary: #74B094;
+    --intent-primary-hover: #85BEA3;
+    --intent-primary-fg: #12100E;
+    --intent-primary-soft: rgb(116 176 148 / 0.16);
+    --intent-primary-border: rgb(116 176 148 / 0.34);
+
+    --accent-secondary: #4EB8CE;
+    --accent-secondary-soft: rgb(78 184 206 / 0.15);
+    --accent-secondary-border: rgb(78 184 206 / 0.34);
+
+    --accent-terracotta: #E88267;
+    --accent-terracotta-soft: rgb(232 130 103 / 0.16);
+
+    /* Semantic Status Intents (Warm Espresso Compatible Pigments) */
+    --intent-danger: #EC7B72;
+    --intent-danger-soft: rgb(236 123 114 / 0.15);
+    --intent-danger-border: rgb(236 123 114 / 0.30);
+    --intent-warning: #E09F5A;
+    --intent-warning-soft: rgb(224 159 90 / 0.15);
+    --intent-warning-border: rgb(224 159 90 / 0.30);
+    --intent-success: #74B094;
+    --intent-success-soft: rgb(116 176 148 / 0.16);
+    --intent-success-border: rgb(116 176 148 / 0.32);
+
+    /* Grammar & Sentence Highlights */
+    --grammar-aux-sein: #4EB8CE;
+    --grammar-aux-haben: #E09F5A;
+    --sentence-highlight-fg: #F5EFE6;
+    --sentence-highlight-bg: transparent;
+
+    /* German Noun Gender Tokens (Coherent Nordic Triad: Fjord Blue / Warm Coral / Luminous Sage) */
+    --gender-m: #4EB8CE;
+    --gender-m-soft: rgb(78 184 206 / 0.15);
+    --gender-m-border: rgb(78 184 206 / 0.30);
+    --gender-f: #E88267;
+    --gender-f-soft: rgb(232 130 103 / 0.15);
+    --gender-f-border: rgb(232 130 103 / 0.30);
+    --gender-n: #74B094;
+    --gender-n-soft: rgb(116 176 148 / 0.16);
+    --gender-n-border: rgb(116 176 148 / 0.32);
+
+    /* 4-Button SRS Rating Dock */
+    --srs-again: #EC7B72;
+    --srs-again-soft: rgb(236 123 114 / 0.09);
+    --srs-again-border: rgb(236 123 114 / 0.45);
+    --srs-hard: #E09F5A;
+    --srs-hard-soft: rgb(224 159 90 / 0.09);
+    --srs-hard-border: rgb(224 159 90 / 0.45);
+    --srs-good: #4EB8CE;
+    --srs-good-soft: rgb(78 184 206 / 0.10);
+    --srs-good-border: rgb(78 184 206 / 0.50);
+    --srs-easy: #74B094;
+    --srs-easy-soft: rgb(116 176 148 / 0.10);
+    --srs-easy-border: rgb(116 176 148 / 0.48);
+
+    /* Segmented Sliding Pill Switcher */
+    --seg-track: #1C1815;
+    --seg-track-border: #332C26;
+    --seg-indicator: #2E2823;
+    --seg-text: #B8AFA6;
+    --seg-text-active: #F5EFE6;
+
+    /* Charts & 5-Step D3 Recall Heatmap Ramp */
+    --chart-1: #4EB8CE;
+    --chart-2: #74B094;
+    --chart-3: #E88267;
+    --chart-4: #E09F5A;
+    --chart-5: #A5A58D;
+    --heat-0: #2A2521;
+    --heat-1: #6E2C1E;
+    --heat-2: #784516;
+    --heat-3: #1C4B57;
+    --heat-4: #1F5E46;
+
+    /* Focus, Selection & Scrollbar */
+    --focus-ring: rgb(116 176 148 / 0.46);
+    --selection-bg: rgb(116 176 148 / 0.24);
+    --scrollbar-thumb: #3E3731;
+
+    /* Nordic Dark Canvas Personality: Subtle grain + warm espresso vignette */
+    --canvas-decor: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.032'/%3E%3C/svg%3E"),
+      radial-gradient(circle at 50% 28%, rgb(116 176 148 / 0.045) 0%, transparent 55%, rgb(0 0 0 / 0.35) 100%);
+  }
+
+  /* ==========================================================================
+   * 3. HERO UI — LIGHT MODE (HeroUI v3 OKLCH Surface & Electric Cobalt)
+   * ========================================================================== */
+  html[data-theme="hero"],
+  html.theme-hero {
+    /* Geometry, Typography, Motion & Density */
+    --radius-card: 16px;
+    --radius-control: 12px;
+    --radius-pill: 9999px;
+    --font-display: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-serif: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-body: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-sans: var(--font-body);
+    --ease: cubic-bezier(0.4, 0, 0.2, 1);
+    --ease-press: cubic-bezier(0.34, 1.56, 0.64, 1);
+    --density: 1;
+
+    /* Universal 5-Token Shadow System (Slate Tint RGB: 15, 23, 42) */
+    --shadow-ring: 0 0 0 1px rgb(15 23 42 / 0.06);
+    --shadow-card: 0 0 0 1px rgb(15 23 42 / 0.03), 0 2px 6px rgb(15 23 42 / 0.05), 0 6px 16px rgb(15 23 42 / 0.10);
+    --shadow-hover: 0 0 0 1px rgb(15 23 42 / 0.05), 0 4px 10px rgb(15 23 42 / 0.07), 0 10px 24px rgb(15 23 42 / 0.13);
+    --shadow-overlay: 0 0 0 1px rgb(15 23 42 / 0.06), 0 6px 16px rgb(15 23 42 / 0.08), 0 16px 40px rgb(15 23 42 / 0.16), 0 2px 4px rgb(15 23 42 / 0.04);
+    --shadow-inset: inset 0 1px 2px rgb(15 23 42 / 0.06);
+
+    /* Surface Hierarchy */
+    --bg-canvas: #F8FAFC;
+    --surface-1: #FFFFFF;
+    --surface-2: #F1F5F9;
+    --surface-3: #E2E8F0;
+    --border-subtle: rgb(15 23 42 / 0.08);
+    --border-strong: rgb(15 23 42 / 0.15);
+
+    /* Foreground Hierarchy (WCAG AA ≥ 4.5:1 verified) */
+    --fg-primary: #0F172A;
+    --fg-secondary: #475569;
+    --fg-muted: #64748B;
+
+    /* Primary & Secondary Theme Accents (Hero Electric Cobalt) */
+    --intent-primary: #2563eb;
+    --intent-primary-hover: #1d4ed8;
+    --intent-primary-fg: #FFFFFF;
+    --intent-primary-soft: rgb(37 99 235 / 0.11);
+    --intent-primary-border: rgb(37 99 235 / 0.28);
+
+    --accent-secondary: #0284c7;
+    --accent-secondary-soft: rgb(2 132 199 / 0.11);
+    --accent-secondary-border: rgb(2 132 199 / 0.28);
+
+    --accent-terracotta: #EA580C;
+    --accent-terracotta-soft: rgb(234 88 12 / 0.11);
+
+    /* Semantic Status Intents */
+    --intent-danger: #E11D48;
+    --intent-danger-soft: rgb(225 29 72 / 0.10);
+    --intent-danger-border: rgb(225 29 72 / 0.25);
+    --intent-warning: #D97706;
+    --intent-warning-soft: rgb(217 119 6 / 0.10);
+    --intent-warning-border: rgb(217 119 6 / 0.25);
+    --intent-success: #059669;
+    --intent-success-soft: rgb(5 150 105 / 0.11);
+    --intent-success-border: rgb(5 150 105 / 0.25);
+
+    /* Grammar & Sentence Highlights */
+    --grammar-aux-sein: #0284c7;
+    --grammar-aux-haben: #B45309;
+    --sentence-highlight-fg: #0F172A;
+    --sentence-highlight-bg: transparent;
+
+    /* German Noun Gender Tokens */
+    --gender-m: #0284c7;
+    --gender-m-soft: rgb(2 132 199 / 0.10);
+    --gender-m-border: rgb(2 132 199 / 0.24);
+    --gender-f: #E11D48;
+    --gender-f-soft: rgb(225 29 72 / 0.10);
+    --gender-f-border: rgb(225 29 72 / 0.24);
+    --gender-n: #059669;
+    --gender-n-soft: rgb(5 150 105 / 0.10);
+    --gender-n-border: rgb(5 150 105 / 0.24);
+
+    /* 4-Button SRS Rating Dock */
+    --srs-again: #E11D48;
+    --srs-again-soft: rgb(225 29 72 / 0.06);
+    --srs-again-border: rgb(225 29 72 / 0.45);
+    --srs-hard: #D97706;
+    --srs-hard-soft: rgb(217 119 6 / 0.06);
+    --srs-hard-border: rgb(217 119 6 / 0.45);
+    --srs-good: #2563eb;
+    --srs-good-soft: rgb(37 99 235 / 0.06);
+    --srs-good-border: rgb(37 99 235 / 0.45);
+    --srs-easy: #059669;
+    --srs-easy-soft: rgb(5 150 105 / 0.06);
+    --srs-easy-border: rgb(5 150 105 / 0.45);
+
+    /* Segmented Sliding Pill Switcher */
+    --seg-track: #F1F5F9;
+    --seg-track-border: #E2E8F0;
+    --seg-indicator: #FFFFFF;
+    --seg-text: #475569;
+    --seg-text-active: #0F172A;
+
+    /* Charts & 5-Step D3 Recall Heatmap Ramp */
+    --chart-1: #2563eb;
+    --chart-2: #0284c7;
+    --chart-3: #059669;
+    --chart-4: #D97706;
+    --chart-5: #E11D48;
+    --heat-0: #F1F5F9;
+    --heat-1: #FFE4E6;
+    --heat-2: #FEF3C7;
+    --heat-3: #DBEAFE;
+    --heat-4: #D1FAE5;
+
+    /* Focus, Selection & Scrollbar */
+    --focus-ring: rgb(37 99 235 / 0.40);
+    --selection-bg: rgb(37 99 235 / 0.16);
+    --scrollbar-thumb: #CBD5E1;
+
+    /* Hero Canvas Personality: Two blurred radial glows */
+    --canvas-decor: radial-gradient(44rem circle at 86% 12%, rgb(37 99 235 / 0.10), transparent 68%),
+      radial-gradient(40rem circle at 14% 88%, rgb(14 165 233 / 0.08), transparent 68%);
+  }
+
+  /* ==========================================================================
+   * 4. HERO UI — DARK MODE (Obsidian OKLCH Surface & Vibrant Cobalt)
+   * ========================================================================== */
+  html[data-theme="hero"].dark,
+  html.theme-hero.dark {
+    /* Universal 5-Token Shadow System (Dark Mode: 1px light edge + inner top highlight + deep ambient) */
+    --shadow-ring: 0 0 0 1px rgb(255 255 255 / 0.07);
+    --shadow-card: 0 0 0 1px rgb(255 255 255 / 0.07), inset 0 1px 0 rgb(255 255 255 / 0.05), 0 2px 6px rgb(0 0 0 / 0.45), 0 8px 24px rgb(0 0 0 / 0.50);
+    --shadow-hover: 0 0 0 1px rgb(255 255 255 / 0.11), inset 0 1px 0 rgb(255 255 255 / 0.07), 0 4px 10px rgb(0 0 0 / 0.50), 0 12px 28px rgb(0 0 0 / 0.58);
+    --shadow-overlay: 0 0 0 1px rgb(255 255 255 / 0.10), inset 0 1px 0 rgb(255 255 255 / 0.06), 0 8px 20px rgb(0 0 0 / 0.55), 0 16px 40px rgb(0 0 0 / 0.68);
+    --shadow-inset: inset 0 1px 2px rgb(0 0 0 / 0.55), 0 0 0 1px rgb(255 255 255 / 0.05);
+
+    /* Surface Hierarchy */
+    --bg-canvas: #09090B;
+    --surface-1: #141418;
+    --surface-2: #1C1C22;
+    --surface-3: #272730;
+    --border-subtle: rgb(255 255 255 / 0.08);
+    --border-strong: rgb(255 255 255 / 0.16);
+
+    /* Foreground Hierarchy (WCAG AA ≥ 4.5:1 verified) */
+    --fg-primary: #FAFAFA;
+    --fg-secondary: #A1A1AA;
+    --fg-muted: #8A8A93;
+
+    /* Primary & Secondary Theme Accents */
+    --intent-primary: #3b82f6;
+    --intent-primary-hover: #60a5fa;
+    --intent-primary-fg: #FFFFFF;
+    --intent-primary-soft: rgb(59 130 246 / 0.16);
+    --intent-primary-border: rgb(59 130 246 / 0.34);
+
+    --accent-secondary: #38bdf8;
+    --accent-secondary-soft: rgb(56 189 248 / 0.15);
+    --accent-secondary-border: rgb(56 189 248 / 0.32);
+
+    --accent-terracotta: #FB923C;
+    --accent-terracotta-soft: rgb(251 146 60 / 0.15);
+
+    /* Semantic Status Intents */
+    --intent-danger: #FB7185;
+    --intent-danger-soft: rgb(251 113 133 / 0.14);
+    --intent-danger-border: rgb(251 113 133 / 0.30);
+    --intent-warning: #FBBF24;
+    --intent-warning-soft: rgb(251 191 36 / 0.14);
+    --intent-warning-border: rgb(251 191 36 / 0.30);
+    --intent-success: #34D399;
+    --intent-success-soft: rgb(52 211 153 / 0.14);
+    --intent-success-border: rgb(52 211 153 / 0.30);
+
+    /* Grammar & Sentence Highlights */
+    --grammar-aux-sein: #38bdf8;
+    --grammar-aux-haben: #FBBF24;
+    --sentence-highlight-fg: #FAFAFA;
+    --sentence-highlight-bg: transparent;
+
+    /* German Noun Gender Tokens */
+    --gender-m: #38bdf8;
+    --gender-m-soft: rgb(56 189 248 / 0.14);
+    --gender-m-border: rgb(56 189 248 / 0.28);
+    --gender-f: #FB7185;
+    --gender-f-soft: rgb(251 113 133 / 0.14);
+    --gender-f-border: rgb(251 113 133 / 0.28);
+    --gender-n: #34D399;
+    --gender-n-soft: rgb(52 211 153 / 0.14);
+    --gender-n-border: rgb(52 211 153 / 0.28);
+
+    /* 4-Button SRS Rating Dock */
+    --srs-again: #FB7185;
+    --srs-again-soft: rgb(251 113 133 / 0.08);
+    --srs-again-border: rgb(251 113 133 / 0.45);
+    --srs-hard: #FBBF24;
+    --srs-hard-soft: rgb(251 191 36 / 0.08);
+    --srs-hard-border: rgb(251 191 36 / 0.45);
+    --srs-good: #3b82f6;
+    --srs-good-soft: rgb(59 130 246 / 0.08);
+    --srs-good-border: rgb(59 130 246 / 0.48);
+    --srs-easy: #34D399;
+    --srs-easy-soft: rgb(52 211 153 / 0.08);
+    --srs-easy-border: rgb(52 211 153 / 0.45);
+
+    /* Segmented Sliding Pill Switcher */
+    --seg-track: #18181E;
+    --seg-track-border: #272730;
+    --seg-indicator: #272730;
+    --seg-text: #A1A1AA;
+    --seg-text-active: #FAFAFA;
+
+    /* Charts & 5-Step D3 Recall Heatmap Ramp */
+    --chart-1: #3b82f6;
+    --chart-2: #38bdf8;
+    --chart-3: #10B981;
+    --chart-4: #F59E0B;
+    --chart-5: #F43F5E;
+    --heat-0: #1C1C22;
+    --heat-1: #881337;
+    --heat-2: #78350F;
+    --heat-3: #1E3A8A;
+    --heat-4: #065F46;
+
+    /* Focus, Selection & Scrollbar */
+    --focus-ring: rgb(59 130 246 / 0.45);
+    --selection-bg: rgb(59 130 246 / 0.25);
+    --scrollbar-thumb: #3F3F46;
+
+    /* Hero Dark Canvas Personality: Dual blurred radial glows */
+    --canvas-decor: radial-gradient(44rem circle at 86% 12%, rgb(59 130 246 / 0.10), transparent 68%),
+      radial-gradient(40rem circle at 14% 88%, rgb(56 189 248 / 0.08), transparent 68%);
+  }
+
+  /* ==========================================================================
+   * 5. COSS UI — LIGHT MODE (Cal.com coss.com/ui Monochrome Zinc & Precision Depth)
+   * ========================================================================== */
+  html[data-theme="coss"],
+  html.theme-coss {
+    /* Geometry, Typography, Motion & Density (Base --radius: 0.625rem = 10px) */
+    --radius-card: 10px;
+    --radius-control: 8px;
+    --radius-pill: 9999px;
+    --font-display: 'Geist', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-serif: 'Geist', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-body: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-sans: var(--font-body);
+    --ease: cubic-bezier(0.2, 0, 0, 1);
+    --ease-press: cubic-bezier(0.2, 0, 0, 1);
+    --density: 0.92;
+
+    /* Universal 5-Token Shadow System (Neutral RGB: 0, 0, 0 — Tighter & Crisper) */
+    --shadow-ring: 0 0 0 1px rgb(0 0 0 / 0.07);
+    --shadow-card: 0 0 0 1px rgb(0 0 0 / 0.04), 0 1px 2px rgb(0 0 0 / 0.05), 0 3px 8px rgb(0 0 0 / 0.07);
+    --shadow-hover: 0 0 0 1px rgb(0 0 0 / 0.07), 0 2px 4px rgb(0 0 0 / 0.06), 0 6px 16px rgb(0 0 0 / 0.10);
+    --shadow-overlay: 0 0 0 1px rgb(0 0 0 / 0.08), 0 4px 12px rgb(0 0 0 / 0.08), 0 16px 40px rgb(0 0 0 / 0.16), 0 1px 2px rgb(0 0 0 / 0.06);
+    --shadow-inset: inset 0 1px 2px rgb(0 0 0 / 0.05);
+
+    /* Surface Hierarchy */
+    --bg-canvas: #FAFAFA;
+    --surface-1: #FFFFFF;
+    --surface-2: #F4F4F5;
+    --surface-3: #E4E4E7;
+    --border-subtle: rgb(24 24 27 / 0.09);
+    --border-strong: rgb(24 24 27 / 0.18);
+
+    /* Foreground Hierarchy (WCAG AA ≥ 4.5:1 verified) */
+    --fg-primary: #18181B;
+    --fg-secondary: #52525B;
+    --fg-muted: #71717A;
+
+    /* Primary & Secondary Theme Accents (Stark Monochrome Zinc — Zero Blue Leak) */
+    --intent-primary: #18181B;
+    --intent-primary-hover: #27272A;
+    --intent-primary-fg: #FAFAFA;
+    --intent-primary-soft: rgb(24 24 27 / 0.08);
+    --intent-primary-border: rgb(24 24 27 / 0.24);
+
+    --accent-secondary: #27272A;
+    --accent-secondary-soft: rgb(39 39 42 / 0.08);
+    --accent-secondary-border: rgb(39 39 42 / 0.22);
+
+    --accent-terracotta: #D97706;
+    --accent-terracotta-soft: rgb(217 119 6 / 0.10);
+
+    /* Semantic Status Intents */
+    --intent-danger: #DC2626;
+    --intent-danger-soft: rgb(220 38 38 / 0.09);
+    --intent-danger-border: rgb(220 38 38 / 0.25);
+    --intent-warning: #D97706;
+    --intent-warning-soft: rgb(217 119 6 / 0.09);
+    --intent-warning-border: rgb(217 119 6 / 0.25);
+    --intent-success: #059669;
+    --intent-success-soft: rgb(5 150 105 / 0.09);
+    --intent-success-border: rgb(5 150 105 / 0.25);
+
+    /* Grammar & Sentence Highlights */
+    --grammar-aux-sein: #0F766E;
+    --grammar-aux-haben: #B45309;
+    --sentence-highlight-fg: #18181B;
+    --sentence-highlight-bg: transparent;
+
+    /* German Noun Gender Tokens */
+    --gender-m: #0284c7;
+    --gender-m-soft: rgb(2 132 199 / 0.10);
+    --gender-m-border: rgb(2 132 199 / 0.24);
+    --gender-f: #E11D48;
+    --gender-f-soft: rgb(225 29 72 / 0.10);
+    --gender-f-border: rgb(225 29 72 / 0.24);
+    --gender-n: #059669;
+    --gender-n-soft: rgb(5 150 105 / 0.10);
+    --gender-n-border: rgb(5 150 105 / 0.24);
+
+    /* 4-Button SRS Rating Dock */
+    --srs-again: #DC2626;
+    --srs-again-soft: rgb(220 38 38 / 0.06);
+    --srs-again-border: rgb(220 38 38 / 0.45);
+    --srs-hard: #D97706;
+    --srs-hard-soft: rgb(217 119 6 / 0.06);
+    --srs-hard-border: rgb(217 119 6 / 0.45);
+    --srs-good: #18181B;
+    --srs-good-soft: rgb(24 24 27 / 0.06);
+    --srs-good-border: rgb(24 24 27 / 0.45);
+    --srs-easy: #059669;
+    --srs-easy-soft: rgb(5 150 105 / 0.06);
+    --srs-easy-border: rgb(5 150 105 / 0.45);
+
+    /* Segmented Sliding Pill Switcher */
+    --seg-track: #F4F4F5;
+    --seg-track-border: #E4E4E7;
+    --seg-indicator: #FFFFFF;
+    --seg-text: #52525B;
+    --seg-text-active: #09090B;
+
+    /* Charts & 5-Step D3 Recall Heatmap Ramp */
+    --chart-1: #18181B;
+    --chart-2: #52525B;
+    --chart-3: #0F766E;
+    --chart-4: #D97706;
+    --chart-5: #DC2626;
+    --heat-0: #F4F4F5;
+    --heat-1: #FEE2E2;
+    --heat-2: #FEF3C7;
+    --heat-3: #E4E4E7;
+    --heat-4: #D1FAE5;
+
+    /* Focus, Selection & Scrollbar */
+    --focus-ring: rgb(24 24 27 / 0.40);
+    --selection-bg: rgb(24 24 27 / 0.14);
+    --scrollbar-thumb: #D4D4D8;
+
+    /* Coss Canvas Personality: 24px architectural dot grid */
+    --canvas-decor: radial-gradient(rgb(0 0 0 / 0.06) 1px, transparent 1px);
+  }
+
+  /* ==========================================================================
+   * 6. COSS UI — DARK MODE (Carbon Neutral 950 & Translucent Opaque Borders)
+   * ========================================================================== */
+  html[data-theme="coss"].dark,
+  html.theme-coss.dark {
+    /* Universal 5-Token Shadow System (Dark Mode: 1px light edge + inner top highlight + deep ambient) */
+    --shadow-ring: 0 0 0 1px rgb(255 255 255 / 0.07);
+    --shadow-card: 0 0 0 1px rgb(255 255 255 / 0.07), inset 0 1px 0 rgb(255 255 255 / 0.05), 0 2px 6px rgb(0 0 0 / 0.45), 0 8px 24px rgb(0 0 0 / 0.50);
+    --shadow-hover: 0 0 0 1px rgb(255 255 255 / 0.11), inset 0 1px 0 rgb(255 255 255 / 0.07), 0 4px 10px rgb(0 0 0 / 0.50), 0 12px 28px rgb(0 0 0 / 0.58);
+    --shadow-overlay: 0 0 0 1px rgb(255 255 255 / 0.10), inset 0 1px 0 rgb(255 255 255 / 0.06), 0 8px 20px rgb(0 0 0 / 0.55), 0 16px 40px rgb(0 0 0 / 0.68);
+    --shadow-inset: inset 0 1px 2px rgb(0 0 0 / 0.55), 0 0 0 1px rgb(255 255 255 / 0.05);
+
+    /* Surface Hierarchy */
+    --bg-canvas: #09090B;
+    --surface-1: #111113;
+    --surface-2: #18181B;
+    --surface-3: #27272A;
+    --border-subtle: rgb(255 255 255 / 0.09);
+    --border-strong: rgb(255 255 255 / 0.18);
+
+    /* Foreground Hierarchy (WCAG AA ≥ 4.5:1 verified) */
+    --fg-primary: #FAFAFA;
+    --fg-secondary: #A1A1AA;
+    --fg-muted: #8A8A93;
+
+    /* Primary & Secondary Theme Accents (Stark Inverted Monochrome) */
+    --intent-primary: #FAFAFA;
+    --intent-primary-hover: #E4E4E7;
+    --intent-primary-fg: #09090B;
+    --intent-primary-soft: rgb(250 250 250 / 0.12);
+    --intent-primary-border: rgb(250 250 250 / 0.28);
+
+    --accent-secondary: #E4E4E7;
+    --accent-secondary-soft: rgb(228 228 231 / 0.12);
+    --accent-secondary-border: rgb(228 228 231 / 0.26);
+
+    --accent-terracotta: #FBBF24;
+    --accent-terracotta-soft: rgb(251 191 36 / 0.14);
+
+    /* Semantic Status Intents */
+    --intent-danger: #F87171;
+    --intent-danger-soft: rgb(248 113 113 / 0.14);
+    --intent-danger-border: rgb(248 113 113 / 0.30);
+    --intent-warning: #FBBF24;
+    --intent-warning-soft: rgb(251 191 36 / 0.14);
+    --intent-warning-border: rgb(251 191 36 / 0.30);
+    --intent-success: #34D399;
+    --intent-success-soft: rgb(52 211 153 / 0.14);
+    --intent-success-border: rgb(52 211 153 / 0.30);
+
+    /* Grammar & Sentence Highlights */
+    --grammar-aux-sein: #2DD4BF;
+    --grammar-aux-haben: #FBBF24;
+    --sentence-highlight-fg: #FAFAFA;
+    --sentence-highlight-bg: transparent;
+
+    /* German Noun Gender Tokens */
+    --gender-m: #38bdf8;
+    --gender-m-soft: rgb(56 189 248 / 0.14);
+    --gender-m-border: rgb(56 189 248 / 0.28);
+    --gender-f: #FB7185;
+    --gender-f-soft: rgb(251 113 133 / 0.14);
+    --gender-f-border: rgb(251 113 133 / 0.28);
+    --gender-n: #34D399;
+    --gender-n-soft: rgb(52 211 153 / 0.14);
+    --gender-n-border: rgb(52 211 153 / 0.28);
+
+    /* 4-Button SRS Rating Dock */
+    --srs-again: #F87171;
+    --srs-again-soft: rgb(248 113 113 / 0.08);
+    --srs-again-border: rgb(248 113 113 / 0.45);
+    --srs-hard: #FBBF24;
+    --srs-hard-soft: rgb(251 191 36 / 0.08);
+    --srs-hard-border: rgb(251 191 36 / 0.45);
+    --srs-good: #FAFAFA;
+    --srs-good-soft: rgb(250 250 250 / 0.08);
+    --srs-good-border: rgb(250 250 250 / 0.45);
+    --srs-easy: #34D399;
+    --srs-easy-soft: rgb(52 211 153 / 0.08);
+    --srs-easy-border: rgb(52 211 153 / 0.45);
+
+    /* Segmented Sliding Pill Switcher */
+    --seg-track: #18181B;
+    --seg-track-border: #27272A;
+    --seg-indicator: #27272A;
+    --seg-text: #A1A1AA;
+    --seg-text-active: #FAFAFA;
+
+    /* Charts & 5-Step D3 Recall Heatmap Ramp */
+    --chart-1: #FAFAFA;
+    --chart-2: #A1A1AA;
+    --chart-3: #2DD4BF;
+    --chart-4: #FBBF24;
+    --chart-5: #F87171;
+    --heat-0: #18181B;
+    --heat-1: #7F1D1D;
+    --heat-2: #78350F;
+    --heat-3: #27272A;
+    --heat-4: #064E3B;
+
+    /* Focus, Selection & Scrollbar */
+    --focus-ring: rgb(250 250 250 / 0.40);
+    --selection-bg: rgb(250 250 250 / 0.20);
+    --scrollbar-thumb: #3F3F46;
+
+    /* Coss Dark Canvas Personality: 24px architectural dot grid */
+    --canvas-decor: radial-gradient(rgb(255 255 255 / 0.05) 1px, transparent 1px);
+  }
+
+  /* ==========================================================================
+   * BASE ELEMENT RULES, SELECTION, SCROLLBAR & AMBIENT CANVAS DECORATION
+   * ========================================================================== */
+  html {
+    font-size: 15px;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  @media (min-width: 640px) {
+    html {
+      font-size: 16px;
+    }
+  }
+
+  ::selection {
+    background-color: var(--selection-bg);
+    color: var(--fg-primary);
+  }
+
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--scrollbar-thumb);
+    border-radius: 9999px;
+  }
+
+  body {
+    position: relative;
+    font-family: var(--font-body);
+    background-color: var(--bg-canvas);
+    color: var(--fg-primary);
+    font-size: 1rem;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    -webkit-tap-highlight-color: transparent;
+    transition: background-color 200ms var(--ease), color 200ms var(--ease);
+  }
+
+  /* Theme Personality Canvas Backdrop (Addendum §D) */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: -1;
+    background-image: var(--canvas-decor);
+  }
+
+  html[data-theme="coss"] body::before,
+  html.theme-coss body::before {
+    background-size: 24px 24px;
+    -webkit-mask-image: radial-gradient(ellipse 85% 75% at 50% 45%, rgb(0 0 0 / 0.35) 15%, rgb(0 0 0 / 0.95) 100%);
+    mask-image: radial-gradient(ellipse 85% 75% at 50% 45%, rgb(0 0 0 / 0.35) 15%, rgb(0 0 0 / 0.95) 100%);
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    html[data-theme="hero"] body::before,
+    html.theme-hero body::before {
+      animation: heroAmbientDrift 20s ease-in-out infinite alternate;
+    }
+  }
+
+  @keyframes heroAmbientDrift {
+    0% {
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+    100% {
+      transform: translate3d(-1.5%, 1.5%, 0) scale(1.04);
+    }
+  }
+
+  .font-display {
+    font-family: var(--font-display);
+  }
+
+  html[data-theme="hero"] .font-display,
+  html.theme-hero .font-display,
+  html[data-theme="coss"] .font-display,
+  html.theme-coss .font-display {
+    letter-spacing: -0.025em;
+  }
+
+  .font-sans {
+    font-family: var(--font-body);
+  }
+
+  .font-lemma {
+    font-family: var(--font-display);
+    font-optical-sizing: auto;
+  }
+}
+
+/* ==========================================================================
+ * SURFACE, SHADOW, GEOMETRY & FOCUS RING UTILITIES
+ * ========================================================================== */
+.surface-1 {
+  background-color: var(--surface-1);
+  border-color: var(--border-subtle);
+  transition: background-color 200ms var(--ease), color 200ms var(--ease), border-color 200ms var(--ease), box-shadow 200ms var(--ease);
+}
+
+.surface-paper {
+  background-color: var(--surface-1);
+  border-color: var(--border-subtle);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  transition: background-color 200ms var(--ease), color 200ms var(--ease), border-color 200ms var(--ease), box-shadow 180ms cubic-bezier(0.2, 0, 0, 1), transform 180ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.card-hover-lift:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-hover);
+}
+
+.surface-overlay {
+  background-color: var(--surface-1);
+  border-color: var(--border-subtle);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-overlay);
+  transition: background-color 200ms var(--ease), color 200ms var(--ease), border-color 200ms var(--ease), box-shadow 200ms var(--ease);
+}
+
+.surface-2 {
+  background-color: var(--surface-2);
+  border-color: var(--border-strong);
+  transition: background-color 200ms var(--ease), color 200ms var(--ease), border-color 200ms var(--ease), box-shadow 200ms var(--ease);
+}
+
+.surface-3 {
+  background-color: var(--surface-3);
+}
+
+.radius-card {
+  border-radius: var(--radius-card);
+}
+
+.radius-control {
+  border-radius: var(--radius-control);
+}
+
+.radius-pill {
+  border-radius: var(--radius-pill);
+}
+
+.shadow-ring {
+  box-shadow: var(--shadow-ring);
+}
+
+.shadow-card {
+  box-shadow: var(--shadow-card);
+}
+
+.shadow-overlay {
+  box-shadow: var(--shadow-overlay);
+}
+
+.shadow-inset {
+  box-shadow: var(--shadow-inset);
+}
+
+.theme-focus:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.text-terracotta {
+  color: var(--accent-terracotta);
+}
+
+.bg-terracotta-soft {
+  background-color: var(--accent-terracotta-soft);
+}
+
+.text-theme-primary {
+  color: var(--intent-primary);
+}
+
+.bg-theme-primary-soft {
+  background-color: var(--intent-primary-soft);
+}
+
+.text-theme-secondary {
+  color: var(--accent-secondary);
+}
+
+.bg-theme-secondary-soft {
+  background-color: var(--accent-secondary-soft);
+}
+
+/* ==========================================================================
+ * SEGMENTED SLIDING PILL TRACK & INDICATOR (--seg-* TOKENS)
+ * ========================================================================== */
+.segmented-pill-track {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--radius-pill);
+  background-color: var(--seg-track);
+  border: 1px solid var(--seg-track-border);
+  box-shadow: var(--shadow-inset);
+  padding: calc(3px * var(--density));
+  transition: background-color 200ms var(--ease), border-color 200ms var(--ease), box-shadow 200ms var(--ease);
+}
+
+.segmented-pill-indicator {
+  position: absolute;
+  top: calc(3px * var(--density));
+  bottom: calc(3px * var(--density));
+  left: 0;
+  border-radius: var(--radius-pill);
+  background-color: var(--seg-indicator);
+  box-shadow: var(--shadow-ring);
+  transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1), width 280ms cubic-bezier(0.22, 1, 0.36, 1), background-color 200ms var(--ease), box-shadow 200ms var(--ease);
+  will-change: transform, width;
+  pointer-events: none;
+}
+
+.filled-pill-track {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 2px;
+}
+
+.filled-pill-indicator {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 0;
+  border-radius: var(--radius-pill);
+  background-color: var(--intent-primary);
+  box-shadow: var(--shadow-ring);
+  transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1), width 280ms cubic-bezier(0.22, 1, 0.36, 1), background-color 200ms var(--ease);
+  will-change: transform, width;
+  pointer-events: none;
+}
+
+.pill-indicator-no-transition {
+  transition: none !important;
+}
+
+/* ==========================================================================
+ * FLUID PADDING (SCALED BY --density) & CLAMP() TYPOGRAPHY
+ * ========================================================================== */
+.fluid-card-pad {
+  padding: calc(clamp(0.875rem, 3.2vw, 1.75rem) * var(--density)) calc(clamp(1rem, 4vw, 2.25rem) * var(--density));
+}
+
+.fluid-lemma-short {
+  font-size: clamp(1.65rem, 5.5vw, 2.65rem);
+  line-height: 1.15;
+}
+
+.fluid-lemma-medium {
+  font-size: clamp(1.375rem, 4.5vw, 2.2rem);
+  line-height: 1.18;
+}
+
+.fluid-lemma-long {
+  font-size: clamp(1.15rem, 3.7vw, 1.75rem);
+  line-height: 1.24;
+}
+
+.fluid-meaning {
+  font-size: clamp(1.25rem, 4.3vw, 1.85rem);
+  line-height: 1.26;
+}
+
+.fluid-meaning-long {
+  font-size: clamp(1.075rem, 3.5vw, 1.5rem);
+  line-height: 1.32;
+}
+
+.fluid-form-value {
+  font-size: clamp(0.95rem, 2.8vw, 1.2rem);
+  line-height: 1.25;
+}
+
+.fluid-sentence {
+  font-size: clamp(0.875rem, 2.5vw, 1.0625rem);
+  line-height: 1.46;
+}
+
+.fluid-sentence-long {
+  font-size: clamp(0.8125rem, 2.2vw, 0.96rem);
+  line-height: 1.44;
+}
+
+/* ==========================================================================
+ * 3D FLASHCARD FLIP GRID STACK — STABLE FOOTPRINT & CHOREOGRAPHY
+ * ========================================================================== */
+.perspective-stage {
+  perspective: 1800px;
+}
+
+.card-deck-motion {
+  transition: transform 0.24s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform, opacity;
+}
+
+.card-deck-motion.is-exiting-next {
+  transform: translate3d(-32px, 0, 0) scale(0.96);
+  opacity: 0;
+}
+
+.card-deck-motion.is-entering-next {
+  animation: cardEnterFromRight 0.32s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.card-deck-motion.is-exiting-prev {
+  transform: translate3d(32px, 0, 0) scale(0.96);
+  opacity: 0;
+}
+
+.card-deck-motion.is-entering-prev {
+  animation: cardEnterFromLeft 0.32s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes cardEnterFromRight {
+  0% {
+    transform: translate3d(34px, 0, 0) scale(0.96);
+    opacity: 0;
+  }
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes cardEnterFromLeft {
+  0% {
+    transform: translate3d(-34px, 0, 0) scale(0.96);
+    opacity: 0;
+  }
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 1;
+  }
+}
+
+.flip-card-inner {
+  display: grid;
+  grid-template-areas: "card";
+  width: 100%;
+  min-height: clamp(292px, 44dvh, 348px);
+  position: relative;
+  border-radius: var(--radius-card);
+  transition: transform 0.16s var(--ease-press);
+}
+
+@media (min-width: 768px) {
+  .flip-card-inner {
+    min-height: clamp(336px, 46dvh, 384px);
+  }
+}
+
+.flip-card-inner:active {
+  transform: scale(0.988);
+}
+
+.flip-card-inner.no-flip-transition .flip-card-face {
+  transition: none !important;
+}
+
+.flip-card-face {
+  grid-area: card;
+  width: 100%;
+  min-height: 100%;
+  border-radius: var(--radius-card);
+  transition: transform 0.42s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+    filter 0.28s ease-out,
+    background-color 200ms var(--ease),
+    border-color 200ms var(--ease),
+    box-shadow 180ms cubic-bezier(0.2, 0, 0, 1);
+  will-change: transform, opacity;
+}
+
+.flip-card-inner:hover .flip-card-face {
+  box-shadow: var(--shadow-hover);
+}
+
+/* Front Face: crisp & active by default, tilts up & recedes when flipped */
+.flip-card-front {
+  transform: perspective(1200px) rotateX(0deg) translate3d(0, 0, 0) scale(1);
+  opacity: 1;
+  filter: blur(0px);
+  pointer-events: auto;
+}
+
+.flip-card-inner.is-flipped .flip-card-front {
+  transform: perspective(1200px) rotateX(14deg) translate3d(0, -22px, 0) scale(0.94);
+  opacity: 0;
+  filter: blur(1.5px);
+  pointer-events: none;
+}
+
+/* Back Face: poised beneath, springs cleanly into focus when flipped */
+.flip-card-back {
+  overflow: hidden;
+  transform: perspective(1200px) rotateX(-12deg) translate3d(0, 24px, 0) scale(0.95);
+  opacity: 0;
+  filter: blur(1.5px);
+  pointer-events: none;
+}
+
+.flip-card-inner.is-flipped .flip-card-back {
+  transform: perspective(1200px) rotateX(0deg) translate3d(0, 0, 0) scale(1);
+  opacity: 1;
+  filter: blur(0px);
+  pointer-events: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flip-card-face {
+    transition: opacity 0.15s ease-out;
+    transform: none !important;
+    filter: none !important;
+  }
+}
+
+/* Backside Stage Grid Stack (Stage 1 Meaning <-> Stage 2 Scroll-Up Forms & Sentence) */
+.backside-stage-grid {
+  display: grid;
+  grid-template-areas: "backstage";
+  width: 100%;
+  height: 100%;
+  flex: 1;
+}
+
+.backside-stage-layer {
+  grid-area: backstage;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  width: 100%;
+  height: 100%;
+  transition: transform 0.38s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform, opacity;
+}
+
+.backside-stage-1-visible {
+  transform: translate3d(0, 0, 0) scale(1);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.backside-stage-1-scrolled-up {
+  transform: translate3d(0, -28px, 0) scale(0.95);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.backside-stage-2-hidden-below {
+  transform: translate3d(0, 36px, 0) scale(0.94);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.backside-stage-2-scrolled-up {
+  transform: translate3d(0, 0, 0) scale(1);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Staggered spring rise for the 3 forms and sentence when scrolled up */
+.scroll-up-item {
+  transition: transform 0.42s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.backside-stage-2-hidden-below .scroll-up-item {
+  transform: translate3d(0, 18px, 0) scale(0.92);
+  opacity: 0;
+}
+
+.backside-stage-2-scrolled-up .scroll-up-item {
+  transform: translate3d(0, 0, 0) scale(1);
+  opacity: 1;
+}
+
+/* Hide scrollbars on horizontal carousels */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* ==========================================================================
+ * ANATOMY DRAWER SMOOTH SHEET ENTRANCE, HEIGHT MORPHING & TAB CROSSFADE
+ * ========================================================================== */
+@keyframes anatomyBackdropIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes anatomySheetIn {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 18px, 0) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes anatomyContentSlideNext {
+  from {
+    opacity: 0;
+    transform: translate3d(14px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes anatomyContentSlidePrev {
+  from {
+    opacity: 0;
+    transform: translate3d(-14px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes popoverSlideIn {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -6px, 0) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+.anatomy-backdrop-enter {
+  animation: anatomyBackdropIn 200ms var(--ease) forwards;
+}
+
+.anatomy-sheet-enter {
+  animation: anatomySheetIn 280ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.anatomy-body-transition {
+  transition: height 300ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: height;
+}
+
+.anatomy-tab-content-enter {
+  animation: anatomyContentSlideNext 220ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.anatomy-tab-content-enter-prev {
+  animation: anatomyContentSlidePrev 220ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.popover-enter {
+  animation: popoverSlideIn 220ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.popover-panel {
+  transform-origin: top right;
+  transition: opacity 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform, opacity;
+}
+
+.popover-panel[data-state="closed"] {
+  opacity: 0;
+  transform: translate3d(0, -10px, 0) scale(0.96);
+  pointer-events: none;
+}
+
+.popover-panel[data-state="open"] {
+  opacity: 1;
+  transform: translate3d(0, 0, 0) scale(1);
+  pointer-events: auto;
+}
+
+.theme-option-indicator {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  border-radius: var(--radius-control);
+  background-color: var(--intent-primary-soft);
+  border: 1px solid var(--intent-primary-border);
+  box-shadow: var(--shadow-ring);
+  transition: transform 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    height 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 200ms var(--ease),
+    border-color 200ms var(--ease);
+  will-change: transform, height;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .anatomy-backdrop-enter,
+  .anatomy-sheet-enter,
+  .anatomy-tab-content-enter,
+  .anatomy-tab-content-enter-prev,
+  .popover-enter {
+    animation: none !important;
+  }
+  .anatomy-body-transition,
+  .segmented-pill-indicator,
+  .filled-pill-indicator,
+  .popover-panel,
+  .theme-option-indicator {
+    transition: none !important;
+  }
+}
+
+/* ==========================================================================
+ * DIRECTIONAL PAGE-TO-PAGE SLIDE TRANSITIONS
+ * ========================================================================== */
+.page-transition-stage {
+  position: relative;
+  width: 100%;
+  overflow-x: clip;
+}
+
+@keyframes pageEnterFromRight {
+  0% {
+    opacity: 0;
+    transform: translate3d(44px, 0, 0) scale(0.992);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes pageEnterFromLeft {
+  0% {
+    opacity: 0;
+    transform: translate3d(-44px, 0, 0) scale(0.992);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes pageExitToLeft {
+  0% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(-32px, 0, 0) scale(0.99);
+  }
+}
+
+@keyframes pageExitToRight {
+  0% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(32px, 0, 0) scale(0.99);
+  }
+}
+
+.page-enter-forward {
+  animation: pageEnterFromRight 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.page-enter-backward {
+  animation: pageEnterFromLeft 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.page-exit-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  max-height: 100dvh;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+}
+
+.page-exit-forward {
+  animation: pageExitToLeft 240ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.page-exit-backward {
+  animation: pageExitToRight 240ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-enter-forward,
+  .page-enter-backward,
+  .page-exit-forward,
+  .page-exit-backward,
+  .deck-subscreen-push,
+  .deck-subscreen-pop {
+    animation: none !important;
+  }
+}
+
+@keyframes deckSubscreenPushIn {
+  0% {
+    opacity: 0;
+    transform: translate3d(36px, 0, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes deckSubscreenPopIn {
+  0% {
+    opacity: 0;
+    transform: translate3d(-36px, 0, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.deck-subscreen-push {
+  animation: deckSubscreenPushIn 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.deck-subscreen-pop {
+  animation: deckSubscreenPopIn 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* ==========================================================================
+ * INTERACTIVE NORDIC LINEN BRAND LOCKUP (ICON + WORDMARK HOVER & CLICK)
+ * ========================================================================== */
+:root {
+  --brand-sage: #2E6650;
+  --brand-coral: #C24E32;
+  --brand-fjord: #147188;
+  --brand-linen: #FAF8F5;
+  --brand-glow-sage: rgb(46 102 80 / 0.22);
+  --brand-glow-coral: rgb(194 78 50 / 0.22);
+  --brand-glow-fjord: rgb(20 113 136 / 0.22);
+}
+
+html.dark {
+  --brand-sage: #74B094;
+  --brand-coral: #E88267;
+  --brand-fjord: #4EB8CE;
+  --brand-linen: #231F1C;
+  --brand-glow-sage: rgb(116 176 148 / 0.26);
+  --brand-glow-coral: rgb(232 130 103 / 0.26);
+  --brand-glow-fjord: rgb(78 184 206 / 0.26);
+}
+
+.brand-lockup {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.275rem;
+  padding: 0.2rem 0.4rem 0.2rem 0.2rem;
+  border-radius: var(--radius-control);
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 280ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    background-color 200ms var(--ease);
+}
+
+.brand-lockup:hover {
+  background-color: rgb(46 102 80 / 0.05);
+}
+
+html.dark .brand-lockup:hover {
+  background-color: rgb(116 176 148 / 0.07);
+}
+
+/* Interactive Multi-Layered App Icon Stage (Portrait Rectangular Flashcards) */
+.brand-icon-stage {
+  position: relative;
+  width: 24px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: transform 340ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  will-change: transform;
+}
+
+/* Back Fanned Portrait Mini-Cards (Terracotta Coral & Fjord Blue) */
+.brand-card-coral,
+.brand-card-fjord {
+  position: absolute;
+  width: 20px;
+  height: 28px;
+  border-radius: 6px;
+  pointer-events: none;
+  transition: transform 360ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    opacity 260ms var(--ease),
+    box-shadow 260ms var(--ease);
+  will-change: transform;
+}
+
+.brand-card-coral {
+  background-color: var(--brand-coral);
+  transform: translate3d(-2px, -1px, 0) rotate(-8deg) scale(0.95);
+  opacity: 0.9;
+}
+
+.brand-card-fjord {
+  background-color: var(--brand-fjord);
+  transform: translate3d(2px, -0.5px, 0) rotate(8deg) scale(0.95);
+  opacity: 0.9;
+}
+
+/* Main Front Portrait Flashcard (Nordic Sage + Warm Linen) */
+.brand-card-front {
+  position: relative;
+  z-index: 2;
+  width: 21px;
+  height: 29px;
+  border-radius: 6.5px;
+  background-color: var(--brand-sage);
+  box-shadow: 0 2px 6px rgb(46 102 80 / 0.24),
+    0 0 0 1px rgb(255 255 255 / 0.14) inset;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 340ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 280ms var(--ease),
+    background-color 240ms var(--ease);
+  will-change: transform;
+}
+
+.brand-spark-dot {
+  transition: transform 340ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    fill 240ms var(--ease);
+  transform-origin: 15.5px 6.5px;
+}
+
+/* Hover Choreography: Scale up + Diagonal Tilt + Fan Out Triad Layers */
+.brand-lockup:hover .brand-icon-stage {
+  transform: scale(1.13) rotate(-8deg);
+}
+
+.brand-lockup:hover .brand-card-coral {
+  transform: translate3d(-4.5px, -2.5px, 0) rotate(-19deg) scale(1.02);
+  opacity: 0.98;
+  box-shadow: -2px 3px 8px var(--brand-glow-coral);
+}
+
+.brand-lockup:hover .brand-card-fjord {
+  transform: translate3d(5px, -2px, 0) rotate(18deg) scale(1.02);
+  opacity: 0.98;
+  box-shadow: 2px 3px 8px var(--brand-glow-fjord);
+}
+
+.brand-lockup:hover .brand-card-front {
+  transform: rotate(3deg) scale(1.04);
+  box-shadow: 0 6px 14px var(--brand-glow-sage),
+    0 0 0 1px rgb(255 255 255 / 0.22) inset;
+}
+
+.brand-lockup:hover .brand-spark-dot {
+  transform: scale(1.28);
+}
+
+/* Active Press Feel before Click Keyframe Fires */
+.brand-lockup:active .brand-icon-stage {
+  transform: scale(0.92) rotate(-14deg);
+  transition-duration: 90ms;
+}
+
+/* Wordmark Typography & Staggered Diagonal Hover Lift */
+.brand-wordmark-wrap {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1;
+}
+
+.brand-wordmark-text {
+  display: inline-flex;
+  align-items: baseline;
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  transition: transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  transform-origin: left center;
+}
+
+.brand-lockup:hover .brand-wordmark-text {
+  transform: scale(1.06) rotate(-2deg) translateY(-1px);
+}
+
+.brand-letter {
+  display: inline-block;
+  transition: transform 280ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    color 220ms var(--ease);
+}
+
+.brand-letter-stem {
+  color: var(--fg-primary);
+}
+
+.brand-letter-s {
+  color: var(--brand-sage);
+}
+
+.brand-letter-o1 {
+  color: var(--brand-fjord);
+}
+
+.brand-letter-o2 {
+  color: var(--brand-coral);
+}
+
+.brand-lockup:hover .brand-letter-a {
+  transform: translateY(-1.5px) rotate(-3deg);
+}
+.brand-lockup:hover .brand-letter-c {
+  transform: translateY(-2px) rotate(2deg);
+  transition-delay: 18ms;
+}
+.brand-lockup:hover .brand-letter-h {
+  transform: translateY(-1.5px) rotate(-2deg);
+  transition-delay: 36ms;
+}
+.brand-lockup:hover .brand-letter-s {
+  transform: translateY(-2.5px) rotate(-5deg) scale(1.07);
+  transition-delay: 54ms;
+}
+.brand-lockup:hover .brand-letter-o1 {
+  transform: translateY(-3px) rotate(6deg) scale(1.09);
+  transition-delay: 72ms;
+}
+.brand-lockup:hover .brand-letter-o2 {
+  transform: translateY(-2.5px) rotate(-6deg) scale(1.1);
+  transition-delay: 90ms;
+}
+
+/* 3-Color Nordic Linen Ribbon Underline (Sage · Fjord · Coral) */
+.brand-triad-bar {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: 2px;
+  height: 2.5px;
+  width: 100%;
+  opacity: 0.72;
+  transition: opacity 240ms var(--ease), transform 280ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.brand-triad-seg {
+  height: 100%;
+  border-radius: 9999px;
+  transition: width 300ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.brand-lockup:hover .brand-triad-bar {
+  opacity: 1;
+  transform: translateY(0.5px) scaleX(1.04);
+}
+
+/* Click Burst & Elastic Diagonal Tilt Animation */
+@keyframes brandIconClickPop {
+  0% {
+    transform: scale(0.86) rotate(-16deg);
+  }
+  38% {
+    transform: scale(1.24) rotate(12deg);
+  }
+  68% {
+    transform: scale(1.06) rotate(-6deg);
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+@keyframes brandWordmarkClickBounce {
+  0% {
+    transform: scale(0.94) rotate(-3deg);
+  }
+  42% {
+    transform: scale(1.1) rotate(2.5deg) translateY(-2px);
+  }
+  75% {
+    transform: scale(0.99) rotate(-1deg);
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+@keyframes brandTriadRingBurst {
+  0% {
+    transform: scale(0.65) rotate(0deg);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(1.65) rotate(25deg);
+    opacity: 0;
+  }
+}
+
+@keyframes brandBadgePopIn {
+  0% {
+    opacity: 0;
+    transform: translate3d(-6px, 2px, 0) scale(0.85) rotate(-4deg);
+  }
+  20% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1.03) rotate(1deg);
+  }
+  80% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1) rotate(0deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(4px, -3px, 0) scale(0.94);
+  }
+}
+
+.brand-lockup.is-clicking .brand-icon-stage {
+  animation: brandIconClickPop 520ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.brand-lockup.is-clicking .brand-wordmark-text {
+  animation: brandWordmarkClickBounce 500ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.brand-click-ring {
+  position: absolute;
+  inset: -3px;
+  border-radius: 12px;
+  border: 2px solid var(--brand-coral);
+  box-shadow: 0 0 0 2px var(--brand-fjord), 0 0 10px var(--brand-sage);
+  pointer-events: none;
+  animation: brandTriadRingBurst 520ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.brand-aha-pill {
+  animation: brandBadgePopIn 1550ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brand-lockup,
+  .brand-icon-stage,
+  .brand-card-coral,
+  .brand-card-fjord,
+  .brand-card-front,
+  .brand-wordmark-text,
+  .brand-letter {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+
+

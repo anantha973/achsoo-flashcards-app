@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Back tilted portrait flashcard: Fjord Blue -->
+  <rect x="92" y="38" width="328" height="436" rx="74" transform="rotate(8 256 256)" fill="#147188" opacity="0.88"/>
+  <!-- Mid tilted portrait flashcard: Terracotta Coral -->
+  <rect x="92" y="38" width="328" height="436" rx="74" transform="rotate(-7 256 256)" fill="#C24E32" opacity="0.9"/>
+  <!-- Front portrait flashcard: Nordic Sage Green outer & Warm Linen inner -->
+  <rect x="82" y="28" width="348" height="456" rx="82" fill="#2E6650"/>
+  <rect x="116" y="62" width="280" height="388" rx="56" fill="#FAF8F5"/>
+  <!-- Top-left flashcard header bar & Top-right Terracotta Coral spark dot -->
+  <rect x="150" y="108" width="84" height="20" rx="10" fill="#2E6650" opacity="0.28"/>
+  <circle cx="344" cy="118" r="24" fill="#C24E32"/>
+  <!-- Achsoo 'A' Monogram in Sage Green -->
+  <path d="M256 156L178 358h44l16-46h36l16 46h44L256 156zm-10 126l10-32 10 32h-20z" fill="#2E6650"/>
+  <!-- Fjord Blue crossbar wave accent -->
+  <rect x="218" y="294" width="76" height="15" rx="7.5" fill="#147188"/>
+  <!-- Bottom flashcard footer line -->
+  <rect x="186" y="394" width="140" height="16" rx="8" fill="#147188" opacity="0.26"/>
+</svg>

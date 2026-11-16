@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Achsoo — German Vocabulary &amp; Grammar SRS</title>
+    <meta name="description" content="Responsive German Vocabulary &amp; Grammar Flashcards web application with Spaced Repetition (SRS), native de-DE audio pronunciation, and grammatical breakdowns across A1–B1 levels." />
+    <meta property="og:title" content="Achsoo — German Vocabulary &amp; Grammar SRS" />
+    <meta property="og:description" content="Responsive German Vocabulary &amp; Grammar Flashcards web application with Spaced Repetition (SRS), native de-DE audio pronunciation, and grammatical breakdowns across A1–B1 levels." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="theme-color" content="#FAF8F5" id="meta-theme-color" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Achsoo" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400&family=Geist:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <script>
+      (function () {
+        try {
+          var themeId = 'nordic';
+          var colorMode = '';
+          var rawV2 = localStorage.getItem('wortschatz_theme_v2');
+          if (rawV2) {
+            var parsed = JSON.parse(rawV2);
+            if (parsed && (parsed.themeId === 'nordic' || parsed.themeId === 'hero' || parsed.themeId === 'coss')) {
+              themeId = parsed.themeId;
+            }
+            if (parsed && (parsed.colorMode === 'light' || parsed.colorMode === 'dark')) {
+              colorMode = parsed.colorMode;
+            }
+          } else {
+            var legacy = localStorage.getItem('wortschatz_theme_v1');
+            if (legacy === 'dark') {
+              themeId = 'nordic';
+              colorMode = 'dark';
+            } else if (legacy === 'light') {
+              themeId = 'hero';
+              colorMode = 'light';
+            } else if (legacy === 'nordic') {
+              themeId = 'nordic';
+              colorMode = 'light';
+            }
+          }
+          if (!colorMode) {
+            colorMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+          }
+          var root = document.documentElement;
+          root.setAttribute('data-theme', themeId);
+          root.classList.remove('theme-nordic', 'theme-hero', 'theme-coss', 'dark');
+          root.classList.add('theme-' + themeId);
+          if (colorMode === 'dark') {
+            root.classList.add('dark');
+          }
+          root.style.colorScheme = colorMode;
+          var metaColorMap = {
+            'nordic:light': '#FAF8F5',
+            'nordic:dark': '#171412',
+            'hero:light': '#F8FAFC',
+            'hero:dark': '#09090B',
+            'coss:light': '#FAFAFA',
+            'coss:dark': '#09090B'
+          };
+          var metaEl = document.getElementById('meta-theme-color');
+          if (metaEl) {
+            metaEl.setAttribute('content', metaColorMap[themeId + ':' + colorMode] || '#FAF8F5');
+          }
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body class="bg-[var(--bg-canvas)] text-[var(--fg-primary)] antialiased">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
