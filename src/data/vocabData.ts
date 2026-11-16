@@ -1,4 +1,4 @@
-import rawCardsJson from './cards.json';
+import { RAW_CARDS_DATA } from './cardsData';
 
 export type CefrLevel = 'A1' | 'A2' | 'B1';
 export type CardCategory =
@@ -282,6 +282,5 @@ export function validateAndNormalizeContentCards(
   return result;
 }
 
-export const INITIAL_CARDS: VocabCard[] = validateAndNormalizeContentCards(
-  rawCardsJson as unknown as VocabCard[]
-);
+export const INITIAL_CARDS: VocabCard[] =
+  validateAndNormalizeContentCards(RAW_CARDS_DATA);
