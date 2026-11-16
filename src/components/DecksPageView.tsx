@@ -27,6 +27,7 @@ import {
   CardSrsState,
   CefrLevel,
   VocabCard,
+  formatNounLemma,
 } from '../data/vocabData';
 import {
   ASSIGNABLE_ICONS,
@@ -1943,7 +1944,7 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
                       <div className="flex items-baseline gap-1.5 flex-wrap">
                         <span className="font-display text-[15px] font-semibold text-[var(--fg-primary)] leading-snug">
                           {card.nounDetails
-                            ? `${card.nounDetails.gender} ${card.lemma}`
+                            ? formatNounLemma(card.lemma, card.nounDetails.gender)
                             : card.lemma}
                         </span>
                         <span className="font-sans text-[11.5px] font-semibold text-[var(--accent-secondary)]">

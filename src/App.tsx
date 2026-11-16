@@ -73,14 +73,20 @@ import {
   DeckFolder,
   DeckMetaOverride,
   DeckTintId,
+  LastStudySessionState,
   archiveDummyDecksInWorkspace,
   ensureBuiltInA2Workspace,
   ensureInitialTestFolderSeed,
   hasMissingBuiltInA2Workspace,
+  loadLastStudySession,
+  loadStudyDeckPositions,
   needsRemoteArchiveDummyMigration,
+  resolveSavedDeckIndex,
   saveCustomDecks,
   saveDeckOverrides,
   saveFolders,
+  saveLastStudySession,
+  saveStudyDeckPosition,
 } from './utils/decksManager';
 import { syncWorkspaceToSupabase } from './utils/supabaseSync';
 import {
@@ -91,6 +97,8 @@ import {
   RatingKey,
   StudyStats,
   VocabCard,
+  formatNounLemma,
+  stripLeadingGermanArticles,
 } from './data/vocabData';
 import {
   ColorMode,
@@ -137,6 +145,20 @@ type DeckId =
   | 'cefr-a1'
   | 'cefr-a2'
   | 'cefr-b1';
+
+const BUILT_IN_DECK_IDS: ReadonlySet<string> = new Set<string>([
+  'all',
+  'due',
+  'verb',
+  'noun',
+  'adj',
+  'preposition',
+  'conn',
+  'phrase',
+  'cefr-a1',
+  'cefr-a2',
+  'cefr-b1',
+]);
 
 interface DeckDefinition {
   id: DeckId;
@@ -676,14 +698,6 @@ export default function App() {
   const activeBrandExpression =
     brandAhaExpressions[brandClickSeq % brandAhaExpressions.length];
 
-  const [isZenMode, setIsZenMode] = useState<boolean>(false);
-  const [selectedDeckId, setSelectedDeckId] = useState<DeckId>('all');
-  const [customStudyQueue, setCustomStudyQueue] = useState<{
-    id: string;
-    shortTitle: string;
-    cards: VocabCard[];
-  } | null>(null);
-
   // Persistent Folders (1-level), Custom Decks & Deck Overrides for "All Decks" page
   const [folders, setFolders] = useState<DeckFolder[]>(
     () => ensureInitialTestFolderSeed().folders
@@ -694,6 +708,61 @@ export default function App() {
   const [deckOverrides, setDeckOverrides] = useState<
     Record<string, DeckMetaOverride>
   >(() => ensureInitialTestFolderSeed().deckOverrides);
+
+  const [initialStudySession] = useState<LastStudySessionState | null>(() =>
+    loadLastStudySession()
+  );
+  const userChangedDeckRef = useRef<boolean>(false);
+  const hasRestoredStudyIndexRef = useRef<boolean>(false);
+
+  const [isZenMode, setIsZenMode] = useState<boolean>(false);
+  const [selectedDeckId, setSelectedDeckId] = useState<DeckId>(() => {
+    if (
+      initialStudySession &&
+      !initialStudySession.isCustomQueue &&
+      BUILT_IN_DECK_IDS.has(initialStudySession.deckId)
+    ) {
+      return initialStudySession.deckId as DeckId;
+    }
+    return 'all';
+  });
+  const [customStudyQueue, setCustomStudyQueue] = useState<{
+    id: string;
+    shortTitle: string;
+    cards: VocabCard[];
+  } | null>(() => {
+    if (!initialStudySession || !initialStudySession.isCustomQueue) return null;
+    const cardById = new Map(cards.map((c) => [c.id, c]));
+    const matchedCustom = customDecks.find(
+      (d) => d.id === initialStudySession.deckId
+    );
+    if (matchedCustom) {
+      const matchedCards = matchedCustom.cardIds
+        .map((id) => cardById.get(id))
+        .filter((c): c is VocabCard => Boolean(c));
+      if (matchedCards.length > 0) {
+        const ov = deckOverrides[matchedCustom.id];
+        return {
+          id: matchedCustom.id,
+          shortTitle: ov?.title || matchedCustom.title,
+          cards: matchedCards,
+        };
+      }
+    }
+    if (initialStudySession.cardIds && initialStudySession.cardIds.length > 0) {
+      const restoredCards = initialStudySession.cardIds
+        .map((id) => cardById.get(id))
+        .filter((c): c is VocabCard => Boolean(c));
+      if (restoredCards.length > 0) {
+        return {
+          id: initialStudySession.deckId,
+          shortTitle: initialStudySession.shortTitle || 'Study Session',
+          cards: restoredCards,
+        };
+      }
+    }
+    return null;
+  });
 
   const handleUpdateFolders = useCallback((next: DeckFolder[]) => {
     setFolders(next);
@@ -757,6 +826,7 @@ export default function App() {
     axis: 'none' | 'horizontal' | 'vertical';
     suppressClick: boolean;
   } | null>(null);
+  const backWheelCooldownRef = useRef<number>(0);
   const longPressAudioTimerRef = useRef<number | null>(null);
   const pageSwipeRef = useRef<{
     x: number;
@@ -1312,6 +1382,50 @@ export default function App() {
 
   const studyDeck = activeDeckObj.cards;
 
+  // Rehydrate custom/A2 study queue after async DB/Supabase sync if needed
+  useEffect(() => {
+    if (
+      userChangedDeckRef.current ||
+      !initialStudySession?.isCustomQueue ||
+      customStudyQueue
+    ) {
+      return;
+    }
+    const matchedUnified = enrichedUnifiedDecks.find(
+      (d) => d.id === initialStudySession.deckId
+    );
+    if (matchedUnified && matchedUnified.cards.length > 0) {
+      const positions = loadStudyDeckPositions();
+      const restoredIdx = resolveSavedDeckIndex(
+        matchedUnified.cards,
+        positions[matchedUnified.id]
+      );
+      setCustomStudyQueue({
+        id: matchedUnified.id,
+        shortTitle: matchedUnified.shortTitle,
+        cards: matchedUnified.cards,
+      });
+      setCurrentIndex(restoredIdx);
+      hasRestoredStudyIndexRef.current = true;
+    }
+  }, [initialStudySession, customStudyQueue, enrichedUnifiedDecks]);
+
+  // Restore exact saved card index for the resumed deck on initial load before first paint
+  useLayoutEffect(() => {
+    if (hasRestoredStudyIndexRef.current) return;
+    if (studyDeck.length === 0) {
+      hasRestoredStudyIndexRef.current = true;
+      return;
+    }
+    const positions = loadStudyDeckPositions();
+    const saved = positions[activeDeckObj.id];
+    const restoredIdx = resolveSavedDeckIndex(studyDeck, saved);
+    hasRestoredStudyIndexRef.current = true;
+    if (restoredIdx !== currentIndex) {
+      setCurrentIndex(restoredIdx);
+    }
+  }, [activeDeckObj.id, studyDeck, currentIndex]);
+
   useEffect(() => {
     if (currentIndex >= studyDeck.length && studyDeck.length > 0) {
       setCurrentIndex(0);
@@ -1322,6 +1436,28 @@ export default function App() {
   }, [studyDeck.length, currentIndex]);
 
   const currentCard: VocabCard | undefined = studyDeck[currentIndex];
+
+  // Persist active study deck & exact card position continuously so pauses resume cleanly
+  useEffect(() => {
+    if (!hasRestoredStudyIndexRef.current) return;
+    saveLastStudySession({
+      deckId: activeDeckObj.id,
+      isCustomQueue: Boolean(customStudyQueue),
+      shortTitle: customStudyQueue?.shortTitle,
+      cardIds: customStudyQueue
+        ? customStudyQueue.cards.map((c) => c.id)
+        : undefined,
+    });
+    if (studyDeck.length > 0 && currentCard) {
+      saveStudyDeckPosition(activeDeckObj.id, currentIndex, currentCard.id);
+    }
+  }, [
+    activeDeckObj.id,
+    customStudyQueue,
+    studyDeck.length,
+    currentIndex,
+    currentCard,
+  ]);
   const currentCardSrs: CardSrsState = useMemo(() => {
     if (!currentCard) return createDefaultSrsState('empty');
     return srsMap[currentCard.id] || createDefaultSrsState(currentCard.id);
@@ -1468,6 +1604,7 @@ export default function App() {
   const handleSelectStudyDeck = useCallback(
     (nextDeckId: DeckId) => {
       if (nextDeckId === selectedDeckId && !customStudyQueue) return;
+      userChangedDeckRef.current = true;
       clearCardMotionTimers();
       const prevIdx = enrichedDecks.findIndex((d) => d.id === selectedDeckId);
       const nextIdx = enrichedDecks.findIndex((d) => d.id === nextDeckId);
@@ -1476,9 +1613,16 @@ export default function App() {
           ? 'is-entering-prev'
           : 'is-entering-next';
       triggerHapticFeedback(6);
+      const nextDeckCards =
+        nextIdx >= 0 ? enrichedDecks[nextIdx].cards : [];
+      const savedPositions = loadStudyDeckPositions();
+      const restoredCardIdx = resolveSavedDeckIndex(
+        nextDeckCards,
+        savedPositions[nextDeckId]
+      );
       setCustomStudyQueue(null);
       setSelectedDeckId(nextDeckId);
-      setCurrentIndex(0);
+      setCurrentIndex(restoredCardIdx);
       setDetailCard(null);
       resetFlipInstantaneously();
       setCardMotion(dirClass);
@@ -1601,7 +1745,7 @@ export default function App() {
           }
         }
       } else if (st.axis === 'vertical') {
-        if (Math.abs(dy) >= 42 || (Math.abs(dy) >= 26 && vy >= 0.38)) {
+        if (Math.abs(dy) >= 34 || (Math.abs(dy) >= 22 && vy >= 0.28)) {
           if (!isFlipped) {
             if (dy < 0) {
               handleFlipCard();
@@ -1632,7 +1776,7 @@ export default function App() {
       if (st.suppressClick) {
         window.setTimeout(() => {
           cardTouchRef.current = null;
-        }, 60);
+        }, 120);
       } else {
         cardTouchRef.current = null;
       }
@@ -1993,10 +2137,14 @@ export default function App() {
     enterZen = false,
     customCardsOverride?: VocabCard[]
   ) => {
+    userChangedDeckRef.current = true;
+    const savedPositions = loadStudyDeckPositions();
     const builtInMatch = enrichedDecks.find((d) => d.id === deckId);
+    let targetCardsForResume: VocabCard[] = [];
     if (builtInMatch && !customCardsOverride) {
       setCustomStudyQueue(null);
       setSelectedDeckId(builtInMatch.id);
+      targetCardsForResume = builtInMatch.cards;
     } else {
       const unifiedMatch = enrichedUnifiedDecks.find((d) => d.id === deckId);
       const targetCards =
@@ -2011,8 +2159,13 @@ export default function App() {
         shortTitle: unifiedMatch?.shortTitle || 'Study Session',
         cards: targetCards,
       });
+      targetCardsForResume = targetCards;
     }
-    setCurrentIndex(0);
+    const resumedIndex = resolveSavedDeckIndex(
+      targetCardsForResume,
+      savedPositions[deckId]
+    );
+    setCurrentIndex(resumedIndex);
     setIsFlipped(false);
     setIsBackExpanded(false);
     setDetailCard(null);
@@ -2089,11 +2242,11 @@ export default function App() {
     }
 
     const formattedLemma =
-      newCategory === 'noun' && !/^(der|die|das)\s/i.test(newLemma.trim())
-        ? `${newGender} ${newLemma.trim()}`
+      newCategory === 'noun'
+        ? formatNounLemma(newLemma, newGender)
         : newLemma.trim();
 
-    const baseWord = formattedLemma.replace(/^(der|die|das)\s+/i, '');
+    const baseWord = stripLeadingGermanArticles(formattedLemma);
 
     const created: VocabCard = {
       id,
@@ -2334,7 +2487,7 @@ export default function App() {
           <span className={getNounGenderStyles(card.nounDetails.gender)?.text}>
             {card.nounDetails.gender}
           </span>{' '}
-          <span>{card.lemma.replace(/^(der|die|das)\s+/i, '')}</span>
+          <span>{stripLeadingGermanArticles(card.lemma)}</span>
         </>
       );
     }
@@ -2408,11 +2561,11 @@ export default function App() {
         return [
           {
             label: 'Singular',
-            shortValue: card.lemma,
+            shortValue: formatNounLemma(card.lemma, n.gender),
             richValue: (
               <span>
                 <span className={genderColor}>{n.gender}</span>{' '}
-                {card.lemma.replace(/^(der|die|das)\s+/i, '')}
+                {stripLeadingGermanArticles(card.lemma)}
               </span>
             ),
           },
@@ -2840,15 +2993,30 @@ export default function App() {
             {!isZenSessionActive ? (
               <div className="flex items-center justify-between gap-2">
                 <SlidingPillSwitcher
-                  options={enrichedDecks.map((d) => ({
-                    id: d.id,
-                    label:
-                      d.id === 'due' && d.total > 0
-                        ? `${d.shortTitle} (${d.total})`
-                        : d.shortTitle,
-                  }))}
-                  value={selectedDeckId}
-                  onChange={handleSelectStudyDeck}
+                  options={[
+                    ...(customStudyQueue
+                      ? [
+                          {
+                            id: customStudyQueue.id,
+                            label: customStudyQueue.shortTitle,
+                          },
+                        ]
+                      : []),
+                    ...enrichedDecks.map((d) => ({
+                      id: d.id,
+                      label:
+                        d.id === 'due' && d.total > 0
+                          ? `${d.shortTitle} (${d.total})`
+                          : d.shortTitle,
+                    })),
+                  ]}
+                  value={customStudyQueue ? customStudyQueue.id : selectedDeckId}
+                  onChange={(nextId) => {
+                    if (customStudyQueue && nextId === customStudyQueue.id) {
+                      return;
+                    }
+                    handleSelectStudyDeck(nextId as DeckId);
+                  }}
                   ariaLabel="Select study deck"
                   variant="filled"
                   size="sm"
@@ -2974,6 +3142,8 @@ export default function App() {
                     intent="primary"
                     size="md"
                     onClick={() => {
+                      userChangedDeckRef.current = true;
+                      setCustomStudyQueue(null);
                       setSelectedDeckId('all');
                       setCurrentIndex(0);
                     }}
@@ -2996,7 +3166,7 @@ export default function App() {
                 <>
                   {/* ==================== 3D FLASHCARD STAGE (FLUID CLAMP(), TOUCH SWIPE & 40/60 SPLIT BACKSIDE) ==================== */}
                   <div
-                    className={`perspective-stage w-full flex-1 flex flex-col card-deck-motion touch-pan-y ${
+                    className={`perspective-stage w-full flex-1 flex flex-col card-deck-motion touch-none overscroll-contain ${
                       cardMotion !== 'idle' ? cardMotion : ''
                     }`}
                   >
@@ -3114,12 +3284,25 @@ export default function App() {
                       <div
                         onWheel={(e) => {
                           if (!isFlipped) return;
-                          if (e.deltaY > 8 && !isBackExpanded) {
-                            e.stopPropagation();
-                            setIsBackExpanded(true);
-                          } else if (e.deltaY < -8 && isBackExpanded) {
-                            e.stopPropagation();
-                            setIsBackExpanded(false);
+                          if (Math.abs(e.deltaY) <= 8) return;
+                          e.stopPropagation();
+                          const now = performance.now();
+                          if (now < backWheelCooldownRef.current) return;
+
+                          if (e.deltaY > 8) {
+                            if (!isBackExpanded) {
+                              backWheelCooldownRef.current = now + 260;
+                              triggerHapticFeedback(8);
+                              setIsBackExpanded(true);
+                            }
+                          } else if (e.deltaY < -8) {
+                            backWheelCooldownRef.current = now + 300;
+                            triggerHapticFeedback(8);
+                            if (isBackExpanded) {
+                              setIsBackExpanded(false);
+                            } else {
+                              setIsFlipped(false);
+                            }
                           }
                         }}
                         className="flip-card-face flip-card-back rounded-[var(--radius-card)] surface-paper border fluid-card-pad flex flex-col"
@@ -3139,8 +3322,8 @@ export default function App() {
                                 }`}
                               >
                                 {/* UPPER ~40% ZONE: Top-Left Anatomie + Top-Right Speaker & Prominent Centered German Word */}
-                                <div className="flex-[2] flex flex-col justify-between pb-3 border-b border-[var(--border-subtle)] min-h-0">
-                                  <div className="flex items-center justify-between gap-2 shrink-0">
+                                <div className="flex-[2] flex flex-col justify-between pb-3 border-b border-[var(--border-subtle)] min-h-0 min-w-0 max-w-full">
+                                  <div className="flex items-center justify-between gap-2 shrink-0 min-w-0">
                                     <button
                                       type="button"
                                       onClick={(e) => {
@@ -3176,7 +3359,7 @@ export default function App() {
                                   </div>
 
                                   {/* Prominent Centered German Word in Upper 40% */}
-                                  <div className="my-auto text-center py-2 px-1">
+                                  <div className="my-auto text-center py-2 px-1 min-w-0 max-w-full">
                                     <div
                                       className={`font-lemma font-semibold tracking-tight text-[var(--fg-primary)] break-words text-balance ${getFluidBackLemmaClass(
                                         currentCard.lemma
@@ -3188,11 +3371,11 @@ export default function App() {
                                 </div>
 
                                 {/* LOWER ~60% ZONE: Prominent Centered English Meaning + Subordinate 3-Forms Whisper Strip */}
-                                <div className="flex-[3] flex flex-col justify-between pt-3 min-h-0">
+                                <div className="flex-[3] flex flex-col justify-between pt-3 min-h-0 min-w-0 max-w-full">
                                   {/* Center of Lower 60%: Pure English Meaning Hero */}
-                                  <div className="my-auto text-center py-3 sm:py-4 px-1">
+                                  <div className="my-auto text-center py-3 sm:py-4 px-1 min-w-0 max-w-full">
                                     <p
-                                      className={`font-display font-bold tracking-tight text-[var(--fg-primary)] text-balance ${getFluidMeaningClass(
+                                      className={`font-display font-bold tracking-tight text-[var(--fg-primary)] break-words text-balance ${getFluidMeaningClass(
                                         currentCard.translation
                                       )}`}
                                     >
@@ -3217,7 +3400,7 @@ export default function App() {
                                         setIsBackExpanded(true);
                                       }
                                     }}
-                                    className="pt-2 border-t border-[var(--border-subtle)] -mx-1.5 px-1.5 pb-0.5 rounded-xl hover:bg-black/[0.02] dark:hover:bg-white/[0.03] transition-colors cursor-pointer group"
+                                    className="pt-2 border-t border-[var(--border-subtle)] px-1 pb-0.5 min-w-0 max-w-full rounded-xl hover:bg-black/[0.02] dark:hover:bg-white/[0.03] transition-colors cursor-pointer group"
                                   >
                                     {/* Minimal Static Pull-Up Indicator */}
                                     <div className="flex items-center justify-center text-[var(--fg-muted)] group-hover:text-[var(--accent-secondary)] transition-colors mb-1">
@@ -3226,9 +3409,9 @@ export default function App() {
 
                                     {/* Small 3-Forms Whisper Preview */}
                                     {threeForms.length > 0 && (
-                                      <div className="grid grid-cols-3 gap-1.5 text-center">
+                                      <div className="grid grid-cols-[repeat(3,minmax(0,1fr))] gap-1.5 text-center min-w-0 max-w-full">
                                         {threeForms.map((f) => (
-                                          <div key={f.label} className="min-w-0">
+                                          <div key={f.label} className="min-w-0 overflow-hidden">
                                             <div className="text-[10.5px] font-sans font-medium text-[var(--fg-muted)] opacity-85 truncate">
                                               {f.label}
                                             </div>
@@ -3268,17 +3451,17 @@ export default function App() {
                                       setIsBackExpanded(false);
                                     }
                                   }}
-                                  className="flex items-center justify-between gap-2 pb-2.5 border-b border-[var(--border-subtle)] cursor-pointer group"
+                                  className="flex items-center justify-between gap-2 pb-2.5 border-b border-[var(--border-subtle)] cursor-pointer group min-w-0 max-w-full"
                                   title="Scroll down or tap to return to 40/60 German-English split"
                                 >
                                   <div className="min-w-0 flex items-baseline gap-2 flex-wrap">
-                                    <span className="font-lemma text-sm sm:text-base font-semibold text-[var(--fg-primary)]">
+                                    <span className="font-lemma text-sm sm:text-base font-semibold text-[var(--fg-primary)] break-words">
                                       {renderFormattedLemma(currentCard)}
                                     </span>
                                     <span className="text-[var(--fg-muted)] text-xs">
                                       —
                                     </span>
-                                    <span className="font-display text-sm sm:text-base font-bold text-[var(--accent-secondary)] truncate">
+                                    <span className="font-display text-sm sm:text-base font-bold text-[var(--accent-secondary)] truncate max-w-full">
                                       {currentCard.translation}
                                     </span>
                                   </div>
@@ -3291,10 +3474,10 @@ export default function App() {
                                 {/* Big 3 Forms (Staggered Spring Rise + Responsive Multi-Column Stacking) */}
                                 <div
                                   onClick={(e) => e.stopPropagation()}
-                                  className="my-auto py-3 space-y-3 cursor-default"
+                                  className="my-auto py-3 space-y-3 cursor-default min-w-0 max-w-full"
                                 >
                                   {threeForms.length > 0 && (
-                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3 pb-3 border-b border-[var(--border-subtle)]">
+                                    <div className="grid grid-cols-1 sm:grid-cols-[repeat(3,minmax(0,1fr))] gap-2 sm:gap-3 pb-3 border-b border-[var(--border-subtle)] min-w-0 max-w-full">
                                       {threeForms.map((f, idx) => (
                                         <div
                                           key={f.label}
@@ -3881,6 +4064,8 @@ export default function App() {
                         size="icon"
                         onClick={(e) => {
                           e.stopPropagation();
+                          userChangedDeckRef.current = true;
+                          setCustomStudyQueue(null);
                           setSelectedDeckId('all');
                           const idx = cards.findIndex((c) => c.id === card.id);
                           setCurrentIndex(idx >= 0 ? idx : 0);

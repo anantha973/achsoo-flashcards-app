@@ -234,6 +234,23 @@ export interface StudyStats {
   totalTimeStudiedMs?: number;
 }
 
+export function stripLeadingGermanArticles(text: string): string {
+  return text.trim().replace(/^(?:(?:der|die|das)\s+)+/i, '').trim();
+}
+
+export function dedupeGermanArticles(text: string): string {
+  return text.replace(/\b(der|die|das)(?:\s+\1)+\b/gi, '$1');
+}
+
+export function formatNounLemma(lemma: string, gender?: NounGender): string {
+  const cleaned = dedupeGermanArticles(lemma).trim();
+  if (gender === 'der' || gender === 'die' || gender === 'das') {
+    const bare = stripLeadingGermanArticles(cleaned);
+    return bare ? `${gender} ${bare}` : gender;
+  }
+  return cleaned;
+}
+
 export function validateAndNormalizeContentCards(
   cards: VocabCard[]
 ): VocabCard[] {
@@ -260,9 +277,56 @@ export function validateAndNormalizeContentCards(
     }
 
     seenIds.add(rawId);
+
+    const normalizedLemma =
+      card.category === 'noun' && card.nounDetails
+        ? formatNounLemma(card.lemma, card.nounDetails.gender)
+        : dedupeGermanArticles(card.lemma);
+
+    const normalizedNounDetails = card.nounDetails
+      ? {
+          ...card.nounDetails,
+          plural: dedupeGermanArticles(card.nounDetails.plural),
+        }
+      : undefined;
+
+    const normalizedAdjDetails = card.adjDetails
+      ? {
+          ...card.adjDetails,
+          positiv: dedupeGermanArticles(card.adjDetails.positiv),
+          declensionExamples: card.adjDetails.declensionExamples
+            ? {
+                weak: {
+                  nom: dedupeGermanArticles(card.adjDetails.declensionExamples.weak.nom),
+                  akk: dedupeGermanArticles(card.adjDetails.declensionExamples.weak.akk),
+                  dat: dedupeGermanArticles(card.adjDetails.declensionExamples.weak.dat),
+                  gen: dedupeGermanArticles(card.adjDetails.declensionExamples.weak.gen),
+                },
+                mixed: {
+                  nom: dedupeGermanArticles(card.adjDetails.declensionExamples.mixed.nom),
+                  akk: dedupeGermanArticles(card.adjDetails.declensionExamples.mixed.akk),
+                  dat: dedupeGermanArticles(card.adjDetails.declensionExamples.mixed.dat),
+                  gen: dedupeGermanArticles(card.adjDetails.declensionExamples.mixed.gen),
+                },
+                strong: {
+                  nom: dedupeGermanArticles(card.adjDetails.declensionExamples.strong.nom),
+                  akk: dedupeGermanArticles(card.adjDetails.declensionExamples.strong.akk),
+                  dat: dedupeGermanArticles(card.adjDetails.declensionExamples.strong.dat),
+                  gen: dedupeGermanArticles(card.adjDetails.declensionExamples.strong.gen),
+                },
+              }
+            : undefined,
+        }
+      : undefined;
+
     result.push({
       ...card,
       id: rawId,
+      lemma: normalizedLemma,
+      spokenText: dedupeGermanArticles(card.spokenText),
+      exampleDe: dedupeGermanArticles(card.exampleDe),
+      nounDetails: normalizedNounDetails,
+      adjDetails: normalizedAdjDetails,
     });
   });
 

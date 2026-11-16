@@ -888,3 +888,102 @@ export function saveLastPickerChoice(choice: {
     // Ignore storage errors
   }
 }
+
+const LAST_STUDY_SESSION_KEY = 'achsoo_last_study_session_v1';
+const STUDY_DECK_POSITIONS_KEY = 'achsoo_study_positions_v1';
+
+export interface LastStudySessionState {
+  deckId: string;
+  isCustomQueue: boolean;
+  shortTitle?: string;
+  cardIds?: string[];
+}
+
+export interface StudyDeckPosition {
+  index: number;
+  cardId?: string;
+}
+
+export function loadLastStudySession(): LastStudySessionState | null {
+  try {
+    const raw =
+      typeof localStorage !== 'undefined'
+        ? localStorage.getItem(LAST_STUDY_SESSION_KEY)
+        : null;
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<LastStudySessionState>;
+    if (!parsed || typeof parsed.deckId !== 'string' || !parsed.deckId.trim()) {
+      return null;
+    }
+    return {
+      deckId: parsed.deckId,
+      isCustomQueue: Boolean(parsed.isCustomQueue),
+      shortTitle:
+        typeof parsed.shortTitle === 'string' ? parsed.shortTitle : undefined,
+      cardIds: Array.isArray(parsed.cardIds)
+        ? parsed.cardIds.filter((id): id is string => typeof id === 'string')
+        : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function saveLastStudySession(session: LastStudySessionState): void {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(LAST_STUDY_SESSION_KEY, JSON.stringify(session));
+    }
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+export function loadStudyDeckPositions(): Record<string, StudyDeckPosition> {
+  try {
+    const raw =
+      typeof localStorage !== 'undefined'
+        ? localStorage.getItem(STUDY_DECK_POSITIONS_KEY)
+        : null;
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, StudyDeckPosition>;
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+export function saveStudyDeckPosition(
+  deckId: string,
+  index: number,
+  cardId?: string
+): void {
+  if (!deckId) return;
+  try {
+    if (typeof localStorage === 'undefined') return;
+    const current = loadStudyDeckPositions();
+    const safeIndex = Math.max(0, Math.floor(index));
+    current[deckId] = cardId
+      ? { index: safeIndex, cardId }
+      : { index: safeIndex };
+    localStorage.setItem(STUDY_DECK_POSITIONS_KEY, JSON.stringify(current));
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+export function resolveSavedDeckIndex(
+  cards: { id: string }[],
+  saved?: StudyDeckPosition | null
+): number {
+  if (!cards.length || !saved) return 0;
+  if (saved.cardId) {
+    const byId = cards.findIndex((c) => c.id === saved.cardId);
+    if (byId >= 0) return byId;
+  }
+  if (typeof saved.index === 'number' && Number.isFinite(saved.index)) {
+    return Math.max(0, Math.min(cards.length - 1, Math.floor(saved.index)));
+  }
+  return 0;
+}
+

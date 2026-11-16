@@ -7,7 +7,12 @@ import React, {
   useState,
 } from 'react';
 import { Volume2, X } from 'lucide-react';
-import { CardCategory, NounGender, VocabCard } from '../data/vocabData';
+import {
+  CardCategory,
+  NounGender,
+  VocabCard,
+  stripLeadingGermanArticles,
+} from '../data/vocabData';
 import { useSheetSwipeDismiss } from '../hooks/useMobileGestures';
 import { triggerHapticFeedback } from '../utils/srsEngine';
 import { Button } from './HeroPrimitives';
@@ -293,7 +298,7 @@ export const AnatomyDrawer: React.FC<AnatomyDrawerProps> = ({
           <span className={getNounGenderColor(card.nounDetails.gender)}>
             {card.nounDetails.gender}
           </span>{' '}
-          <span>{card.lemma.replace(/^(der|die|das)\s+/i, '')}</span>
+          <span>{stripLeadingGermanArticles(card.lemma)}</span>
         </>
       );
     }

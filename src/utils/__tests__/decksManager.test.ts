@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_A2_CUSTOM_DECKS } from '../../data/defaultDecks';
+import { INITIAL_CARDS, dedupeGermanArticles, formatNounLemma, stripLeadingGermanArticles } from '../../data/vocabData';
 import {
   A2_NETZWERK_FOLDER_ID,
   ARCHIVE_FOLDER_ID,
@@ -8,6 +9,7 @@ import {
   archiveDummyDecksInWorkspace,
   ensureBuiltInA2Workspace,
   hasMissingBuiltInA2Workspace,
+  resolveSavedDeckIndex,
 } from '../decksManager';
 
 describe('decksManager multi-device A2 Netzwerk workspace sync', () => {
@@ -114,3 +116,30 @@ describe('decksManager multi-device A2 Netzwerk workspace sync', () => {
     ).toBe(DEFAULT_A2_CUSTOM_DECKS.length);
   });
 });
+
+describe('study session resume & noun article normalization', () => {
+  it('resolves exact saved card position by cardId first and clamps numeric fallback', () => {
+    const cards = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+    expect(resolveSavedDeckIndex(cards, { index: 0, cardId: 'c' })).toBe(2);
+    expect(resolveSavedDeckIndex(cards, { index: 1, cardId: 'missing' })).toBe(1);
+    expect(resolveSavedDeckIndex(cards, { index: 99 })).toBe(2);
+    expect(resolveSavedDeckIndex([], { index: 4 })).toBe(0);
+  });
+
+  it('formats nouns without double articles and contains zero duplicate articles in INITIAL_CARDS', () => {
+    expect(formatNounLemma('der Verkäufer', 'der')).toBe('der Verkäufer');
+    expect(formatNounLemma('der der Verkäufer', 'der')).toBe('der Verkäufer');
+    expect(stripLeadingGermanArticles('die die Zukunft')).toBe('Zukunft');
+    expect(dedupeGermanArticles('der der Norden, der Südene Schritt')).toBe(
+      'der Norden, der Südene Schritt'
+    );
+
+    const dupPattern = /\b(der|die|das)\s+\1\b/i;
+    for (const card of INITIAL_CARDS) {
+      expect(dupPattern.test(card.lemma)).toBe(false);
+      expect(dupPattern.test(card.spokenText)).toBe(false);
+      expect(dupPattern.test(card.exampleDe)).toBe(false);
+    }
+  });
+});
+

@@ -47258,7 +47258,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
       "rektion": "regelmäßige Steigerung",
       "declensionExamples": {
         "weak": {
-          "nom": "der der Norden, der Südene Schritt",
+          "nom": "der Norden, der Südene Schritt",
           "akk": "den der Norden, der Südenen Schritt",
           "dat": "dem der Norden, der Südenen Schritt",
           "gen": "des der Norden, der Südenen Schritts"
