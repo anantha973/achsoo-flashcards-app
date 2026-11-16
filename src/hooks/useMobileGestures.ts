@@ -25,6 +25,7 @@ export function useSheetSwipeDismiss({
     x: number;
     y: number;
     time: number;
+    isFromHandle: boolean;
     eligible: boolean;
     locked: boolean;
   } | null>(null);
@@ -37,6 +38,20 @@ export function useSheetSwipeDismiss({
     }
   }, [isOpen]);
 
+  const isScrollAtTop = useCallback(
+    (target: EventTarget | null): boolean => {
+      const el = target as HTMLElement | null;
+      const scrollEl = scrollContainerRef?.current;
+      const innerScrollable = el?.closest(
+        '[data-sheet-scroll]'
+      ) as HTMLElement | null;
+      if (scrollEl && scrollEl.scrollTop > 2) return false;
+      if (innerScrollable && innerScrollable.scrollTop > 2) return false;
+      return true;
+    },
+    [scrollContainerRef]
+  );
+
   const onTouchStart = useCallback(
     (e: React.TouchEvent<HTMLElement>) => {
       if (e.touches.length !== 1) return;
@@ -44,55 +59,61 @@ export function useSheetSwipeDismiss({
       if (target?.closest('input, textarea, select')) return;
 
       const isFromHandle = Boolean(target?.closest('[data-sheet-handle]'));
-      const scrollEl = scrollContainerRef?.current;
-      const innerScrollable = target?.closest(
-        '[data-sheet-scroll]'
-      ) as HTMLElement | null;
-
-      let atTop = true;
-      if (!isFromHandle) {
-        if (scrollEl && scrollEl.scrollTop > 3) {
-          atTop = false;
-        }
-        if (innerScrollable && innerScrollable.scrollTop > 3) {
-          atTop = false;
-        }
-      }
+      const atTop = isFromHandle || isScrollAtTop(target);
 
       const touch = e.touches[0];
       startRef.current = {
         x: touch.clientX,
         y: touch.clientY,
         time: performance.now(),
+        isFromHandle,
         eligible: atTop,
         locked: false,
       };
     },
-    [scrollContainerRef]
+    [isScrollAtTop]
   );
 
-  const onTouchMove = useCallback((e: React.TouchEvent<HTMLElement>) => {
-    const start = startRef.current;
-    if (!start || !start.eligible || e.touches.length !== 1) return;
+  const onTouchMove = useCallback(
+    (e: React.TouchEvent<HTMLElement>) => {
+      const start = startRef.current;
+      if (!start || e.touches.length !== 1) return;
 
-    const touch = e.touches[0];
-    const dx = touch.clientX - start.x;
-    const dy = touch.clientY - start.y;
+      const touch = e.touches[0];
+      const dx = touch.clientX - start.x;
+      const dy = touch.clientY - start.y;
 
-    if (!start.locked) {
-      if (Math.abs(dy) < 8 && Math.abs(dx) < 8) return;
-      if (dy <= 0 || Math.abs(dx) > dy * 0.9) {
-        // Horizontal or upward gesture — yield to normal scrolling / tab swipe
-        start.eligible = false;
+      // If user started scrolled slightly down and pulled back to top in one motion, hand off seamlessly
+      if (!start.eligible) {
+        if (dy > 8 && isScrollAtTop(e.target)) {
+          start.eligible = true;
+          start.x = touch.clientX;
+          start.y = touch.clientY;
+          start.time = performance.now();
+        }
         return;
       }
-      start.locked = true;
-      setIsDragging(true);
-    }
 
-    const clamped = Math.max(0, Math.min(dy * 0.92, 320));
-    setDragY(clamped);
-  }, []);
+      if (!start.locked) {
+        if (Math.abs(dy) < 8 && Math.abs(dx) < 8) return;
+        if (dy <= 0 || Math.abs(dx) > dy * 0.9) {
+          // Horizontal or upward gesture — yield to normal scrolling / tab swipe
+          start.eligible = false;
+          return;
+        }
+        if (!start.isFromHandle && !isScrollAtTop(e.target)) {
+          start.eligible = false;
+          return;
+        }
+        start.locked = true;
+        setIsDragging(true);
+      }
+
+      const clamped = Math.max(0, Math.min(dy * 0.92, 340));
+      setDragY(clamped);
+    },
+    [isScrollAtTop]
+  );
 
   const onTouchEnd = useCallback(
     (e: React.TouchEvent<HTMLElement>) => {

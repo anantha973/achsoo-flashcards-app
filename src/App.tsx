@@ -55,6 +55,7 @@ import {
 } from 'recharts';
 import { AnatomyDrawer } from './components/AnatomyDrawer';
 import {
+  DeckSubScreen,
   DecksPageView,
   EnrichedUnifiedDeck,
 } from './components/DecksPageView';
@@ -73,12 +74,15 @@ import {
   DeckMetaOverride,
   DeckTintId,
   archiveDummyDecksInWorkspace,
+  ensureBuiltInA2Workspace,
   ensureInitialTestFolderSeed,
+  hasMissingBuiltInA2Workspace,
   needsRemoteArchiveDummyMigration,
   saveCustomDecks,
   saveDeckOverrides,
   saveFolders,
 } from './utils/decksManager';
+import { syncWorkspaceToSupabase } from './utils/supabaseSync';
 import {
   CardCategory,
   CardSrsState,
@@ -457,35 +461,78 @@ export default function App() {
               deckOverrides: rw.deckOverrides,
             });
 
+            let nextFolders: DeckFolder[];
+            let nextCustomDecks: CustomDeckRecord[];
+            let nextOverrides: Record<string, DeckMetaOverride>;
+
             if (shouldMigrateRemote) {
               const migrated = archiveDummyDecksInWorkspace({
-                folders: rw.folders || [],
-                customDecks: rw.customDecks || [],
-                deckOverrides: rw.deckOverrides || {},
+                folders:
+                  Array.isArray(rw.folders) && rw.folders.length > 0
+                    ? rw.folders
+                    : seed.folders,
+                customDecks:
+                  Array.isArray(rw.customDecks) && rw.customDecks.length > 0
+                    ? rw.customDecks
+                    : seed.customDecks,
+                deckOverrides:
+                  rw.deckOverrides && Object.keys(rw.deckOverrides).length > 0
+                    ? rw.deckOverrides
+                    : seed.deckOverrides,
               });
-              setFolders(migrated.folders);
-              saveFolders(migrated.folders);
-              setCustomDecks(migrated.customDecks);
-              saveCustomDecks(migrated.customDecks);
-              setDeckOverrides(migrated.deckOverrides);
-              saveDeckOverrides(migrated.deckOverrides);
+              nextFolders = migrated.folders;
+              nextCustomDecks = migrated.customDecks;
+              nextOverrides = migrated.deckOverrides;
             } else {
-              if (Array.isArray(rw.folders) && rw.folders.length > 0) {
-                setFolders(rw.folders);
-                saveFolders(rw.folders, true);
-              }
-              if (Array.isArray(rw.customDecks) && rw.customDecks.length > 0) {
-                setCustomDecks(rw.customDecks);
-                saveCustomDecks(rw.customDecks, true);
-              }
-              if (
-                rw.deckOverrides &&
-                Object.keys(rw.deckOverrides).length > 0
-              ) {
-                setDeckOverrides(rw.deckOverrides);
-                saveDeckOverrides(rw.deckOverrides, true);
-              }
+              const baseFolders =
+                Array.isArray(rw.folders) && rw.folders.length > 0
+                  ? rw.folders
+                  : seed.folders;
+              const baseCustomDecks =
+                Array.isArray(rw.customDecks) && rw.customDecks.length > 0
+                  ? rw.customDecks
+                  : seed.customDecks;
+              nextOverrides =
+                rw.deckOverrides && Object.keys(rw.deckOverrides).length > 0
+                  ? rw.deckOverrides
+                  : seed.deckOverrides;
+
+              const ensured = ensureBuiltInA2Workspace({
+                folders: baseFolders,
+                customDecks: baseCustomDecks,
+              });
+              nextFolders = ensured.folders;
+              nextCustomDecks = ensured.customDecks;
             }
+
+            setFolders(nextFolders);
+            saveFolders(nextFolders, true);
+            setCustomDecks(nextCustomDecks);
+            saveCustomDecks(nextCustomDecks, true);
+            if (Object.keys(nextOverrides).length > 0) {
+              setDeckOverrides(nextOverrides);
+              saveDeckOverrides(nextOverrides, true);
+            }
+
+            const remoteNeedsHeal =
+              shouldMigrateRemote ||
+              !Array.isArray(rw.folders) ||
+              rw.folders.length === 0 ||
+              !Array.isArray(rw.customDecks) ||
+              rw.customDecks.length === 0 ||
+              hasMissingBuiltInA2Workspace({
+                folders: rw.folders,
+                customDecks: rw.customDecks,
+              });
+
+            if (remoteNeedsHeal) {
+              void syncWorkspaceToSupabase({
+                folders: nextFolders,
+                customDecks: nextCustomDecks,
+                deckOverrides: nextOverrides,
+              });
+            }
+
             if (
               rw.themePrefs &&
               rw.themePrefs.themeId &&
@@ -518,7 +565,12 @@ export default function App() {
   }, []);
 
   // Navigation, Directional Page Transitions, Filtering & Distraction-Free Zen Session Mode
-  const [activeView, setActiveView] = useState<ActiveView>('study');
+  const [activeView, setActiveView] = useState<ActiveView>('decks');
+  const [decksSubScreen, setDecksSubScreen] = useState<DeckSubScreen>({
+    type: 'root',
+  });
+  const [isDecksOverlayOpen, setIsDecksOverlayOpen] = useState<boolean>(false);
+  const closeDecksTopSheetRef = useRef<(() => boolean) | null>(null);
   const [exitingView, setExitingView] = useState<ActiveView | null>(null);
   const [pageDirection, setPageDirection] = useState<'forward' | 'backward'>(
     'forward'
@@ -611,7 +663,8 @@ export default function App() {
       brandBadgeTimerRef.current = null;
     }, 1550);
 
-    navigateToView('study');
+    navigateToView('decks');
+    setDecksSubScreen({ type: 'root' });
   }, [navigateToView]);
 
   const brandTriadPose = brandClickSeq % 3;
@@ -900,20 +953,24 @@ export default function App() {
       }
 
       const total = matchingCards.length;
+      const masteredPct = total > 0 ? (mastered / total) * 100 : 0;
+      const learningPct = total > 0 ? (learning / total) * 100 : 0;
+      const studiedTotalPct =
+        total > 0
+          ? Math.min(100, Math.round(((mastered + learning) / total) * 100))
+          : 0;
+      const dueProgressPct =
+        total === 0
+          ? stats.totalReviewsToday > 0
+            ? 100
+            : 0
+          : Math.round(
+              (stats.totalReviewsToday /
+                Math.max(1, stats.totalReviewsToday + total)) *
+                100
+            );
       const progressPct =
-        def.id === 'due'
-          ? total === 0
-            ? stats.totalReviewsToday > 0
-              ? 100
-              : 0
-            : Math.round(
-                (stats.totalReviewsToday /
-                  Math.max(1, stats.totalReviewsToday + total)) *
-                  100
-              )
-          : total === 0
-          ? 0
-          : Math.round((mastered / total) * 100);
+        def.id === 'due' ? dueProgressPct : studiedTotalPct;
 
       const avgEase = total > 0 ? (easeSum / total).toFixed(2) : '2.50';
 
@@ -924,6 +981,8 @@ export default function App() {
         mastered,
         learning,
         due,
+        masteredPct: def.id === 'due' ? dueProgressPct : masteredPct,
+        learningPct: def.id === 'due' ? 0 : learningPct,
         progressPct,
         avgEase,
       };
@@ -1176,6 +1235,8 @@ export default function App() {
           mastered: d.mastered,
           learning: d.learning,
           due: d.due,
+          masteredPct: d.masteredPct,
+          learningPct: d.learningPct,
           progressPct: d.progressPct,
         };
       });
@@ -1200,7 +1261,12 @@ export default function App() {
         }
       }
       const total = matchingCards.length;
-      const progressPct = total > 0 ? Math.round((mastered / total) * 100) : 0;
+      const masteredPct = total > 0 ? (mastered / total) * 100 : 0;
+      const learningPct = total > 0 ? (learning / total) * 100 : 0;
+      const progressPct =
+        total > 0
+          ? Math.min(100, Math.round(((mastered + learning) / total) * 100))
+          : 0;
 
       return {
         id: cd.id,
@@ -1222,6 +1288,8 @@ export default function App() {
         mastered,
         learning,
         due,
+        masteredPct,
+        learningPct,
         progressPct,
       };
     });
@@ -1667,6 +1735,134 @@ export default function App() {
     scrollContainerRef: addModalScrollRef,
     threshold: 88,
   });
+
+  // Phone / Browser Back Button Navigation Stack across All Decks, Folders, Deck Details, Study, Tabs & Modals
+  const decksSubScreenDepth =
+    decksSubScreen.type === 'folder'
+      ? 1
+      : decksSubScreen.type === 'deck-detail'
+      ? decksSubScreen.returnFolderId
+        ? 2
+        : 1
+      : 0;
+  const desiredHistoryDepth =
+    (activeView !== 'decks' ? 1 : 0) +
+    (activeView === 'study' && isZenMode ? 1 : 0) +
+    decksSubScreenDepth +
+    (activeView === 'decks' && isDecksOverlayOpen ? 1 : 0) +
+    (isThemePopoverOpen ? 1 : 0) +
+    (isAddModalOpen ? 1 : 0) +
+    (detailCard ? 1 : 0);
+
+  const syncedHistoryDepthRef = useRef<number>(0);
+  const silentPopTargetDepthRef = useRef<number | null>(null);
+  const backStackStateRef = useRef({
+    activeView,
+    isZenMode,
+    decksSubScreen,
+    isThemePopoverOpen,
+    isAddModalOpen,
+    detailCard,
+  });
+  backStackStateRef.current = {
+    activeView,
+    isZenMode,
+    decksSubScreen,
+    isThemePopoverOpen,
+    isAddModalOpen,
+    detailCard,
+  };
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const currentState = window.history.state;
+    if (!currentState || typeof currentState.achsooDepth !== 'number') {
+      window.history.replaceState({ achsooDepth: 0 }, '');
+      syncedHistoryDepthRef.current = 0;
+    } else {
+      syncedHistoryDepthRef.current = currentState.achsooDepth;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (desiredHistoryDepth > syncedHistoryDepthRef.current) {
+      while (syncedHistoryDepthRef.current < desiredHistoryDepth) {
+        syncedHistoryDepthRef.current += 1;
+        window.history.pushState(
+          { achsooDepth: syncedHistoryDepthRef.current },
+          ''
+        );
+      }
+    } else if (desiredHistoryDepth < syncedHistoryDepthRef.current) {
+      const diff = desiredHistoryDepth - syncedHistoryDepthRef.current;
+      syncedHistoryDepthRef.current = desiredHistoryDepth;
+      silentPopTargetDepthRef.current = desiredHistoryDepth;
+      window.history.go(diff);
+    }
+  }, [desiredHistoryDepth]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handlePopState = (e: PopStateEvent) => {
+      const browserDepth =
+        e.state && typeof e.state.achsooDepth === 'number'
+          ? e.state.achsooDepth
+          : 0;
+
+      if (
+        silentPopTargetDepthRef.current !== null &&
+        browserDepth === silentPopTargetDepthRef.current
+      ) {
+        silentPopTargetDepthRef.current = null;
+        syncedHistoryDepthRef.current = browserDepth;
+        return;
+      }
+
+      const prevSynced = syncedHistoryDepthRef.current;
+      syncedHistoryDepthRef.current = browserDepth;
+      if (browserDepth >= prevSynced) return;
+
+      const s = backStackStateRef.current;
+      if (s.isThemePopoverOpen) {
+        setIsThemePopoverOpen(false);
+        return;
+      }
+      if (s.detailCard) {
+        setDetailCard(null);
+        return;
+      }
+      if (s.isAddModalOpen) {
+        setIsAddModalOpen(false);
+        return;
+      }
+      if (s.activeView === 'decks' && closeDecksTopSheetRef.current?.()) {
+        return;
+      }
+      if (s.activeView === 'study' && s.isZenMode) {
+        setIsZenMode(false);
+        return;
+      }
+      if (s.activeView !== 'decks') {
+        navigateToView('decks', 'backward');
+        return;
+      }
+      if (s.decksSubScreen.type === 'deck-detail') {
+        setDecksSubScreen(
+          s.decksSubScreen.returnFolderId
+            ? { type: 'folder', folderId: s.decksSubScreen.returnFolderId }
+            : { type: 'root' }
+        );
+        return;
+      }
+      if (s.decksSubScreen.type === 'folder') {
+        setDecksSubScreen({ type: 'root' });
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [navigateToView]);
 
   // Global Keyboard Shortcuts (Space, 1-4, A, D for Anatomie, Z for Zen, Escape, Arrows)
   useEffect(() => {
@@ -3305,6 +3501,10 @@ export default function App() {
             onSubScreenChange={
               isExiting ? undefined : (isNested) => setIsDecksSubScreenOpen(isNested)
             }
+            controlledSubScreen={decksSubScreen}
+            onControlledSubScreenChange={setDecksSubScreen}
+            onOpenSheetChange={setIsDecksOverlayOpen}
+            dismissTopSheetRef={closeDecksTopSheetRef}
           />
         )}
 

@@ -390,11 +390,11 @@ export const AnatomyDrawer: React.FC<AnatomyDrawerProps> = ({
     eligible: boolean;
   } | null>(null);
 
-  const { dragY, sheetTouchHandlers, sheetStyle } = useSheetSwipeDismiss({
+  const { dragY, isDragging, sheetTouchHandlers, sheetStyle } = useSheetSwipeDismiss({
     isOpen: true,
     onDismiss: onClose,
     scrollContainerRef: sheetBodyRef,
-    threshold: 88,
+    threshold: 76,
   });
 
   const handleBodyTouchStart = useCallback(
@@ -459,6 +459,45 @@ export const AnatomyDrawer: React.FC<AnatomyDrawerProps> = ({
     ]
   );
 
+  const wheelDismissRef = useRef<{
+    accum: number;
+    lastTs: number;
+    startedAtTop: boolean;
+  }>({ accum: 0, lastTs: 0, startedAtTop: true });
+
+  const handleSheetWheel = useCallback(
+    (e: React.WheelEvent<HTMLDivElement>) => {
+      const scrollEl = sheetBodyRef.current;
+      const atTop = !scrollEl || scrollEl.scrollTop <= 1;
+      const now = performance.now();
+      const state = wheelDismissRef.current;
+
+      if (now - state.lastTs > 220) {
+        state.accum = 0;
+        state.startedAtTop = atTop;
+      }
+      state.lastTs = now;
+
+      if (!atTop || !state.startedAtTop) {
+        state.accum = 0;
+        if (!atTop) state.startedAtTop = false;
+        return;
+      }
+
+      if (e.deltaY < 0 && Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+        state.accum += Math.abs(e.deltaY);
+        if (state.accum >= 135) {
+          state.accum = 0;
+          triggerHapticFeedback(8);
+          onClose();
+        }
+      } else if (e.deltaY > 0) {
+        state.accum = 0;
+      }
+    },
+    [onClose]
+  );
+
   const backdropDim = Math.max(0.1, 1 - dragY / 280);
 
   return (
@@ -468,16 +507,17 @@ export const AnatomyDrawer: React.FC<AnatomyDrawerProps> = ({
       aria-labelledby="word-anatomy-title"
       onClick={onClose}
       style={{ opacity: backdropDim }}
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-black/45 backdrop-blur-xs anatomy-backdrop-enter"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-black/45 backdrop-blur-xs anatomy-backdrop-enter overscroll-none"
     >
       <div
         onClick={(e) => e.stopPropagation()}
         style={sheetStyle}
+        onWheel={handleSheetWheel}
         onTouchStart={handleBodyTouchStart}
         onTouchMove={handleBodyTouchMove}
         onTouchEnd={handleBodyTouchEnd}
         onTouchCancel={sheetTouchHandlers.onTouchCancel}
-        className="w-full max-w-xl surface-overlay border rounded-b-none sm:rounded-[var(--radius-card)] max-h-[86vh] flex flex-col overflow-hidden anatomy-sheet-enter"
+        className="w-full max-w-xl surface-overlay border rounded-b-none sm:rounded-[var(--radius-card)] max-h-[86vh] flex flex-col overflow-hidden anatomy-sheet-enter overscroll-y-contain"
       >
         {/* ==================== EDITORIAL HEADER ==================== */}
         <div
@@ -551,8 +591,11 @@ export const AnatomyDrawer: React.FC<AnatomyDrawerProps> = ({
         <div
           ref={sheetBodyRef}
           data-sheet-scroll="true"
-          style={{ height: bodyHeight !== null ? `${bodyHeight}px` : undefined }}
-          className="overflow-y-auto overflow-x-hidden anatomy-body-transition"
+          style={{
+            height: bodyHeight !== null ? `${bodyHeight}px` : undefined,
+            touchAction: isDragging ? 'none' : 'pan-y',
+          }}
+          className="overflow-y-auto overflow-x-hidden overscroll-y-contain anatomy-body-transition"
         >
           <div
             ref={contentMeasureRef}

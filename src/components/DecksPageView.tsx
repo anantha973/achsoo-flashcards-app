@@ -77,8 +77,15 @@ export interface EnrichedUnifiedDeck {
   mastered: number;
   learning: number;
   due: number;
+  masteredPct: number;
+  learningPct: number;
   progressPct: number;
 }
+
+export type DeckSubScreen =
+  | { type: 'root' }
+  | { type: 'folder'; folderId: string }
+  | { type: 'deck-detail'; deckId: string; returnFolderId?: string | null };
 
 interface DecksPageViewProps {
   allCards: VocabCard[];
@@ -97,14 +104,13 @@ interface DecksPageViewProps {
   speakingId: string | null;
   onResetDeckSrs: (cardIds: string[]) => void;
   onSubScreenChange?: (isNested: boolean) => void;
+  controlledSubScreen?: DeckSubScreen;
+  onControlledSubScreenChange?: (next: DeckSubScreen) => void;
+  onOpenSheetChange?: (hasOpenOverlay: boolean) => void;
+  dismissTopSheetRef?: React.MutableRefObject<(() => boolean) | null>;
 }
 
 type RootChipTab = 'all' | 'folders' | 'smart';
-
-type DeckSubScreen =
-  | { type: 'root' }
-  | { type: 'folder'; folderId: string }
-  | { type: 'deck-detail'; deckId: string; returnFolderId?: string | null };
 
 export const DecksPageView: React.FC<DecksPageViewProps> = ({
   allCards,
@@ -123,9 +129,26 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
   speakingId,
   onResetDeckSrs,
   onSubScreenChange,
+  controlledSubScreen,
+  onControlledSubScreenChange,
+  onOpenSheetChange,
+  dismissTopSheetRef,
 }) => {
   // Sub-screen navigation stack (Root <-> Folder View <-> Deck Card List) with 220ms push/pop
-  const [subScreen, setSubScreen] = useState<DeckSubScreen>({ type: 'root' });
+  const [internalSubScreen, setInternalSubScreen] = useState<DeckSubScreen>({
+    type: 'root',
+  });
+  const subScreen = controlledSubScreen ?? internalSubScreen;
+  const setSubScreen = useCallback(
+    (next: DeckSubScreen) => {
+      if (onControlledSubScreenChange) {
+        onControlledSubScreenChange(next);
+      } else {
+        setInternalSubScreen(next);
+      }
+    },
+    [onControlledSubScreenChange]
+  );
   const [subScreenNavDir, setSubScreenNavDir] = useState<'push' | 'pop'>('push');
   const [subScreenDragX, setSubScreenDragX] = useState(0);
   const [isSubScreenSwiping, setIsSubScreenSwiping] = useState(false);
@@ -288,7 +311,7 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
       setSubScreenKey((k) => k + 1);
       window.scrollTo({ top: 0, behavior: 'auto' });
     },
-    []
+    [setSubScreen]
   );
 
   useEffect(() => {
@@ -468,6 +491,7 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
 
         let totalCards = 0;
         let totalMastered = 0;
+        let totalLearning = 0;
         let totalDue = 0;
         let lastStudiedAt = 0;
         const levelCounts: Record<string, number> = { A1: 0, A2: 0, B1: 0 };
@@ -475,6 +499,7 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
         for (const d of childDecks) {
           totalCards += d.total;
           totalMastered += d.mastered;
+          totalLearning += d.learning;
           totalDue += d.due;
           if (d.lastStudiedAt > lastStudiedAt) {
             lastStudiedAt = d.lastStudiedAt;
@@ -484,8 +509,17 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
           }
         }
 
+        const masteredPct =
+          totalCards > 0 ? (totalMastered / totalCards) * 100 : 0;
+        const learningPct =
+          totalCards > 0 ? (totalLearning / totalCards) * 100 : 0;
         const progressPct =
-          totalCards > 0 ? Math.round((totalMastered / totalCards) * 100) : 0;
+          totalCards > 0
+            ? Math.min(
+                100,
+                Math.round(((totalMastered + totalLearning) / totalCards) * 100)
+              )
+            : 0;
 
         let dominantLevel = 'A1–B1';
         const topEntry = Object.entries(levelCounts).sort(
@@ -501,8 +535,11 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
           deckCount: childDecks.length,
           totalCards,
           totalMastered,
+          totalLearning,
           totalDue,
           lastStudiedAt,
+          masteredPct,
+          learningPct,
           progressPct,
           dominantLevel,
         };
@@ -571,8 +608,11 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
           deckCount: 0,
           totalCards: 0,
           totalMastered: 0,
+          totalLearning: 0,
           totalDue: 0,
           lastStudiedAt: 0,
+          masteredPct: 0,
+          learningPct: 0,
           progressPct: 0,
           dominantLevel: 'A1–B1',
         };
@@ -975,32 +1015,53 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
             {deck.title}
           </h3>
 
-          {/* Sleek progress bar with compact percentage at right end */}
+          {/* Segmented progress bar: mastered (solid) + reviewed (soft) */}
           <div className="flex items-center gap-2">
             <div
               role="progressbar"
               aria-valuenow={deck.progressPct}
               aria-valuemin={0}
               aria-valuemax={100}
-              aria-label={`${deck.title} progress`}
-              className="h-[3px] flex-1 rounded-full bg-[var(--surface-3)] overflow-hidden"
+              aria-label={`${deck.title} progress: ${deck.mastered} mastered, ${deck.learning} reviewed`}
+              className="h-1 flex-1 rounded-full bg-[var(--surface-3)] overflow-hidden flex"
             >
-              <div
-                style={{
-                  width: `${deck.progressPct}%`,
-                  backgroundColor: swatch.fgVar,
-                }}
-                className="h-full rounded-full transition-all duration-300"
-              />
+              {deck.masteredPct > 0 && (
+                <div
+                  style={{
+                    width: `${Math.min(100, deck.masteredPct)}%`,
+                    backgroundColor: swatch.fgVar,
+                  }}
+                  className="h-full transition-all duration-300"
+                />
+              )}
+              {deck.learningPct > 0 && (
+                <div
+                  style={{
+                    width: `${Math.min(
+                      100 - Math.min(100, deck.masteredPct),
+                      deck.learningPct
+                    )}%`,
+                    backgroundColor: swatch.fgVar,
+                    opacity: 0.42,
+                  }}
+                  className="h-full transition-all duration-300"
+                />
+              )}
             </div>
-            <span className="font-sans text-[11px] text-[var(--fg-muted)] tabular-nums shrink-0 leading-none">
+            <span className="font-sans text-[11px] font-medium text-[var(--fg-muted)] tabular-nums shrink-0 leading-none">
               {deck.progressPct}%
             </span>
           </div>
 
-          {/* Stats: ONE line, Inter 12px, muted, tabular-nums; drops mastered on very narrow screens */}
+          {/* Stats: ONE line, muted, tabular-nums */}
           <div className="font-sans text-[12px] text-[var(--fg-muted)] tabular-nums whitespace-nowrap overflow-hidden text-ellipsis leading-tight">
             <span>{deck.total} cards</span>
+            {deck.learning > 0 && (
+              <span className="hidden min-[375px]:inline">
+                {' '}
+                · {deck.learning} reviewed
+              </span>
+            )}
             <span className="hidden min-[375px]:inline">
               {' '}
               · {deck.mastered} mastered
@@ -1008,57 +1069,22 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
           </div>
         </div>
 
-        {/* 3. Right: Compact Due/New Pill + 32px Filled Primary Play Button (with 44px height hit zone) + "⋯" Menu */}
+        {/* 3. Right: Play Button (44px height hit zone) + "⋯" Menu */}
         <div className="flex items-center gap-0.5 shrink-0">
-          {(() => {
-            const newCount = Math.max(
-              0,
-              deck.total - deck.mastered - deck.learning
-            );
-            const hasActionableCards =
-              deck.due > 0 || (deck.id !== 'due' && newCount > 0);
-
-            if (!hasActionableCards) {
-              return (
-                <div
-                  aria-label="All caught up"
-                  title="0 due"
-                  className="w-7 h-7 rounded-full bg-[var(--surface-2)] text-[var(--intent-success)] flex items-center justify-center font-sans text-[12px] font-semibold shrink-0"
-                >
-                  ✓
-                </div>
-              );
-            }
-
-            return (
-              <>
-                {deck.due > 0 ? (
-                  <span className="h-[24px] px-2 rounded-[var(--radius-pill)] bg-[var(--intent-warning-soft)] text-[var(--intent-warning)] font-sans text-[11.5px] font-semibold tabular-nums whitespace-nowrap inline-flex items-center shrink-0">
-                    {deck.due} due
-                  </span>
-                ) : (
-                  <span className="h-[24px] px-2 rounded-[var(--radius-pill)] bg-[var(--surface-2)] text-[var(--fg-secondary)] font-sans text-[11.5px] font-semibold tabular-nums whitespace-nowrap inline-flex items-center shrink-0">
-                    {newCount} new
-                  </span>
-                )}
-
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onStartDeckStudy(deck.id, deck.cards);
-                  }}
-                  aria-label={`Play ${deck.title}`}
-                  title="Start study session"
-                  className="w-10 h-[44px] -my-1 flex items-center justify-center shrink-0 cursor-pointer theme-focus rounded-full"
-                >
-                  <span className="w-8 h-8 rounded-full bg-[var(--intent-primary)] text-[var(--intent-primary-fg)] flex items-center justify-center shadow-ring active:scale-95 transition-transform">
-                    <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
-                  </span>
-                </button>
-              </>
-            );
-          })()}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onStartDeckStudy(deck.id, deck.cards);
+            }}
+            aria-label={`Play ${deck.title}`}
+            title="Start study session"
+            className="w-10 h-[44px] -my-1 flex items-center justify-center shrink-0 cursor-pointer theme-focus rounded-full"
+          >
+            <span className="w-8 h-8 rounded-full bg-[var(--intent-primary)] text-[var(--intent-primary-fg)] flex items-center justify-center shadow-ring active:scale-95 transition-transform">
+              <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
+            </span>
+          </button>
 
           <button
             type="button"
@@ -1129,7 +1155,7 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
           iconId: folder.icon || 'Folder',
         })}
 
-        {/* Center: Title + Aggregate 3px Progress Bar + "A1 · 3 decks · 14 due" */}
+        {/* Center: Title + Segmented Progress Bar + "A2 · 10 decks" */}
         <div className="flex-1 min-w-0 space-y-1">
           <div className="flex items-center gap-1.5 min-w-0">
             <h3 className="font-display text-[15px] font-semibold leading-[1.24] text-[var(--fg-primary)] line-clamp-2 break-words">
@@ -1143,18 +1169,33 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
               aria-valuenow={folder.progressPct}
               aria-valuemin={0}
               aria-valuemax={100}
-              aria-label={`${folder.name} folder progress`}
-              className="h-[3px] flex-1 rounded-full bg-[var(--surface-3)] overflow-hidden"
+              aria-label={`${folder.name} folder progress: ${folder.totalMastered} mastered, ${folder.totalLearning} reviewed`}
+              className="h-1 flex-1 rounded-full bg-[var(--surface-3)] overflow-hidden flex"
             >
-              <div
-                style={{
-                  width: `${folder.progressPct}%`,
-                  backgroundColor: swatch.fgVar,
-                }}
-                className="h-full rounded-full transition-all duration-300"
-              />
+              {folder.masteredPct > 0 && (
+                <div
+                  style={{
+                    width: `${Math.min(100, folder.masteredPct)}%`,
+                    backgroundColor: swatch.fgVar,
+                  }}
+                  className="h-full transition-all duration-300"
+                />
+              )}
+              {folder.learningPct > 0 && (
+                <div
+                  style={{
+                    width: `${Math.min(
+                      100 - Math.min(100, folder.masteredPct),
+                      folder.learningPct
+                    )}%`,
+                    backgroundColor: swatch.fgVar,
+                    opacity: 0.42,
+                  }}
+                  className="h-full transition-all duration-300"
+                />
+              )}
             </div>
-            <span className="font-sans text-[11px] text-[var(--fg-muted)] tabular-nums shrink-0 leading-none">
+            <span className="font-sans text-[11px] font-medium text-[var(--fg-muted)] tabular-nums shrink-0 leading-none">
               {folder.progressPct}%
             </span>
           </div>
@@ -1165,22 +1206,17 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
               {' '}
               · {folder.deckCount} {folder.deckCount === 1 ? 'deck' : 'decks'}
             </span>
-            <span> · {folder.totalDue} due</span>
+            {folder.totalLearning > 0 && (
+              <span className="hidden min-[375px]:inline">
+                {' '}
+                · {folder.totalLearning} reviewed
+              </span>
+            )}
           </div>
         </div>
 
-        {/* Right: Due Pill (if due > 0) + "⋯" Menu + Chevron */}
+        {/* Right: "⋯" Menu + Chevron */}
         <div className="flex items-center gap-0.5 shrink-0">
-          {folder.totalDue > 0 ? (
-            <span className="h-[24px] px-2 rounded-[var(--radius-pill)] bg-[var(--intent-warning-soft)] text-[var(--intent-warning)] font-sans text-[11.5px] font-semibold tabular-nums whitespace-nowrap inline-flex items-center shrink-0">
-              {folder.totalDue} due
-            </span>
-          ) : (
-            <span className="w-7 h-7 rounded-full bg-[var(--surface-2)] text-[var(--intent-success)] flex items-center justify-center font-sans text-[12px] font-semibold shrink-0">
-              ✓
-            </span>
-          )}
-
           <button
             type="button"
             onClick={(e) => {
@@ -1205,14 +1241,44 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
     (filterCefr !== 'ALL' ? 1 : 0) + (filterArchetype !== 'ALL' ? 1 : 0);
 
   const sheetScrollRef = useRef<HTMLDivElement | null>(null);
-  const dismissActiveSheet = useCallback(() => {
-    if (editorState) setEditorState(null);
-    else if (isFilterSheetOpen) setIsFilterSheetOpen(false);
-    else if (deleteFolderTarget) setDeleteFolderTarget(null);
-    else if (assignToFolderId) setAssignToFolderId(null);
-    else if (moveTargetDeckId) setMoveTargetDeckId(null);
-    else if (actionFolderId) setActionFolderId(null);
-    else if (actionDeckId) setActionDeckId(null);
+  const dismissActiveSheet = useCallback((): boolean => {
+    if (editorState) {
+      setEditorState(null);
+      return true;
+    }
+    if (isFilterSheetOpen) {
+      setIsFilterSheetOpen(false);
+      return true;
+    }
+    if (deleteFolderTarget) {
+      setDeleteFolderTarget(null);
+      return true;
+    }
+    if (assignToFolderId) {
+      setAssignToFolderId(null);
+      return true;
+    }
+    if (moveTargetDeckId) {
+      setMoveTargetDeckId(null);
+      return true;
+    }
+    if (actionFolderId) {
+      setActionFolderId(null);
+      return true;
+    }
+    if (actionDeckId) {
+      setActionDeckId(null);
+      return true;
+    }
+    if (isSortMenuOpen) {
+      setIsSortMenuOpen(false);
+      return true;
+    }
+    if (isNewMenuOpen) {
+      setIsNewMenuOpen(false);
+      return true;
+    }
+    return false;
   }, [
     editorState,
     isFilterSheetOpen,
@@ -1221,6 +1287,8 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
     moveTargetDeckId,
     actionFolderId,
     actionDeckId,
+    isSortMenuOpen,
+    isNewMenuOpen,
   ]);
 
   const hasOpenSheet = Boolean(
@@ -1232,6 +1300,20 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
       actionFolderId ||
       actionDeckId
   );
+
+  const hasOpenOverlay = Boolean(hasOpenSheet || isSortMenuOpen || isNewMenuOpen);
+
+  useEffect(() => {
+    onOpenSheetChange?.(hasOpenOverlay);
+  }, [hasOpenOverlay, onOpenSheetChange]);
+
+  useEffect(() => {
+    if (!dismissTopSheetRef) return;
+    dismissTopSheetRef.current = dismissActiveSheet;
+    return () => {
+      dismissTopSheetRef.current = null;
+    };
+  }, [dismissTopSheetRef, dismissActiveSheet]);
 
   const {
     dragY: activeSheetDragY,
