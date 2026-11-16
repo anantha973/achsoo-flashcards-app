@@ -39,6 +39,7 @@ import {
   Wine,
 } from 'lucide-react';
 import { CardCategory, CefrLevel } from '../data/vocabData';
+import { DEFAULT_A2_CUSTOM_DECKS } from '../data/defaultDecks';
 import { syncWorkspaceToSupabase } from './supabaseSync';
 
 export type DeckTintId =
@@ -507,12 +508,12 @@ export function saveFolders(
 export function loadCustomDecks(): CustomDeckRecord[] {
   try {
     const raw = localStorage.getItem(CUSTOM_DECKS_STORAGE_KEY);
-    if (!raw) return [];
+    if (!raw) return DEFAULT_A2_CUSTOM_DECKS;
     const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
+    if (!Array.isArray(parsed) || parsed.length === 0) return DEFAULT_A2_CUSTOM_DECKS;
     return parsed;
   } catch {
-    return [];
+    return DEFAULT_A2_CUSTOM_DECKS;
   }
 }
 
