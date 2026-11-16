@@ -72,8 +72,9 @@ import {
   DeckFolder,
   DeckMetaOverride,
   DeckTintId,
+  archiveDummyDecksInWorkspace,
   ensureInitialTestFolderSeed,
-  loadCustomDecks,
+  needsRemoteArchiveDummyMigration,
   saveCustomDecks,
   saveDeckOverrides,
   saveFolders,
@@ -440,7 +441,7 @@ export default function App() {
       const seed = ensureInitialTestFolderSeed();
       hydrateEngineFromIndexedDB(loadAllCards(), {
         folders: seed.folders,
-        customDecks: loadCustomDecks(),
+        customDecks: seed.customDecks,
         deckOverrides: seed.deckOverrides,
         themePrefs: loadThemePreferences(),
       })
@@ -451,20 +452,39 @@ export default function App() {
           setStats(hydrated.stats);
           if (hydrated.remoteWorkspace) {
             const rw = hydrated.remoteWorkspace;
-            if (Array.isArray(rw.folders) && rw.folders.length > 0) {
-              setFolders(rw.folders);
-              saveFolders(rw.folders, true);
-            }
-            if (Array.isArray(rw.customDecks) && rw.customDecks.length > 0) {
-              setCustomDecks(rw.customDecks);
-              saveCustomDecks(rw.customDecks, true);
-            }
-            if (
-              rw.deckOverrides &&
-              Object.keys(rw.deckOverrides).length > 0
-            ) {
-              setDeckOverrides(rw.deckOverrides);
-              saveDeckOverrides(rw.deckOverrides, true);
+            const shouldMigrateRemote = needsRemoteArchiveDummyMigration({
+              folders: rw.folders,
+              deckOverrides: rw.deckOverrides,
+            });
+
+            if (shouldMigrateRemote) {
+              const migrated = archiveDummyDecksInWorkspace({
+                folders: rw.folders || [],
+                customDecks: rw.customDecks || [],
+                deckOverrides: rw.deckOverrides || {},
+              });
+              setFolders(migrated.folders);
+              saveFolders(migrated.folders);
+              setCustomDecks(migrated.customDecks);
+              saveCustomDecks(migrated.customDecks);
+              setDeckOverrides(migrated.deckOverrides);
+              saveDeckOverrides(migrated.deckOverrides);
+            } else {
+              if (Array.isArray(rw.folders) && rw.folders.length > 0) {
+                setFolders(rw.folders);
+                saveFolders(rw.folders, true);
+              }
+              if (Array.isArray(rw.customDecks) && rw.customDecks.length > 0) {
+                setCustomDecks(rw.customDecks);
+                saveCustomDecks(rw.customDecks, true);
+              }
+              if (
+                rw.deckOverrides &&
+                Object.keys(rw.deckOverrides).length > 0
+              ) {
+                setDeckOverrides(rw.deckOverrides);
+                saveDeckOverrides(rw.deckOverrides, true);
+              }
             }
             if (
               rw.themePrefs &&
@@ -615,8 +635,8 @@ export default function App() {
   const [folders, setFolders] = useState<DeckFolder[]>(
     () => ensureInitialTestFolderSeed().folders
   );
-  const [customDecks, setCustomDecks] = useState<CustomDeckRecord[]>(() =>
-    loadCustomDecks()
+  const [customDecks, setCustomDecks] = useState<CustomDeckRecord[]>(
+    () => ensureInitialTestFolderSeed().customDecks
   );
   const [deckOverrides, setDeckOverrides] = useState<
     Record<string, DeckMetaOverride>

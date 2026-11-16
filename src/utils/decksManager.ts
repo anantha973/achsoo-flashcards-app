@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   Apple,
+  Archive,
   Award,
   BookMarked,
   BookOpen,
@@ -352,6 +353,7 @@ const ARCHETYPE_ICON_MAP: Record<
   string,
   React.ComponentType<{ className?: string; strokeWidth?: number }>
 > = {
+  Archive,
   GitBranch,
   Shapes,
   SlidersHorizontal,
@@ -410,6 +412,21 @@ const DECK_OVERRIDES_STORAGE_KEY = 'wortschatz_deck_overrides_v1';
 const LAST_PICKER_CHOICE_KEY = 'wortschatz_last_icon_tint_v1';
 const DECK_SORT_STORAGE_KEY = 'wortschatz_deck_sort_v1';
 const TEST_FOLDER_SEED_KEY = 'wortschatz_test_folder_seeded_v1';
+const ARCHIVE_DUMMY_MIGRATION_KEY = 'wortschatz_archive_dummy_v1';
+
+export const ARCHIVE_FOLDER_ID = 'folder-archive-dummy';
+export const LEGACY_TEST_FOLDER_ID = 'folder-test-cefr';
+export const DUMMY_BUILTIN_DECK_IDS = [
+  'verb',
+  'noun',
+  'adj',
+  'preposition',
+  'conn',
+  'phrase',
+  'cefr-a1',
+  'cefr-a2',
+  'cefr-b1',
+] as const;
 
 export type DeckSortOption = 'last-studied' | 'due' | 'name';
 
@@ -538,54 +555,133 @@ export function saveDeckOverrides(
   }
 }
 
+export function archiveDummyDecksInWorkspace(params: {
+  folders: DeckFolder[];
+  customDecks: CustomDeckRecord[];
+  deckOverrides: Record<string, DeckMetaOverride>;
+}): {
+  folders: DeckFolder[];
+  customDecks: CustomDeckRecord[];
+  deckOverrides: Record<string, DeckMetaOverride>;
+  changed: boolean;
+} {
+  let changed = false;
+
+  const existingArchive = params.folders.find(
+    (f) =>
+      f.id === ARCHIVE_FOLDER_ID || f.name.trim().toLowerCase() === 'archive'
+  );
+  const archiveFolderId = existingArchive?.id || ARCHIVE_FOLDER_ID;
+
+  let nextFolders = params.folders.filter((f) => {
+    if (f.id === LEGACY_TEST_FOLDER_ID) {
+      changed = true;
+      return false;
+    }
+    return true;
+  });
+
+  if (!existingArchive) {
+    nextFolders = [
+      ...nextFolders,
+      {
+        id: archiveFolderId,
+        name: 'Archive',
+        icon: 'Archive',
+        tint: 'stone',
+        order: nextFolders.length,
+        createdAt: Date.now(),
+      },
+    ];
+    changed = true;
+  }
+
+  const nextOverrides: Record<string, DeckMetaOverride> = {
+    ...params.deckOverrides,
+  };
+  for (const deckId of DUMMY_BUILTIN_DECK_IDS) {
+    const prev = nextOverrides[deckId] || {};
+    if (!prev.hidden && prev.folderId !== archiveFolderId) {
+      nextOverrides[deckId] = {
+        ...prev,
+        folderId: archiveFolderId,
+      };
+      changed = true;
+    }
+  }
+
+  const nextCustomDecks = params.customDecks.map((cd) => {
+    if (cd.folderId !== archiveFolderId) {
+      changed = true;
+      return { ...cd, folderId: archiveFolderId };
+    }
+    return cd;
+  });
+
+  return {
+    folders: nextFolders,
+    customDecks: nextCustomDecks,
+    deckOverrides: nextOverrides,
+    changed,
+  };
+}
+
+export function needsRemoteArchiveDummyMigration(params: {
+  folders?: DeckFolder[];
+  deckOverrides?: Record<string, DeckMetaOverride>;
+}): boolean {
+  const folders = params.folders || [];
+  const hasArchiveFolder = folders.some(
+    (f) =>
+      f.id === ARCHIVE_FOLDER_ID || f.name.trim().toLowerCase() === 'archive'
+  );
+  if (hasArchiveFolder) return false;
+
+  const hasLegacyTestFolder = folders.some(
+    (f) => f.id === LEGACY_TEST_FOLDER_ID
+  );
+  const overrides = params.deckOverrides || {};
+  const hasLooseDummyBuiltin = DUMMY_BUILTIN_DECK_IDS.some(
+    (id) => !overrides[id]?.hidden && !overrides[id]?.folderId
+  );
+
+  return hasLegacyTestFolder || hasLooseDummyBuiltin;
+}
+
 export function ensureInitialTestFolderSeed(): {
   folders: DeckFolder[];
+  customDecks: CustomDeckRecord[];
   deckOverrides: Record<string, DeckMetaOverride>;
 } {
   const folders = loadFolders();
+  const customDecks = loadCustomDecks();
   const deckOverrides = loadDeckOverrides();
 
   try {
-    const alreadySeeded = localStorage.getItem(TEST_FOLDER_SEED_KEY) === '1';
-    if (!alreadySeeded && folders.length === 0) {
-      const sampleFolderId = 'folder-test-cefr';
-      const seededFolder: DeckFolder = {
-        id: sampleFolderId,
-        name: 'CEFR Stufen',
-        icon: 'GraduationCap',
-        tint: 'blue',
-        order: 0,
-        createdAt: Date.now(),
-      };
-      const nextFolders = [seededFolder];
-      const nextOverrides: Record<string, DeckMetaOverride> = {
-        ...deckOverrides,
-        'cefr-a1': {
-          ...(deckOverrides['cefr-a1'] || {}),
-          folderId: deckOverrides['cefr-a1']?.folderId ?? sampleFolderId,
-        },
-        'cefr-a2': {
-          ...(deckOverrides['cefr-a2'] || {}),
-          folderId: deckOverrides['cefr-a2']?.folderId ?? sampleFolderId,
-        },
-        'cefr-b1': {
-          ...(deckOverrides['cefr-b1'] || {}),
-          folderId: deckOverrides['cefr-b1']?.folderId ?? sampleFolderId,
-        },
-      };
-      saveFolders(nextFolders, true);
-      saveDeckOverrides(nextOverrides, true);
+    const alreadyArchived =
+      localStorage.getItem(ARCHIVE_DUMMY_MIGRATION_KEY) === '1';
+    if (!alreadyArchived) {
+      const migrated = archiveDummyDecksInWorkspace({
+        folders,
+        customDecks,
+        deckOverrides,
+      });
+      saveFolders(migrated.folders, true);
+      saveCustomDecks(migrated.customDecks, true);
+      saveDeckOverrides(migrated.deckOverrides, true);
       localStorage.setItem(TEST_FOLDER_SEED_KEY, '1');
-      return { folders: nextFolders, deckOverrides: nextOverrides };
-    }
-    if (!alreadySeeded) {
-      localStorage.setItem(TEST_FOLDER_SEED_KEY, '1');
+      localStorage.setItem(ARCHIVE_DUMMY_MIGRATION_KEY, '1');
+      return {
+        folders: migrated.folders,
+        customDecks: migrated.customDecks,
+        deckOverrides: migrated.deckOverrides,
+      };
     }
   } catch {
     // Ignore storage errors
   }
 
-  return { folders, deckOverrides };
+  return { folders, customDecks, deckOverrides };
 }
 
 export function loadDeckSortOption(): DeckSortOption {
