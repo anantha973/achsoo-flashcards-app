@@ -435,16 +435,65 @@ export default function App() {
 
   useEffect(() => {
     let active = true;
-    hydrateEngineFromIndexedDB(loadAllCards())
-      .then((hydrated) => {
-        if (!active) return;
-        setCards(hydrated.cards);
-        setSrsMap(hydrated.srsMap);
-        setStats(hydrated.stats);
+
+    const runSync = () => {
+      const seed = ensureInitialTestFolderSeed();
+      hydrateEngineFromIndexedDB(loadAllCards(), {
+        folders: seed.folders,
+        customDecks: loadCustomDecks(),
+        deckOverrides: seed.deckOverrides,
+        themePrefs: loadThemePreferences(),
       })
-      .catch(() => {});
+        .then((hydrated) => {
+          if (!active) return;
+          setCards(hydrated.cards);
+          setSrsMap(hydrated.srsMap);
+          setStats(hydrated.stats);
+          if (hydrated.remoteWorkspace) {
+            const rw = hydrated.remoteWorkspace;
+            if (Array.isArray(rw.folders) && rw.folders.length > 0) {
+              setFolders(rw.folders);
+              saveFolders(rw.folders, true);
+            }
+            if (Array.isArray(rw.customDecks) && rw.customDecks.length > 0) {
+              setCustomDecks(rw.customDecks);
+              saveCustomDecks(rw.customDecks, true);
+            }
+            if (
+              rw.deckOverrides &&
+              Object.keys(rw.deckOverrides).length > 0
+            ) {
+              setDeckOverrides(rw.deckOverrides);
+              saveDeckOverrides(rw.deckOverrides, true);
+            }
+            if (
+              rw.themePrefs &&
+              rw.themePrefs.themeId &&
+              rw.themePrefs.colorMode
+            ) {
+              setThemePrefs(rw.themePrefs);
+              applyThemePreferencesToDom(rw.themePrefs, false);
+            }
+          }
+        })
+        .catch(() => {});
+    };
+
+    runSync();
+
+    const handleOnline = () => runSync();
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        runSync();
+      }
+    };
+
+    window.addEventListener('online', handleOnline);
+    document.addEventListener('visibilitychange', handleVisibility);
     return () => {
       active = false;
+      window.removeEventListener('online', handleOnline);
+      document.removeEventListener('visibilitychange', handleVisibility);
     };
   }, []);
 

@@ -38,6 +38,7 @@ import {
   Wine,
 } from 'lucide-react';
 import { CardCategory, CefrLevel } from '../data/vocabData';
+import { syncWorkspaceToSupabase } from './supabaseSync';
 
 export type DeckTintId =
   | 'sage'
@@ -472,11 +473,17 @@ export function loadFolders(): DeckFolder[] {
   }
 }
 
-export function saveFolders(folders: DeckFolder[]): void {
+export function saveFolders(
+  folders: DeckFolder[],
+  skipRemoteSync = false
+): void {
   try {
     localStorage.setItem(FOLDERS_STORAGE_KEY, JSON.stringify(folders));
   } catch {
     // Ignore storage errors
+  }
+  if (!skipRemoteSync) {
+    void syncWorkspaceToSupabase({ folders });
   }
 }
 
@@ -492,11 +499,17 @@ export function loadCustomDecks(): CustomDeckRecord[] {
   }
 }
 
-export function saveCustomDecks(decks: CustomDeckRecord[]): void {
+export function saveCustomDecks(
+  decks: CustomDeckRecord[],
+  skipRemoteSync = false
+): void {
   try {
     localStorage.setItem(CUSTOM_DECKS_STORAGE_KEY, JSON.stringify(decks));
   } catch {
     // Ignore storage errors
+  }
+  if (!skipRemoteSync) {
+    void syncWorkspaceToSupabase({ customDecks: decks });
   }
 }
 
@@ -512,12 +525,16 @@ export function loadDeckOverrides(): Record<string, DeckMetaOverride> {
 }
 
 export function saveDeckOverrides(
-  overrides: Record<string, DeckMetaOverride>
+  overrides: Record<string, DeckMetaOverride>,
+  skipRemoteSync = false
 ): void {
   try {
     localStorage.setItem(DECK_OVERRIDES_STORAGE_KEY, JSON.stringify(overrides));
   } catch {
     // Ignore storage errors
+  }
+  if (!skipRemoteSync) {
+    void syncWorkspaceToSupabase({ deckOverrides: overrides });
   }
 }
 
@@ -556,8 +573,8 @@ export function ensureInitialTestFolderSeed(): {
           folderId: deckOverrides['cefr-b1']?.folderId ?? sampleFolderId,
         },
       };
-      saveFolders(nextFolders);
-      saveDeckOverrides(nextOverrides);
+      saveFolders(nextFolders, true);
+      saveDeckOverrides(nextOverrides, true);
       localStorage.setItem(TEST_FOLDER_SEED_KEY, '1');
       return { folders: nextFolders, deckOverrides: nextOverrides };
     }
@@ -583,11 +600,17 @@ export function loadDeckSortOption(): DeckSortOption {
   return 'name';
 }
 
-export function saveDeckSortOption(sort: DeckSortOption): void {
+export function saveDeckSortOption(
+  sort: DeckSortOption,
+  skipRemoteSync = false
+): void {
   try {
     localStorage.setItem(DECK_SORT_STORAGE_KEY, sort);
   } catch {
     // Ignore storage errors
+  }
+  if (!skipRemoteSync) {
+    void syncWorkspaceToSupabase({ deckSort: sort });
   }
 }
 

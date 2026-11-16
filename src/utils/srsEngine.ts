@@ -30,6 +30,15 @@ import {
   idbSaveCustomCard,
   requestPersistentStorage,
 } from './idbStorage';
+import {
+  type RemoteWorkspaceSnapshot,
+  deleteReviewsFromSupabase,
+  pullAndSyncSupabaseState,
+  pushAllStatesAndStatsToSupabase,
+  syncCustomCardToSupabase,
+  syncReviewEventToSupabase,
+  syncWorkspaceToSupabase,
+} from './supabaseSync';
 
 export const STUDY_DAY_ROLLOVER_HOUR = 4; // 04:00 local time rollover (Anki standard)
 export const MATURE_INTERVAL_DAYS = 21;
@@ -614,10 +623,11 @@ export function appendRatingEvent(params: {
   };
   saveSrsMap(updatedMap);
 
-  // Persist asynchronously to IndexedDB
+  // Persist asynchronously to IndexedDB & Supabase
   void idbAppendReviewLogAndState(logEntry, nextState);
 
   const updatedStats = deriveStudyStatsFromLogs(nextLogs, now);
+  void syncReviewEventToSupabase(logEntry, nextState, updatedStats);
 
   return {
     nextState,
@@ -692,11 +702,17 @@ export function undoLastReview(
   };
   saveSrsMap(updatedMap);
 
-  // Append the undo marker event and updated card state to IndexedDB (never delete from review_logs)
+  // Append the undo marker event and updated card state to IndexedDB & Supabase (never delete from review_logs)
   void idbAppendReviewLogAndState(undoMarkerEntry, restoredCardState);
 
   const remainingLogs = getEffectiveReviewLogs(nextAllLogs);
   const updatedStats = deriveStudyStatsFromLogs(nextAllLogs, now);
+  void syncReviewEventToSupabase(
+    undoMarkerEntry,
+    restoredCardState,
+    updatedStats
+  );
+
   return {
     undoneEntry,
     undoMarkerEntry,
@@ -731,16 +747,18 @@ export function mergeReviewLogsFromDevices(
 }
 
 /**
- * Hydrates the in-memory engine state from IndexedDB on app launch,
- * merging any local logs and requesting persistent storage from the browser.
+ * Hydrates the in-memory engine state from IndexedDB and Supabase on app launch,
+ * merging any local and cloud logs idempotently and requesting persistent storage.
  */
 export async function hydrateEngineFromIndexedDB(
-  currentCards: VocabCard[]
+  _currentCards: VocabCard[],
+  localWorkspace?: RemoteWorkspaceSnapshot
 ): Promise<{
   cards: VocabCard[];
   srsMap: Record<string, CardSrsState>;
   stats: StudyStats;
   logs: ReviewLogEntry[];
+  remoteWorkspace?: RemoteWorkspaceSnapshot | null;
 }> {
   void requestPersistentStorage();
 
@@ -757,19 +775,60 @@ export async function hydrateEngineFromIndexedDB(
   for (const c of [...localCustomCards, ...idbCustomCards]) {
     mergedCustomMap.set(c.id, c);
   }
+
+  const localLogs = loadReviewLogs();
+  const baseLocalLogs = sortAndDedupeReviewLogs([...idbLogs, ...localLogs]);
+  const baseCustomCards = Array.from(mergedCustomMap.values());
+
+  const tempCards = validateAndNormalizeContentCards([
+    ...INITIAL_CARDS,
+    ...baseCustomCards,
+  ]);
+  const localSrs = loadSrsMap(tempCards);
+  const baseOrphanStates: Record<string, CardSrsState> = {
+    ...idbStates,
+    ...localSrs,
+  };
+
+  // Pull & merge with Supabase cloud database if available
+  const remoteResult = await pullAndSyncSupabaseState({
+    localLogs: baseLocalLogs,
+    localStates: baseOrphanStates,
+    localCustomCards: baseCustomCards,
+    localWorkspace,
+  });
+
+  if (remoteResult?.remoteCustomCards?.length) {
+    for (const rc of remoteResult.remoteCustomCards) {
+      mergedCustomMap.set(rc.id, rc);
+      void idbSaveCustomCard(rc);
+    }
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(
+          CUSTOM_CARDS_STORAGE_KEY,
+          JSON.stringify(Array.from(mergedCustomMap.values()))
+        );
+      }
+    } catch {
+      // Ignore
+    }
+  }
+
   const allCards = validateAndNormalizeContentCards([
     ...INITIAL_CARDS,
     ...Array.from(mergedCustomMap.values()),
   ]);
 
-  const localLogs = loadReviewLogs();
-  const mergedLogs = sortAndDedupeReviewLogs([...idbLogs, ...localLogs]);
+  const mergedLogs = sortAndDedupeReviewLogs([
+    ...baseLocalLogs,
+    ...(remoteResult?.remoteLogs || []),
+  ]);
   saveReviewLogsMirror(mergedLogs);
 
-  const localSrs = loadSrsMap(allCards);
   const orphanBase: Record<string, CardSrsState> = {
-    ...idbStates,
-    ...localSrs,
+    ...(remoteResult?.remoteStates || {}),
+    ...baseOrphanStates,
   };
 
   const srsMap =
@@ -778,12 +837,23 @@ export async function hydrateEngineFromIndexedDB(
       : orphanBase;
   saveSrsMap(srsMap);
 
-  if (mergedLogs.length > idbLogs.length) {
+  if (mergedLogs.length > idbLogs.length || remoteResult) {
     void idbPutReviewLogsBulk(mergedLogs, srsMap);
   }
 
   const stats = deriveStudyStatsFromLogs(mergedLogs);
-  return { cards: allCards, srsMap, stats, logs: mergedLogs };
+
+  if (remoteResult) {
+    void pushAllStatesAndStatsToSupabase(srsMap, stats);
+  }
+
+  return {
+    cards: allCards,
+    srsMap,
+    stats,
+    logs: mergedLogs,
+    remoteWorkspace: remoteResult?.remoteWorkspace ?? null,
+  };
 }
 
 export function loadAllCards(): VocabCard[] {
@@ -803,6 +873,7 @@ export function loadAllCards(): VocabCard[] {
 
 export function saveCustomCard(newCard: VocabCard): VocabCard[] {
   void idbSaveCustomCard(newCard);
+  void syncCustomCardToSupabase(newCard);
   try {
     const raw =
       typeof localStorage !== 'undefined'
@@ -884,7 +955,9 @@ export function resetAllSrsProgress(
   } catch {
     // Ignore
   }
+  const emptyStats = deriveStudyStatsFromLogs([]);
   void idbClearReviewsForCards();
+  void deleteReviewsFromSupabase(undefined, emptyStats);
 
   const fresh: Record<string, CardSrsState> = {};
   for (const c of cards) {
@@ -915,6 +988,7 @@ export function resetCardsSrsProgress(
   }
   saveSrsMap(nextMap);
   const updatedStats = deriveStudyStatsFromLogs(remainingLogs, now);
+  void deleteReviewsFromSupabase(cardIds, updatedStats);
   return { updatedMap: nextMap, updatedStats };
 }
 
@@ -1080,6 +1154,10 @@ export function applyThemePreferencesToDom(
       localStorage.setItem(THEME_V2_STORAGE_KEY, JSON.stringify(prefs));
     } catch {
       // Ignore storage errors
+    }
+
+    if (useViewTransition) {
+      void syncWorkspaceToSupabase({ themePrefs: prefs });
     }
 
     if (typeof window !== 'undefined') {
