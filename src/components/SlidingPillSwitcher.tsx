@@ -130,11 +130,11 @@ export function SlidingPillSwitcher<T extends string = string>({
 
   const padClass = isFilled
     ? size === 'sm'
-      ? 'min-h-[32px] px-2.5 py-1 text-xs font-semibold'
-      : 'min-h-[36px] px-3 py-1.5 text-[12.5px] font-semibold'
+      ? 'min-h-[38px] sm:min-h-[34px] px-3.5 sm:px-3 py-1.5 text-[13px] sm:text-xs font-semibold'
+      : 'min-h-[40px] sm:min-h-[38px] px-4 py-1.5 text-[13.5px] sm:text-[13px] font-semibold'
     : size === 'sm'
-    ? 'px-3 py-1 text-[11px] font-semibold'
-    : 'px-3.5 sm:px-4 py-1.5 text-xs font-semibold';
+    ? 'min-h-[34px] sm:min-h-[30px] px-3 py-1 text-xs sm:text-[11px] font-semibold'
+    : 'min-h-[38px] px-3.5 sm:px-4 py-1.5 text-[13px] sm:text-xs font-semibold';
 
   const trackClass = isFilled
     ? `filled-pill-track max-w-full overflow-x-auto no-scrollbar ${className}`

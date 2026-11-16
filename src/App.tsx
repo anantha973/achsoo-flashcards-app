@@ -1266,11 +1266,6 @@ export default function App() {
     cardShownAtRef.current = performance.now();
   }, [currentCard?.id, activeView]);
 
-  // Lapse Hint on Anatomie [D] button if last rating was 'again' or 'hard'
-  const hasRecentLapse =
-    currentCardSrs.lastRating === 'again' ||
-    currentCardSrs.lastRating === 'hard';
-
   // Native Web Speech API (de-DE)
   const handlePlayAudio = useCallback(
     (textToSpeak?: string, idTag = 'main', e?: React.MouseEvent) => {
@@ -1749,16 +1744,20 @@ export default function App() {
         setDetailCard((prev) => (prev ? null : currentCard));
       } else if (!detailCard && e.key === '1') {
         e.preventDefault();
-        handleRateCard('again');
+        if (isFlipped) handleRateCard('again');
+        else handleFlipCard();
       } else if (!detailCard && e.key === '2') {
         e.preventDefault();
-        handleRateCard('hard');
+        if (isFlipped) handleRateCard('hard');
+        else handleFlipCard();
       } else if (!detailCard && e.key === '3') {
         e.preventDefault();
-        handleRateCard('good');
+        if (isFlipped) handleRateCard('good');
+        else handleFlipCard();
       } else if (!detailCard && e.key === '4') {
         e.preventDefault();
-        handleRateCard('easy');
+        if (isFlipped) handleRateCard('easy');
+        else handleFlipCard();
       } else if (e.key.toLowerCase() === 'a') {
         e.preventDefault();
         handlePlayAudio(
@@ -2376,6 +2375,13 @@ export default function App() {
     return 'fluid-lemma-short';
   };
 
+  const getFluidBackLemmaClass = (lemma: string) => {
+    const len = lemma.length;
+    if (len > 22) return 'fluid-back-lemma-long';
+    if (len > 14) return 'fluid-back-lemma-medium';
+    return 'fluid-back-lemma';
+  };
+
   const getFluidMeaningClass = (meaning: string) => {
     return meaning.length > 32 ? 'fluid-meaning-long' : 'fluid-meaning';
   };
@@ -2478,12 +2484,12 @@ export default function App() {
         aria-haspopup="dialog"
         aria-label={`Select theme: ${activeThemeMeta.name}`}
         title={`Theme: ${activeThemeMeta.name} (Click to choose Linen Nordic, Hero UI, or Coss UI)`}
-        className="min-h-[38px] px-3 py-1.5 radius-control surface-1 border shadow-ring flex items-center gap-1.5 text-xs font-semibold text-[var(--fg-primary)] hover:bg-[var(--surface-2)] active:scale-95 transition-[background-color,color,border-color,box-shadow,transform] duration-150 theme-focus cursor-pointer"
+        className="min-h-[40px] sm:min-h-[38px] px-3 py-1.5 radius-control surface-1 border shadow-ring flex items-center gap-1.5 text-xs font-semibold text-[var(--fg-primary)] hover:bg-[var(--surface-2)] active:scale-95 transition-[background-color,color,border-color,box-shadow,transform] duration-150 theme-focus cursor-pointer"
       >
-        <Palette className="w-3.5 h-3.5 text-terracotta" />
+        <Palette className="w-4 h-4 sm:w-3.5 sm:h-3.5 text-terracotta" />
         <span className="hidden sm:inline">{activeThemeMeta.shortName}</span>
         <ChevronDown
-          className={`w-3 h-3 text-[var(--fg-muted)] transition-transform duration-150 ${
+          className={`w-3.5 h-3.5 sm:w-3 sm:h-3 text-[var(--fg-muted)] transition-transform duration-150 ${
             isThemePopoverOpen ? 'rotate-180' : ''
           }`}
         />
@@ -2633,7 +2639,7 @@ export default function App() {
     <>
         {/* ==================== VIEW 1: 3-LAYER FLASHCARD STUDIO ==================== */}
         {viewToRender === 'study' && (
-          <div className="max-w-[500px] w-full mx-auto flex flex-col gap-2.5 sm:gap-3.5 md:my-auto">
+          <div className="max-w-[520px] w-full mx-auto flex-1 flex flex-col gap-3 sm:gap-3.5 md:flex-initial md:my-auto">
             {/* Standard Studio Deck Strip OR Minimalist Zen HUD */}
             {!isZenSessionActive ? (
               <div className="flex items-center justify-between gap-2">
@@ -2662,9 +2668,9 @@ export default function App() {
                   }}
                   title="Enter Distraction-Free Zen Session Mode [Z]"
                   aria-label="Enter Zen Focus Mode"
-                  className="min-h-[32px] px-2.5 rounded-[var(--radius-pill)] text-xs font-semibold text-[var(--fg-secondary)] hover:text-[var(--fg-primary)] hover:bg-black/[0.04] dark:hover:bg-white/[0.06] inline-flex items-center gap-1.5 shrink-0 cursor-pointer transition-colors theme-focus"
+                  className="min-h-[38px] min-w-[38px] sm:min-h-[34px] px-3 rounded-[var(--radius-pill)] text-xs font-semibold text-[var(--fg-secondary)] hover:text-[var(--fg-primary)] hover:bg-black/[0.04] dark:hover:bg-white/[0.06] inline-flex items-center justify-center gap-1.5 shrink-0 cursor-pointer transition-colors theme-focus"
                 >
-                  <Maximize2 className="w-3.5 h-3.5 text-[var(--accent-secondary)]" />
+                  <Maximize2 className="w-4 h-4 sm:w-3.5 sm:h-3.5 text-[var(--accent-secondary)]" />
                   <span className="hidden sm:inline">Zen</span>
                 </button>
               </div>
@@ -2702,13 +2708,13 @@ export default function App() {
                   onClick={handlePrevCard}
                   aria-label="Previous card"
                   title="Previous card (←)"
-                  className="w-7 h-7 rounded-full flex items-center justify-center text-[var(--fg-secondary)] hover:text-[var(--fg-primary)] hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors shrink-0 cursor-pointer"
+                  className="w-9 h-9 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-[var(--fg-secondary)] hover:text-[var(--fg-primary)] hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors shrink-0 cursor-pointer"
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
 
                 <div className="flex-1 space-y-1">
-                  <div className="flex items-center justify-between text-[11px] font-sans tabular-nums">
+                  <div className="flex items-center justify-between text-xs font-sans tabular-nums">
                     <span className="font-semibold text-[var(--fg-primary)]">
                       {currentIndex + 1}{' '}
                       <span className="text-[var(--fg-muted)] font-normal">
@@ -2746,7 +2752,7 @@ export default function App() {
                   onClick={handleNextCard}
                   aria-label="Next card"
                   title="Next card (→)"
-                  className="w-7 h-7 rounded-full flex items-center justify-center text-[var(--fg-secondary)] hover:text-[var(--fg-primary)] hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors shrink-0 cursor-pointer"
+                  className="w-9 h-9 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-[var(--fg-secondary)] hover:text-[var(--fg-primary)] hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors shrink-0 cursor-pointer"
                 >
                   <ChevronRight className="w-4 h-4" />
                 </button>
@@ -2792,9 +2798,9 @@ export default function App() {
             ) : (
               currentCard && (
                 <>
-                  {/* ==================== 3D FLASHCARD STAGE (FLUID CLAMP(), TOUCH SWIPE & SCROLL-UP ANIMATIONS) ==================== */}
+                  {/* ==================== 3D FLASHCARD STAGE (FLUID CLAMP(), TOUCH SWIPE & 40/60 SPLIT BACKSIDE) ==================== */}
                   <div
-                    className={`perspective-stage w-full card-deck-motion touch-pan-y ${
+                    className={`perspective-stage w-full flex-1 flex flex-col card-deck-motion touch-pan-y ${
                       cardMotion !== 'idle' ? cardMotion : ''
                     }`}
                   >
@@ -2859,7 +2865,7 @@ export default function App() {
 
                       {/* ==================== LAYER 0: CARD FRONT (THE GERMAN WORD ONLY) ==================== */}
                       <div className="flip-card-face flip-card-front rounded-[var(--radius-card)] surface-paper border fluid-card-pad flex flex-col justify-between">
-                        {/* Top Row: Minimal Audio Button Only */}
+                        {/* Top Row: 44x44px Mobile Audio Button */}
                         <div className="flex items-center justify-end">
                           <button
                             type="button"
@@ -2872,18 +2878,18 @@ export default function App() {
                             }
                             aria-label="Play German pronunciation"
                             title="Listen [A]"
-                            className={`w-9 h-9 sm:w-9 sm:h-9 -mr-1 rounded-full flex items-center justify-center transition-all shrink-0 cursor-pointer active:scale-90 theme-focus ${
+                            className={`w-11 h-11 sm:w-10 sm:h-10 -mr-1 rounded-full flex items-center justify-center transition-all shrink-0 cursor-pointer active:scale-90 theme-focus ${
                               speakingId === 'front-lemma'
                                 ? 'bg-[var(--intent-primary-soft)] text-[var(--intent-primary)] scale-105'
                                 : 'text-[var(--fg-secondary)] hover:text-[var(--fg-primary)] hover:bg-black/[0.04] dark:hover:bg-white/[0.06]'
                             }`}
                           >
-                            <Volume2 className="w-4 h-4 sm:w-5 sm:h-5" />
+                            <Volume2 className="w-5 h-5" />
                           </button>
                         </div>
 
                         {/* Center: Pure German Word Prompt (Length-Aware Fluid clamp() Font Scaling) */}
-                        <div className="my-auto text-center py-4 sm:py-8 px-1">
+                        <div className="my-auto text-center py-6 sm:py-8 px-1">
                           <h2
                             className={`font-lemma font-semibold tracking-tight text-[var(--fg-primary)] break-words text-balance ${getFluidLemmaClass(
                               currentCard.lemma
@@ -2894,21 +2900,21 @@ export default function App() {
                         </div>
 
                         {/* Bottom Row: Subtle Flip Hint */}
-                        <div className="pt-2 border-t border-[var(--border-subtle)] flex items-center justify-between text-xs text-[var(--fg-muted)]">
+                        <div className="pt-2.5 border-t border-[var(--border-subtle)] flex items-center justify-between text-[13px] sm:text-xs text-[var(--fg-muted)]">
                           <span className="inline-flex items-center gap-1.5">
-                            <RotateCw className="w-3.5 h-3.5" />
+                            <RotateCw className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
                             <span>Tap to flip</span>
                           </span>
-                          <span className="font-sans text-[11px] sm:hidden">
+                          <span className="font-sans text-xs sm:hidden">
                             Swipe · Hold for audio
                           </span>
-                          <span className="font-sans text-[11px] hidden sm:inline">
+                          <span className="font-sans text-xs hidden sm:inline">
                             [Space] Flip · [D] Anatomie
                           </span>
                         </div>
                       </div>
 
-                      {/* ==================== LAYER 1: CARD BACK (CHOREOGRAPHED SCROLL-UP MEANING -> 3 FORMS & SENTENCE) ==================== */}
+                      {/* ==================== LAYER 1: CARD BACK (40/60 UPPER-LOWER SPLIT -> STAGE 2 EXPANDED FORMS & SENTENCE) ==================== */}
                       <div
                         onWheel={(e) => {
                           if (!isFlipped) return;
@@ -2927,7 +2933,7 @@ export default function App() {
 
                           return (
                             <div className="backside-stage-grid">
-                              {/* ========== STAGE 1 LAYER: PURE ENGLISH MEANING HERO + SMALL 3 FORMS BELOW ========== */}
+                              {/* ========== STAGE 1 LAYER: 40% UPPER GERMAN WORD / 60% LOWER ENGLISH MEANING + 3 FORMS ========== */}
                               <div
                                 aria-hidden={isBackExpanded}
                                 className={`backside-stage-layer ${
@@ -2936,13 +2942,9 @@ export default function App() {
                                     : 'backside-stage-1-visible'
                                 }`}
                               >
-                                {/* Quiet Top Header (Lemma Only, No CEFR/Category Tags) */}
-                                <div className="flex items-center justify-between gap-2">
-                                  <div className="font-lemma text-xs sm:text-sm font-medium text-[var(--fg-secondary)] truncate min-w-0">
-                                    {renderFormattedLemma(currentCard)}
-                                  </div>
-
-                                  <div className="flex items-center gap-1 shrink-0">
+                                {/* UPPER ~40% ZONE: Top-Left Anatomie + Top-Right Speaker & Prominent Centered German Word */}
+                                <div className="flex-[2] flex flex-col justify-between pb-3 border-b border-[var(--border-subtle)] min-h-0">
+                                  <div className="flex items-center justify-between gap-2 shrink-0">
                                     <button
                                       type="button"
                                       onClick={(e) => {
@@ -2950,15 +2952,9 @@ export default function App() {
                                         triggerHapticFeedback(10);
                                         setDetailCard(currentCard);
                                       }}
-                                      className="inline-flex items-center gap-1 px-2 py-1 rounded-[var(--radius-pill)] text-xs font-semibold text-[var(--accent-secondary)] hover:bg-[var(--accent-secondary-soft)] transition-colors cursor-pointer theme-focus"
+                                      className="min-h-[38px] -ml-1.5 inline-flex items-center px-2 py-1.5 rounded-[var(--radius-control)] text-[14px] sm:text-sm font-semibold text-[var(--accent-secondary)] hover:opacity-80 active:scale-95 transition-all cursor-pointer theme-focus"
                                       title="Open Anatomie [D]"
                                     >
-                                      {hasRecentLapse && (
-                                        <span
-                                          className="w-1.5 h-1.5 rounded-full bg-[var(--accent-terracotta)]"
-                                          aria-hidden="true"
-                                        />
-                                      )}
                                       <span>Anatomie</span>
                                     </button>
 
@@ -2973,67 +2969,81 @@ export default function App() {
                                       }
                                       aria-label="Play word audio"
                                       title="Listen [A]"
-                                      className={`w-8 h-8 -mr-1 rounded-full flex items-center justify-center shrink-0 transition-all cursor-pointer active:scale-90 theme-focus ${
+                                      className={`w-11 h-11 sm:w-10 sm:h-10 -mr-1 rounded-full flex items-center justify-center shrink-0 transition-all cursor-pointer active:scale-90 theme-focus ${
                                         speakingId === 'back-lemma'
-                                          ? 'bg-[var(--intent-primary-soft)] text-[var(--intent-primary)]'
+                                          ? 'bg-[var(--intent-primary-soft)] text-[var(--intent-primary)] scale-105'
                                           : 'text-[var(--fg-secondary)] hover:text-[var(--fg-primary)] hover:bg-black/[0.04] dark:hover:bg-white/[0.06]'
                                       }`}
                                     >
-                                      <Volume2 className="w-4 h-4" />
+                                      <Volume2 className="w-5 h-5" />
                                     </button>
                                   </div>
+
+                                  {/* Prominent Centered German Word in Upper 40% */}
+                                  <div className="my-auto text-center py-2 px-1">
+                                    <div
+                                      className={`font-lemma font-semibold tracking-tight text-[var(--fg-primary)] break-words text-balance ${getFluidBackLemmaClass(
+                                        currentCard.lemma
+                                      )}`}
+                                    >
+                                      {renderFormattedLemma(currentCard)}
+                                    </div>
+                                  </div>
                                 </div>
 
-                                {/* Center Hero: Pure English Meaning Only (Fluid clamp() Sizing) */}
-                                <div className="my-auto text-center py-4 sm:py-6 px-1">
-                                  <p
-                                    className={`font-display font-bold tracking-tight text-[var(--fg-primary)] text-balance ${getFluidMeaningClass(
-                                      currentCard.translation
-                                    )}`}
-                                  >
-                                    {currentCard.translation}
-                                  </p>
-                                </div>
-
-                                {/* Bottom Whisper Strip: Small 3 Forms + Clean Static ChevronUp */}
-                                <div
-                                  role="button"
-                                  tabIndex={isBackExpanded ? -1 : 0}
-                                  aria-label="Expand forms and example sentence"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    triggerHapticFeedback(10);
-                                    setIsBackExpanded(true);
-                                  }}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter' || e.key === ' ') {
-                                      e.preventDefault();
-                                      e.stopPropagation();
-                                      setIsBackExpanded(true);
-                                    }
-                                  }}
-                                  className="pt-2 border-t border-[var(--border-subtle)] -mx-1.5 px-1.5 pb-0.5 rounded-xl hover:bg-black/[0.02] dark:hover:bg-white/[0.03] transition-colors cursor-pointer group"
-                                >
-                                  {/* Minimal Static Pull-Up Indicator */}
-                                  <div className="flex items-center justify-center text-[var(--fg-muted)] group-hover:text-[var(--accent-secondary)] transition-colors mb-1">
-                                    <ChevronUp className="w-4 h-4" />
+                                {/* LOWER ~60% ZONE: Prominent Centered English Meaning + Subordinate 3-Forms Whisper Strip */}
+                                <div className="flex-[3] flex flex-col justify-between pt-3 min-h-0">
+                                  {/* Center of Lower 60%: Pure English Meaning Hero */}
+                                  <div className="my-auto text-center py-3 sm:py-4 px-1">
+                                    <p
+                                      className={`font-display font-bold tracking-tight text-[var(--fg-primary)] text-balance ${getFluidMeaningClass(
+                                        currentCard.translation
+                                      )}`}
+                                    >
+                                      {currentCard.translation}
+                                    </p>
                                   </div>
 
-                                  {/* Small 3-Forms Whisper Preview */}
-                                  {threeForms.length > 0 && (
-                                    <div className="grid grid-cols-3 gap-1.5 text-center">
-                                      {threeForms.map((f) => (
-                                        <div key={f.label} className="min-w-0">
-                                          <div className="text-[10px] font-sans font-medium text-[var(--fg-muted)] opacity-80 truncate">
-                                            {f.label}
-                                          </div>
-                                          <div className="text-[11px] sm:text-xs font-medium text-[var(--fg-secondary)] truncate">
-                                            {f.shortValue}
-                                          </div>
-                                        </div>
-                                      ))}
+                                  {/* Bottom Whisper Strip: Subordinate Smaller 3 Forms + Clean Static ChevronUp */}
+                                  <div
+                                    role="button"
+                                    tabIndex={isBackExpanded ? -1 : 0}
+                                    aria-label="Expand forms and example sentence"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      triggerHapticFeedback(10);
+                                      setIsBackExpanded(true);
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter' || e.key === ' ') {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        setIsBackExpanded(true);
+                                      }
+                                    }}
+                                    className="pt-2 border-t border-[var(--border-subtle)] -mx-1.5 px-1.5 pb-0.5 rounded-xl hover:bg-black/[0.02] dark:hover:bg-white/[0.03] transition-colors cursor-pointer group"
+                                  >
+                                    {/* Minimal Static Pull-Up Indicator */}
+                                    <div className="flex items-center justify-center text-[var(--fg-muted)] group-hover:text-[var(--accent-secondary)] transition-colors mb-1">
+                                      <ChevronUp className="w-4 h-4" />
                                     </div>
-                                  )}
+
+                                    {/* Small 3-Forms Whisper Preview */}
+                                    {threeForms.length > 0 && (
+                                      <div className="grid grid-cols-3 gap-1.5 text-center">
+                                        {threeForms.map((f) => (
+                                          <div key={f.label} className="min-w-0">
+                                            <div className="text-[10.5px] font-sans font-medium text-[var(--fg-muted)] opacity-85 truncate">
+                                              {f.label}
+                                            </div>
+                                            <div className="text-xs font-medium text-[var(--fg-secondary)] truncate">
+                                              {f.shortValue}
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
 
@@ -3046,7 +3056,7 @@ export default function App() {
                                     : 'backside-stage-2-hidden-below'
                                 }`}
                               >
-                                {/* Compact Docked Meaning Header */}
+                                {/* Compact Docked German + English Meaning Header */}
                                 <div
                                   role="button"
                                   tabIndex={isBackExpanded ? 0 : -1}
@@ -3062,22 +3072,22 @@ export default function App() {
                                       setIsBackExpanded(false);
                                     }
                                   }}
-                                  className="flex items-center justify-between gap-2 pb-2 border-b border-[var(--border-subtle)] cursor-pointer group"
-                                  title="Scroll down or tap to return to English meaning"
+                                  className="flex items-center justify-between gap-2 pb-2.5 border-b border-[var(--border-subtle)] cursor-pointer group"
+                                  title="Scroll down or tap to return to 40/60 German-English split"
                                 >
-                                  <div className="min-w-0 flex items-baseline gap-1.5 flex-wrap">
-                                    <span className="font-lemma text-xs sm:text-sm font-semibold text-[var(--fg-secondary)]">
+                                  <div className="min-w-0 flex items-baseline gap-2 flex-wrap">
+                                    <span className="font-lemma text-sm sm:text-base font-semibold text-[var(--fg-primary)]">
                                       {renderFormattedLemma(currentCard)}
                                     </span>
                                     <span className="text-[var(--fg-muted)] text-xs">
                                       —
                                     </span>
-                                    <span className="font-display text-xs sm:text-sm font-bold text-[var(--accent-secondary)] truncate">
+                                    <span className="font-display text-sm sm:text-base font-bold text-[var(--accent-secondary)] truncate">
                                       {currentCard.translation}
                                     </span>
                                   </div>
 
-                                  <span className="inline-flex items-center gap-0.5 text-xs font-medium text-[var(--fg-muted)] group-hover:text-[var(--fg-primary)] shrink-0">
+                                  <span className="w-8 h-8 rounded-full inline-flex items-center justify-center text-xs font-medium text-[var(--fg-muted)] group-hover:text-[var(--fg-primary)] group-hover:bg-black/[0.04] dark:group-hover:bg-white/[0.06] shrink-0">
                                     <ChevronDown className="w-4 h-4" />
                                   </span>
                                 </div>
@@ -3085,10 +3095,10 @@ export default function App() {
                                 {/* Big 3 Forms (Staggered Spring Rise + Responsive Multi-Column Stacking) */}
                                 <div
                                   onClick={(e) => e.stopPropagation()}
-                                  className="my-auto py-2.5 space-y-2.5 cursor-default"
+                                  className="my-auto py-3 space-y-3 cursor-default"
                                 >
                                   {threeForms.length > 0 && (
-                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5 sm:gap-3 pb-2.5 border-b border-[var(--border-subtle)]">
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3 pb-3 border-b border-[var(--border-subtle)]">
                                       {threeForms.map((f, idx) => (
                                         <div
                                           key={f.label}
@@ -3099,7 +3109,7 @@ export default function App() {
                                           }}
                                           className="scroll-up-item flex items-baseline justify-between sm:flex-col sm:items-start sm:justify-start gap-2 sm:gap-0.5 min-w-0"
                                         >
-                                          <span className="text-[11px] font-sans font-medium text-[var(--fg-muted)] shrink-0">
+                                          <span className="text-xs font-sans font-medium text-[var(--fg-muted)] shrink-0">
                                             {f.label}
                                           </span>
                                           <span className="font-lemma fluid-form-value font-semibold tracking-tight text-right sm:text-left break-words">
@@ -3117,7 +3127,7 @@ export default function App() {
                                         ? '135ms'
                                         : '0ms',
                                     }}
-                                    className="scroll-up-item flex items-start justify-between gap-2"
+                                    className="scroll-up-item flex items-start justify-between gap-2.5"
                                   >
                                     <div className="space-y-1 min-w-0">
                                       <p
@@ -3130,7 +3140,7 @@ export default function App() {
                                           currentCard.highlightTarget
                                         )}
                                       </p>
-                                      <p className="font-sans text-xs text-[var(--fg-muted)] leading-snug text-pretty">
+                                      <p className="font-sans text-xs sm:text-[13px] text-[var(--fg-muted)] leading-snug text-pretty">
                                         {currentCard.exampleEn}
                                       </p>
                                     </div>
@@ -3146,27 +3156,27 @@ export default function App() {
                                       }
                                       aria-label="Listen to example sentence"
                                       title="Play sentence"
-                                      className={`w-8 h-8 -mr-1 rounded-full flex items-center justify-center shrink-0 transition-all cursor-pointer active:scale-90 theme-focus ${
+                                      className={`w-10 h-10 -mr-1 rounded-full flex items-center justify-center shrink-0 transition-all cursor-pointer active:scale-90 theme-focus ${
                                         speakingId === 'back-sentence'
                                           ? 'bg-[var(--intent-primary-soft)] text-[var(--intent-primary)]'
                                           : 'text-[var(--fg-secondary)] hover:text-[var(--fg-primary)] hover:bg-black/[0.04] dark:hover:bg-white/[0.06]'
                                       }`}
                                     >
-                                      <Volume2 className="w-4 h-4" />
+                                      <Volume2 className="w-4 h-4 sm:w-5 sm:h-5" />
                                     </button>
                                   </div>
                                 </div>
 
                                 {/* Expanded Back Footer: Flip / Collapse / Anatomie */}
-                                <div className="pt-2 border-t border-[var(--border-subtle)] flex items-center justify-between gap-2">
-                                  <div className="flex items-center gap-3">
+                                <div className="pt-2.5 border-t border-[var(--border-subtle)] flex items-center justify-between gap-2">
+                                  <div className="flex items-center gap-3.5">
                                     <button
                                       type="button"
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         handleFlipCard();
                                       }}
-                                      className="inline-flex items-center gap-1 text-xs text-[var(--fg-muted)] hover:text-[var(--fg-primary)] cursor-pointer"
+                                      className="min-h-[36px] inline-flex items-center gap-1.5 text-[13px] sm:text-xs font-medium text-[var(--fg-muted)] hover:text-[var(--fg-primary)] cursor-pointer"
                                     >
                                       <RotateCw className="w-3.5 h-3.5" />
                                       <span>Flip</span>
@@ -3178,7 +3188,7 @@ export default function App() {
                                         e.stopPropagation();
                                         setIsBackExpanded(false);
                                       }}
-                                      className="inline-flex items-center gap-1 text-xs text-[var(--fg-muted)] hover:text-[var(--fg-primary)] cursor-pointer"
+                                      className="min-h-[36px] inline-flex items-center gap-1.5 text-[13px] sm:text-xs font-medium text-[var(--fg-muted)] hover:text-[var(--fg-primary)] cursor-pointer"
                                     >
                                       <ChevronDown className="w-3.5 h-3.5" />
                                       <span>Meaning</span>
@@ -3192,16 +3202,10 @@ export default function App() {
                                       triggerHapticFeedback(10);
                                       setDetailCard(currentCard);
                                     }}
-                                    className="inline-flex items-center gap-1 py-1 px-2.5 -mr-1 rounded-[var(--radius-pill)] text-xs font-semibold text-[var(--accent-secondary)] hover:bg-[var(--accent-secondary-soft)] transition-all active:scale-95 cursor-pointer theme-focus"
+                                    className="min-h-[36px] inline-flex items-center gap-1 py-1.5 px-2 -mr-1 rounded-[var(--radius-control)] text-[14px] sm:text-sm font-semibold text-[var(--accent-secondary)] hover:opacity-80 transition-all active:scale-95 cursor-pointer theme-focus"
                                   >
-                                    {hasRecentLapse && (
-                                      <span
-                                        className="w-1.5 h-1.5 rounded-full bg-[var(--accent-terracotta)] shrink-0"
-                                        aria-hidden="true"
-                                      />
-                                    )}
                                     <span>Anatomie</span>
-                                    <ChevronRight className="w-3.5 h-3.5" />
+                                    <ChevronRight className="w-4 h-4" />
                                   </button>
                                 </div>
                               </div>
@@ -3212,52 +3216,66 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* ==================== 4-COLUMN FSRS RATING DOCK ==================== */}
-                  <div
-                    role="group"
-                    aria-label="Rate flashcard recall"
-                    className="grid grid-cols-4 gap-2"
-                  >
+                  {/* ==================== TWO-STAGE BOTTOM ACTION DOCK: "REVEAL ANSWER" (FRONT) -> 4 RATING BUTTONS (BACK) ==================== */}
+                  {!isFlipped ? (
                     <button
                       type="button"
-                      onClick={() => handleRateCard('again')}
-                      className="min-h-[46px] py-2 px-2 rounded-[var(--radius-control)] surface-paper border hover:border-[var(--srs-again-border)] hover:bg-[var(--srs-again-soft)] active:scale-95 transition-all flex items-center justify-center cursor-pointer theme-focus"
+                      onClick={handleFlipCard}
+                      aria-label="Reveal flashcard answer"
+                      className="min-h-[50px] w-full py-2.5 px-4 rounded-[var(--radius-control)] surface-paper border border-[var(--border-strong)] hover:border-[var(--intent-primary-border)] hover:bg-[var(--intent-primary-soft)] active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer theme-focus"
                     >
-                      <span className="text-xs sm:text-sm font-bold text-[var(--srs-again)] leading-tight">
-                        Nochmal
+                      <RotateCw className="w-4 h-4 text-[var(--intent-primary)]" />
+                      <span className="text-[15px] font-bold text-[var(--fg-primary)] leading-tight">
+                        Reveal Answer
                       </span>
                     </button>
+                  ) : (
+                    <div
+                      role="group"
+                      aria-label="Rate flashcard recall"
+                      className="grid grid-cols-4 gap-2"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => handleRateCard('again')}
+                        className="min-h-[50px] py-2.5 px-2 rounded-[var(--radius-control)] surface-paper border hover:border-[var(--srs-again-border)] hover:bg-[var(--srs-again-soft)] active:scale-95 transition-all flex items-center justify-center cursor-pointer theme-focus"
+                      >
+                        <span className="text-sm sm:text-[15px] font-bold text-[var(--srs-again)] leading-tight">
+                          Nochmal
+                        </span>
+                      </button>
 
-                    <button
-                      type="button"
-                      onClick={() => handleRateCard('hard')}
-                      className="min-h-[46px] py-2 px-2 rounded-[var(--radius-control)] surface-paper border hover:border-[var(--srs-hard-border)] hover:bg-[var(--srs-hard-soft)] active:scale-95 transition-all flex items-center justify-center cursor-pointer theme-focus"
-                    >
-                      <span className="text-xs sm:text-sm font-bold text-[var(--srs-hard)] leading-tight">
-                        Schwer
-                      </span>
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => handleRateCard('hard')}
+                        className="min-h-[50px] py-2.5 px-2 rounded-[var(--radius-control)] surface-paper border hover:border-[var(--srs-hard-border)] hover:bg-[var(--srs-hard-soft)] active:scale-95 transition-all flex items-center justify-center cursor-pointer theme-focus"
+                      >
+                        <span className="text-sm sm:text-[15px] font-bold text-[var(--srs-hard)] leading-tight">
+                          Schwer
+                        </span>
+                      </button>
 
-                    <button
-                      type="button"
-                      onClick={() => handleRateCard('good')}
-                      className="min-h-[46px] py-2 px-2 rounded-[var(--radius-control)] surface-paper border hover:border-[var(--srs-good-border)] hover:bg-[var(--srs-good-soft)] active:scale-95 transition-all flex items-center justify-center cursor-pointer theme-focus"
-                    >
-                      <span className="text-xs sm:text-sm font-bold text-[var(--srs-good)] leading-tight">
-                        Gut
-                      </span>
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => handleRateCard('good')}
+                        className="min-h-[50px] py-2.5 px-2 rounded-[var(--radius-control)] surface-paper border hover:border-[var(--srs-good-border)] hover:bg-[var(--srs-good-soft)] active:scale-95 transition-all flex items-center justify-center cursor-pointer theme-focus"
+                      >
+                        <span className="text-sm sm:text-[15px] font-bold text-[var(--srs-good)] leading-tight">
+                          Gut
+                        </span>
+                      </button>
 
-                    <button
-                      type="button"
-                      onClick={() => handleRateCard('easy')}
-                      className="min-h-[46px] py-2 px-2 rounded-[var(--radius-control)] surface-paper border hover:border-[var(--srs-easy-border)] hover:bg-[var(--srs-easy-soft)] active:scale-95 transition-all flex items-center justify-center cursor-pointer theme-focus"
-                    >
-                      <span className="text-xs sm:text-sm font-bold text-[var(--srs-easy)] leading-tight">
-                        Leicht
-                      </span>
-                    </button>
-                  </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRateCard('easy')}
+                        className="min-h-[50px] py-2.5 px-2 rounded-[var(--radius-control)] surface-paper border hover:border-[var(--srs-easy-border)] hover:bg-[var(--srs-easy-soft)] active:scale-95 transition-all flex items-center justify-center cursor-pointer theme-focus"
+                      >
+                        <span className="text-sm sm:text-[15px] font-bold text-[var(--srs-easy)] leading-tight">
+                          Leicht
+                        </span>
+                      </button>
+                    </div>
+                  )}
                 </>
               )
             )}
@@ -3962,8 +3980,9 @@ export default function App() {
                 size="sm"
                 onClick={() => setIsAddModalOpen(true)}
                 aria-label="Create new flashcard"
+                className="min-h-[40px] sm:min-h-[36px] px-3.5"
               >
-                <Plus className="w-3.5 h-3.5" />
+                <Plus className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
                 <span>New Card</span>
               </Button>
             </div>
@@ -3979,7 +3998,7 @@ export default function App() {
         className={`flex-1 max-w-5xl w-full mx-auto px-3.5 sm:px-6 overflow-x-clip flex flex-col ${
           isZenSessionActive
             ? 'py-3 sm:py-8 justify-center min-h-[100dvh]'
-            : 'pt-2.5 pb-20 md:py-8'
+            : 'pt-2.5 pb-[80px] md:py-8'
         }`}
       >
         <div
@@ -4021,7 +4040,7 @@ export default function App() {
       {!isZenSessionActive && (
         <nav
           aria-label="Mobile Navigation"
-          className="fixed bottom-0 left-0 right-0 z-40 md:hidden h-16 surface-1/95 backdrop-blur-xl border-t border-[var(--border-subtle)] grid grid-cols-4 items-center px-2"
+          className="fixed bottom-0 left-0 right-0 z-40 md:hidden h-[64px] pb-[env(safe-area-inset-bottom)] surface-1/95 backdrop-blur-xl border-t border-[var(--border-subtle)] grid grid-cols-4 items-center px-2"
         >
           {/* Smooth sliding top indicator pill across the 4 tabs */}
           <div
@@ -4034,7 +4053,7 @@ export default function App() {
                 transform: `translate3d(${VIEW_ORDER[activeView] * 100}%, 0, 0)`,
               }}
             >
-              <span className="w-8 h-[2.5px] rounded-b-full bg-[var(--intent-primary)]" />
+              <span className="w-9 h-[2.5px] rounded-b-full bg-[var(--intent-primary)]" />
             </div>
           </div>
 
@@ -4047,8 +4066,8 @@ export default function App() {
                 : 'text-[var(--fg-muted)]'
             }`}
           >
-            <Sparkles className="w-5 h-5" />
-            <span className="text-[11px] font-semibold tracking-tight">
+            <Sparkles className="w-[22px] h-[22px]" />
+            <span className="text-xs font-semibold tracking-tight">
               Study
             </span>
           </button>
@@ -4062,8 +4081,8 @@ export default function App() {
                 : 'text-[var(--fg-muted)]'
             }`}
           >
-            <Layers className="w-5 h-5" />
-            <span className="text-[11px] font-semibold tracking-tight">
+            <Layers className="w-[22px] h-[22px]" />
+            <span className="text-xs font-semibold tracking-tight">
               Decks
             </span>
           </button>
@@ -4077,8 +4096,8 @@ export default function App() {
                 : 'text-[var(--fg-muted)]'
             }`}
           >
-            <LayoutDashboard className="w-5 h-5" />
-            <span className="text-[11px] font-semibold tracking-tight">
+            <LayoutDashboard className="w-[22px] h-[22px]" />
+            <span className="text-xs font-semibold tracking-tight">
               Overview
             </span>
           </button>
@@ -4092,8 +4111,8 @@ export default function App() {
                 : 'text-[var(--fg-muted)]'
             }`}
           >
-            <BookOpen className="w-5 h-5" />
-            <span className="text-[11px] font-semibold tracking-tight">
+            <BookOpen className="w-[22px] h-[22px]" />
+            <span className="text-xs font-semibold tracking-tight">
               Vocab
             </span>
           </button>
