@@ -417,6 +417,17 @@ const ARCHIVE_DUMMY_MIGRATION_KEY = 'wortschatz_archive_dummy_v1';
 
 export const ARCHIVE_FOLDER_ID = 'folder-archive-dummy';
 export const LEGACY_TEST_FOLDER_ID = 'folder-test-cefr';
+export const A2_NETZWERK_FOLDER_ID = 'folder-a2-netzwerk';
+
+export const DEFAULT_A2_FOLDER: DeckFolder = {
+  id: A2_NETZWERK_FOLDER_ID,
+  name: 'A2 Netzwerk',
+  icon: 'BookOpen',
+  tint: 'sage',
+  order: 0,
+  createdAt: 1700000000000,
+};
+
 export const DUMMY_BUILTIN_DECK_IDS = [
   'verb',
   'noun',
@@ -482,12 +493,22 @@ export interface UnifiedDeckItem {
 export function loadFolders(): DeckFolder[] {
   try {
     const raw = localStorage.getItem(FOLDERS_STORAGE_KEY);
-    if (!raw) return [];
+    if (!raw) return [DEFAULT_A2_FOLDER];
     const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
+    if (!Array.isArray(parsed) || parsed.length === 0) return [DEFAULT_A2_FOLDER];
+    const hasA2 = parsed.some(
+      (f: DeckFolder) =>
+        f.id === A2_NETZWERK_FOLDER_ID ||
+        f.name.trim().toLowerCase() === 'a2 netzwerk'
+    );
+    if (!hasA2) {
+      const updated = [DEFAULT_A2_FOLDER, ...parsed];
+      saveFolders(updated, true);
+      return updated;
+    }
     return parsed;
   } catch {
-    return [];
+    return [DEFAULT_A2_FOLDER];
   }
 }
 
@@ -510,8 +531,33 @@ export function loadCustomDecks(): CustomDeckRecord[] {
     const raw = localStorage.getItem(CUSTOM_DECKS_STORAGE_KEY);
     if (!raw) return DEFAULT_A2_CUSTOM_DECKS;
     const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed) || parsed.length === 0) return DEFAULT_A2_CUSTOM_DECKS;
-    return parsed;
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      return DEFAULT_A2_CUSTOM_DECKS;
+    }
+    let changed = false;
+    const updated = parsed.map((cd: CustomDeckRecord) => {
+      if (
+        cd.id.startsWith('a2-deck-') &&
+        cd.folderId !== A2_NETZWERK_FOLDER_ID
+      ) {
+        changed = true;
+        return { ...cd, folderId: A2_NETZWERK_FOLDER_ID };
+      }
+      return cd;
+    });
+
+    const existingIds = new Set(updated.map((d: CustomDeckRecord) => d.id));
+    for (const d of DEFAULT_A2_CUSTOM_DECKS) {
+      if (!existingIds.has(d.id)) {
+        updated.push(d);
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      saveCustomDecks(updated, true);
+    }
+    return updated;
   } catch {
     return DEFAULT_A2_CUSTOM_DECKS;
   }
@@ -612,6 +658,16 @@ export function archiveDummyDecksInWorkspace(params: {
   }
 
   const nextCustomDecks = params.customDecks.map((cd) => {
+    if (
+      cd.id.startsWith('a2-deck-') ||
+      cd.folderId === A2_NETZWERK_FOLDER_ID
+    ) {
+      if (cd.folderId !== A2_NETZWERK_FOLDER_ID) {
+        changed = true;
+        return { ...cd, folderId: A2_NETZWERK_FOLDER_ID };
+      }
+      return cd;
+    }
     if (cd.folderId !== archiveFolderId) {
       changed = true;
       return { ...cd, folderId: archiveFolderId };

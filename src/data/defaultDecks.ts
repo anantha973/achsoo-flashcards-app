@@ -17,7 +17,7 @@ export const DEFAULT_A2_CUSTOM_DECKS: DefaultDeckConfig[] = [
     "subtitle": "85 Wörter · Züge, Verkehr & Reisen",
     "icon": "Plane",
     "tint": "blue",
-    "folderId": null,
+    "folderId": "folder-a2-netzwerk",
     "cardIds": [
       "a2-d01-001",
       "a2-d01-002",
@@ -114,7 +114,7 @@ export const DEFAULT_A2_CUSTOM_DECKS: DefaultDeckConfig[] = [
     "subtitle": "93 Wörter · Wohnung, Zimmer & Miete",
     "icon": "Home",
     "tint": "stone",
-    "folderId": null,
+    "folderId": "folder-a2-netzwerk",
     "cardIds": [
       "a2-d02-001",
       "a2-d02-002",
@@ -219,7 +219,7 @@ export const DEFAULT_A2_CUSTOM_DECKS: DefaultDeckConfig[] = [
     "subtitle": "32 Wörter · Mahlzeiten & Restaurant",
     "icon": "Utensils",
     "tint": "terracotta",
-    "folderId": null,
+    "folderId": "folder-a2-netzwerk",
     "cardIds": [
       "a2-d03-001",
       "a2-d03-002",
@@ -263,7 +263,7 @@ export const DEFAULT_A2_CUSTOM_DECKS: DefaultDeckConfig[] = [
     "subtitle": "44 Wörter · Arbeitsplatz & Bewerbung",
     "icon": "Briefcase",
     "tint": "ochre",
-    "folderId": null,
+    "folderId": "folder-a2-netzwerk",
     "cardIds": [
       "a2-d04-001",
       "a2-d04-002",
@@ -319,7 +319,7 @@ export const DEFAULT_A2_CUSTOM_DECKS: DefaultDeckConfig[] = [
     "subtitle": "49 Wörter · Schule, Studium & Prüfungen",
     "icon": "GraduationCap",
     "tint": "sage",
-    "folderId": null,
+    "folderId": "folder-a2-netzwerk",
     "cardIds": [
       "a2-d05-001",
       "a2-d05-002",
@@ -380,7 +380,7 @@ export const DEFAULT_A2_CUSTOM_DECKS: DefaultDeckConfig[] = [
     "subtitle": "59 Wörter · Emotionen & Charakter",
     "icon": "Heart",
     "tint": "plum",
-    "folderId": null,
+    "folderId": "folder-a2-netzwerk",
     "cardIds": [
       "a2-d06-001",
       "a2-d06-002",
@@ -451,7 +451,7 @@ export const DEFAULT_A2_CUSTOM_DECKS: DefaultDeckConfig[] = [
     "subtitle": "111 Wörter · Feiern, Bräuche & Leben",
     "icon": "Wine",
     "tint": "terracotta",
-    "folderId": null,
+    "folderId": "folder-a2-netzwerk",
     "cardIds": [
       "a2-d07-001",
       "a2-d07-002",
@@ -574,7 +574,7 @@ export const DEFAULT_A2_CUSTOM_DECKS: DefaultDeckConfig[] = [
     "subtitle": "112 Wörter · Internet, Kunst & Medien",
     "icon": "Laptop",
     "tint": "blue",
-    "folderId": null,
+    "folderId": "folder-a2-netzwerk",
     "cardIds": [
       "a2-d08-001",
       "a2-d08-002",
@@ -698,7 +698,7 @@ export const DEFAULT_A2_CUSTOM_DECKS: DefaultDeckConfig[] = [
     "subtitle": "93 Wörter · Hobbys, Outdoor & Natur",
     "icon": "Sun",
     "tint": "sage",
-    "folderId": null,
+    "folderId": "folder-a2-netzwerk",
     "cardIds": [
       "a2-d09-001",
       "a2-d09-002",
@@ -803,7 +803,7 @@ export const DEFAULT_A2_CUSTOM_DECKS: DefaultDeckConfig[] = [
     "subtitle": "49 Wörter · B1 Redemittel & Satzbau",
     "icon": "MessageSquare",
     "tint": "ochre",
-    "folderId": null,
+    "folderId": "folder-a2-netzwerk",
     "cardIds": [
       "a2-d10-001",
       "a2-d10-002",
