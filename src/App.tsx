@@ -367,6 +367,22 @@ const RATING_META: Record<
   },
 };
 
+function shuffleCardIds(
+  cardIds: string[],
+  avoidFirstId?: string
+): string[] {
+  const copy = [...cardIds];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  if (copy.length > 1 && avoidFirstId && copy[0] === avoidFirstId) {
+    const swapIdx = 1 + Math.floor(Math.random() * (copy.length - 1));
+    [copy[0], copy[swapIdx]] = [copy[swapIdx], copy[0]];
+  }
+  return copy;
+}
+
 export default function App() {
   // Two-Dimensional Theme Engine: themeId ('nordic' | 'hero' | 'coss') × colorMode ('light' | 'dark')
   const [themePrefs, setThemePrefs] = useState<ThemePreferences>(() =>
@@ -790,6 +806,9 @@ export default function App() {
     }
     return 'all';
   });
+  const [allCardsOrder, setAllCardsOrder] = useState<string[]>(() =>
+    shuffleCardIds(cards.map((c) => c.id))
+  );
   const [customStudyQueue, setCustomStudyQueue] = useState<{
     id: string;
     shortTitle: string;
@@ -859,7 +878,36 @@ export default function App() {
   const [currentIndex, setCurrentIndex] = useState<number>(0);
   const [studyTrailsByDeck, setStudyTrailsByDeck] = useState<
     Record<string, StudyDeckTrail>
-  >(() => loadStudyDeckTrails());
+  >(() => {
+    const loaded = loadStudyDeckTrails();
+    if (
+      !initialStudySession ||
+      (!initialStudySession.isCustomQueue &&
+        initialStudySession.deckId === 'all')
+    ) {
+      delete loaded['all'];
+    }
+    return loaded;
+  });
+  const reshuffleAllCards = useCallback(
+    (sourceCards: VocabCard[] = cards) => {
+      const nextOrder = shuffleCardIds(
+        sourceCards.map((c) => c.id),
+        allCardsOrder[0]
+      );
+      setAllCardsOrder(nextOrder);
+      clearStudyDeckTrail('all');
+      setStudyTrailsByDeck((prev) => {
+        if (!('all' in prev)) return prev;
+        const next = { ...prev };
+        delete next['all'];
+        return next;
+      });
+      saveStudyDeckPosition('all', 0, nextOrder[0]);
+      return nextOrder;
+    },
+    [cards, allCardsOrder]
+  );
   const [isFlipped, setIsFlipped] = useState<boolean>(false);
   const [isBackExpanded, setIsBackExpanded] = useState<boolean>(false);
   const [cardMotion, setCardMotion] = useState<
@@ -1079,10 +1127,23 @@ export default function App() {
   const enrichedDecks = useMemo(() => {
     const now = new Date();
     return deckDefinitions.map((def) => {
-      const matchingCards = cards.filter((c) => {
+      let matchingCards = cards.filter((c) => {
         const st = srsMap[c.id] || createDefaultSrsState(c.id);
         return def.predicate(c, st, now);
       });
+
+      if (def.id === 'all' && allCardsOrder.length > 0) {
+        const orderMap = new Map<string, number>();
+        allCardsOrder.forEach((id, idx) => orderMap.set(id, idx));
+        matchingCards = [...matchingCards].sort((a, b) => {
+          const ia = orderMap.get(a.id);
+          const ib = orderMap.get(b.id);
+          if (ia !== undefined && ib !== undefined) return ia - ib;
+          if (ia !== undefined) return 1;
+          if (ib !== undefined) return -1;
+          return 0;
+        });
+      }
 
       let mastered = 0;
       let learning = 0;
@@ -1132,7 +1193,7 @@ export default function App() {
         avgEase,
       };
     });
-  }, [deckDefinitions, cards, srsMap, stats.totalReviewsToday]);
+  }, [deckDefinitions, cards, srsMap, stats.totalReviewsToday, allCardsOrder]);
 
   // Global summary metrics
   const summaryMetrics = useMemo(() => {
@@ -1490,6 +1551,14 @@ export default function App() {
     if (hasRestoredStudyIndexRef.current) return;
     if (studyDeck.length === 0) {
       hasRestoredStudyIndexRef.current = true;
+      return;
+    }
+    if (activeDeckObj.id === 'all') {
+      hasRestoredStudyIndexRef.current = true;
+      clearStudyDeckTrail('all');
+      if (currentIndex !== 0) {
+        setCurrentIndex(0);
+      }
       return;
     }
     const positions = loadStudyDeckPositions();
@@ -1903,13 +1972,19 @@ export default function App() {
           ? 'is-entering-prev'
           : 'is-entering-next';
       triggerHapticFeedback(6);
-      const nextDeckCards =
-        nextIdx >= 0 ? enrichedDecks[nextIdx].cards : [];
-      const savedPositions = loadStudyDeckPositions();
-      const restoredCardIdx = resolveSavedDeckIndex(
-        nextDeckCards,
-        savedPositions[nextDeckId]
-      );
+      let restoredCardIdx = 0;
+      if (nextDeckId === 'all') {
+        reshuffleAllCards();
+        restoredCardIdx = 0;
+      } else {
+        const nextDeckCards =
+          nextIdx >= 0 ? enrichedDecks[nextIdx].cards : [];
+        const savedPositions = loadStudyDeckPositions();
+        restoredCardIdx = resolveSavedDeckIndex(
+          nextDeckCards,
+          savedPositions[nextDeckId]
+        );
+      }
       setCustomStudyQueue(null);
       setSelectedDeckId(nextDeckId);
       setCurrentIndex(restoredCardIdx);
@@ -1925,6 +2000,7 @@ export default function App() {
       selectedDeckId,
       customStudyQueue,
       enrichedDecks,
+      reshuffleAllCards,
       clearRateFirstHint,
       clearRatingFeedback,
       clearCardMotionTimers,
@@ -2463,10 +2539,21 @@ export default function App() {
     const savedPositions = loadStudyDeckPositions();
     const builtInMatch = enrichedDecks.find((d) => d.id === deckId);
     let targetCardsForResume: VocabCard[] = [];
-    if (builtInMatch && !customCardsOverride) {
+    let resumedIndex = 0;
+
+    if (deckId === 'all') {
+      reshuffleAllCards(cards);
+      setCustomStudyQueue(null);
+      setSelectedDeckId('all');
+      resumedIndex = 0;
+    } else if (builtInMatch && !customCardsOverride) {
       setCustomStudyQueue(null);
       setSelectedDeckId(builtInMatch.id);
       targetCardsForResume = builtInMatch.cards;
+      resumedIndex = resolveSavedDeckIndex(
+        targetCardsForResume,
+        savedPositions[deckId]
+      );
     } else {
       const unifiedMatch = enrichedUnifiedDecks.find((d) => d.id === deckId);
       const targetCards =
@@ -2482,11 +2569,12 @@ export default function App() {
         cards: targetCards,
       });
       targetCardsForResume = targetCards;
+      resumedIndex = resolveSavedDeckIndex(
+        targetCardsForResume,
+        savedPositions[deckId]
+      );
     }
-    const resumedIndex = resolveSavedDeckIndex(
-      targetCardsForResume,
-      savedPositions[deckId]
-    );
+
     clearRateFirstHint();
     clearRatingFeedback();
     setCurrentIndex(resumedIndex);
@@ -2511,6 +2599,9 @@ export default function App() {
       if (deckId) {
         saveStudyDeckPosition(deckId, 0);
         clearStudyDeckTrail(deckId);
+        if (deckId === 'all') {
+          reshuffleAllCards();
+        }
         if (activeDeckObj.id === deckId) {
           clearRateFirstHint();
           clearRatingFeedback();
@@ -2541,6 +2632,7 @@ export default function App() {
     [
       srsMap,
       activeDeckObj.id,
+      reshuffleAllCards,
       clearRateFirstHint,
       clearRatingFeedback,
     ]
@@ -2552,6 +2644,7 @@ export default function App() {
     clearRateFirstHint();
     clearRatingFeedback();
     setStudyTrailsByDeck({});
+    reshuffleAllCards();
     setSrsMap(fresh);
     setStats(loadStudyStats());
     setCurrentIndex(0);
@@ -3561,12 +3654,7 @@ export default function App() {
                   <Button
                     intent="primary"
                     size="md"
-                    onClick={() => {
-                      userChangedDeckRef.current = true;
-                      setCustomStudyQueue(null);
-                      setSelectedDeckId('all');
-                      setCurrentIndex(0);
-                    }}
+                    onClick={() => handleSelectStudyDeck('all')}
                   >
                     Study All {cards.length} Cards
                   </Button>
@@ -3773,7 +3861,7 @@ export default function App() {
                           </div>
 
                         {/* Center: Pure German Word Prompt (Length-Aware Fluid clamp() Font Scaling) */}
-                        <div className="my-auto text-center py-6 sm:py-8 md:py-10 px-1 md:px-3">
+                        <div className="my-auto text-center py-3 sm:py-5 md:py-6 px-1 md:px-3">
                           <h2
                             className={`font-lemma font-semibold tracking-tight text-[var(--fg-primary)] break-words text-balance ${getFluidLemmaClass(
                               currentCard.lemma
@@ -3940,7 +4028,7 @@ export default function App() {
                                 {/* LOWER ~60% ZONE: Prominent Centered English Meaning + Subordinate 3-Forms Whisper Strip */}
                                 <div className="flex-[3] flex flex-col justify-between pt-3 md:pt-4 min-h-0 min-w-0 max-w-full">
                                   {/* Center of Lower 60%: Pure English Meaning Hero */}
-                                  <div className="my-auto text-center py-3 sm:py-4 md:py-5 px-1 md:px-3 min-w-0 max-w-full">
+                                  <div className="my-auto text-center py-2 sm:py-3 md:py-4 px-1 md:px-3 min-w-0 max-w-full">
                                     <p
                                       className={`font-display font-bold tracking-tight text-[var(--fg-primary)] break-words text-balance ${getFluidMeaningClass(
                                         currentCard.translation
@@ -4178,7 +4266,7 @@ export default function App() {
                             }
                           : undefined
                       }
-                      className="min-h-[50px] md:min-h-[56px] w-full py-2.5 md:py-3 px-4 md:px-5 rounded-[var(--radius-control)] surface-paper border border-[var(--border-strong)] hover:border-[var(--intent-primary-border)] hover:bg-[var(--intent-primary-soft)] active:scale-[0.98] transition-all duration-300 grid grid-cols-[1fr_auto_1fr] items-center gap-2 cursor-pointer theme-focus"
+                      className="min-h-[48px] md:min-h-[52px] w-full py-2.5 md:py-2.5 px-4 md:px-5 rounded-[var(--radius-control)] surface-paper border border-[var(--border-strong)] hover:border-[var(--intent-primary-border)] hover:bg-[var(--intent-primary-soft)] active:scale-[0.98] transition-all duration-300 grid grid-cols-[1fr_auto_1fr] items-center gap-2 cursor-pointer theme-focus"
                     >
                       <span aria-hidden="true" />
                       <span className="inline-flex items-center justify-center gap-2">
@@ -4270,7 +4358,7 @@ export default function App() {
                                   }
                                 : undefined
                             }
-                            className={`relative min-h-[50px] md:min-h-[56px] py-2.5 md:py-3 px-2 md:px-3 rounded-[var(--radius-control)] surface-paper border active:scale-95 transition-all flex items-center justify-center cursor-pointer theme-focus ${
+                            className={`relative min-h-[48px] md:min-h-[52px] py-2.5 px-2 md:px-3 rounded-[var(--radius-control)] surface-paper border active:scale-95 transition-all flex items-center justify-center cursor-pointer theme-focus ${
                               isEmphasized ? '' : hoverClass
                             } ${isFlashing ? 'scale-[0.96]' : ''} ${
                               isDimmedSibling
@@ -5016,7 +5104,9 @@ export default function App() {
         className={`flex-1 max-w-5xl w-full mx-auto px-3.5 sm:px-6 overflow-x-clip flex flex-col ${
           isZenSessionActive
             ? 'py-3 sm:py-8 justify-center min-h-[100dvh]'
-            : 'pt-2.5 pb-[80px] md:py-5 lg:py-6'
+            : activeView === 'study'
+            ? 'study-main-shell'
+            : 'pt-2.5 pb-[80px] md:py-8'
         }`}
       >
         <div
