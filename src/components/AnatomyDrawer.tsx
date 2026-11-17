@@ -529,7 +529,7 @@ export const AnatomyDrawer: React.FC<AnatomyDrawerProps> = ({
         onTouchMove={handleBodyTouchMove}
         onTouchEnd={handleBodyTouchEnd}
         onTouchCancel={sheetTouchHandlers.onTouchCancel}
-        className="w-full max-w-xl surface-overlay border rounded-b-none sm:rounded-[var(--radius-card)] max-h-[86vh] flex flex-col overflow-hidden anatomy-sheet-enter overscroll-y-contain"
+        className="w-full max-w-xl md:max-w-2xl surface-overlay border rounded-b-none sm:rounded-[var(--radius-card)] max-h-[86vh] flex flex-col overflow-hidden anatomy-sheet-enter overscroll-y-contain"
       >
         {/* ==================== EDITORIAL HEADER ==================== */}
         <div

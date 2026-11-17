@@ -35,6 +35,7 @@ import {
   deleteReviewsFromSupabase,
   pullAndSyncSupabaseState,
   pushAllStatesAndStatsToSupabase,
+  syncBatchReviewEventsToSupabase,
   syncCustomCardToSupabase,
   syncReviewEventToSupabase,
   syncWorkspaceToSupabase,
@@ -319,6 +320,13 @@ export function formatIntervalBadge(
 // APPEND-ONLY REVIEW LOG & DETERMINISTIC STATE REPLAY
 // ============================================================================
 
+function getLogEventOrderRank(entry: ReviewLogEntry): number {
+  const kind = entry.eventType ?? 'review';
+  if (kind === 'review') return 0;
+  if (kind === 'reset') return 1;
+  return 2;
+}
+
 export function sortAndDedupeReviewLogs(
   logs: ReviewLogEntry[]
 ): ReviewLogEntry[] {
@@ -333,6 +341,8 @@ export function sortAndDedupeReviewLogs(
     const ta = Date.parse(a.reviewedAt || a.timestamp);
     const tb = Date.parse(b.reviewedAt || b.timestamp);
     if (ta !== tb) return ta - tb;
+    const rankDiff = getLogEventOrderRank(a) - getLogEventOrderRank(b);
+    if (rankDiff !== 0) return rankDiff;
     return a.id.localeCompare(b.id);
   });
 }
@@ -340,7 +350,7 @@ export function sortAndDedupeReviewLogs(
 /**
  * Resolves append-only "undo" marker events against "review" events.
  * The underlying log array remains strictly append-only for idempotent multi-device sync,
- * while state replay and statistics operate on the non-undone review events.
+ * while statistics operate on all non-undone review events (including reviews before a deck reset).
  */
 export function getEffectiveReviewLogs(
   logs: ReviewLogEntry[]
@@ -357,6 +367,27 @@ export function getEffectiveReviewLogs(
       (entry.eventType ?? 'review') === 'review' &&
       !undoneTargetIds.has(entry.id)
   );
+}
+
+/**
+ * Resolves chronological card-state timeline events (active non-undone 'review' events
+ * interleaved with 'reset' checkpoints) for deterministic SRS state reconstruction.
+ */
+function getEffectiveCardTimelineLogs(
+  logs: ReviewLogEntry[]
+): ReviewLogEntry[] {
+  const sorted = sortAndDedupeReviewLogs(logs);
+  const undoneTargetIds = new Set<string>();
+  for (const entry of sorted) {
+    if (entry.eventType === 'undo' && entry.undoTargetId) {
+      undoneTargetIds.add(entry.undoTargetId);
+    }
+  }
+  return sorted.filter((entry) => {
+    const kind = entry.eventType ?? 'review';
+    if (kind === 'reset') return true;
+    return kind === 'review' && !undoneTargetIds.has(entry.id);
+  });
 }
 
 export function loadReviewLogs(): ReviewLogEntry[] {
@@ -401,11 +432,15 @@ export function replayCardStateFromLogs(
   cardId: string,
   allLogs: ReviewLogEntry[]
 ): CardSrsState {
-  const effectiveCardLogs = getEffectiveReviewLogs(allLogs).filter(
+  const cardTimeline = getEffectiveCardTimelineLogs(allLogs).filter(
     (l) => l.cardId === cardId
   );
   let state = createDefaultSrsState(cardId);
-  for (const entry of effectiveCardLogs) {
+  for (const entry of cardTimeline) {
+    if (entry.eventType === 'reset') {
+      state = createDefaultSrsState(cardId);
+      continue;
+    }
     const reviewTime = new Date(entry.reviewedAt || entry.timestamp);
     state = computeNextSrsState(state, entry.rating, reviewTime);
   }
@@ -417,7 +452,7 @@ export function replayAllStatesFromLogs(
   allLogs: ReviewLogEntry[],
   existingOrphanStates: Record<string, CardSrsState> = {}
 ): Record<string, CardSrsState> {
-  const effectiveLogs = getEffectiveReviewLogs(allLogs);
+  const timelineLogs = getEffectiveCardTimelineLogs(allLogs);
   const allReferencedCardIds = new Set<string>();
   for (const entry of allLogs) {
     if (entry && entry.cardId) {
@@ -434,9 +469,9 @@ export function replayAllStatesFromLogs(
     map[cid] = createDefaultSrsState(cid);
   }
 
-  // Group effective (non-undone) logs by cardId (including orphaned cardIds)
+  // Group timeline logs (active reviews + reset checkpoints) by cardId
   const logsByCard = new Map<string, ReviewLogEntry[]>();
-  for (const entry of effectiveLogs) {
+  for (const entry of timelineLogs) {
     const list = logsByCard.get(entry.cardId) || [];
     list.push(entry);
     logsByCard.set(entry.cardId, list);
@@ -445,6 +480,10 @@ export function replayAllStatesFromLogs(
   for (const [cardId, cardLogs] of logsByCard.entries()) {
     let st = createDefaultSrsState(cardId);
     for (const entry of cardLogs) {
+      if (entry.eventType === 'reset') {
+        st = createDefaultSrsState(cardId);
+        continue;
+      }
       st = computeNextSrsState(
         st,
         entry.rating,
@@ -461,7 +500,8 @@ export function deriveStudyStatsFromLogs(
   logs: ReviewLogEntry[],
   now: Date = new Date()
 ): StudyStats {
-  const sortedLogs = getEffectiveReviewLogs(logs);
+  const sortedReviews = getEffectiveReviewLogs(logs);
+  const timelineLogs = getEffectiveCardTimelineLogs(logs);
   const todayKey = getLocalDateString(now);
   const yesterdayKey = getYesterdayDateString(now);
 
@@ -473,7 +513,13 @@ export function deriveStudyStatsFromLogs(
   let timeStudiedMsToday = 0;
   let nonAgainCount = 0;
 
-  for (const entry of sortedLogs) {
+  for (const entry of timelineLogs) {
+    if (entry.eventType === 'reset') {
+      // Resetting a deck clears the card's active mastery forward without erasing past history
+      currentlyMastered.delete(entry.cardId);
+      continue;
+    }
+
     const dayKey =
       entry.studyDayKey ||
       getLocalDateString(new Date(entry.reviewedAt || entry.timestamp));
@@ -539,8 +585,8 @@ export function deriveStudyStatsFromLogs(
   }
 
   const retentionPct =
-    sortedLogs.length > 0
-      ? Math.round((nonAgainCount / sortedLogs.length) * 100)
+    sortedReviews.length > 0
+      ? Math.round((nonAgainCount / sortedReviews.length) * 100)
       : 100;
 
   const stats: StudyStats = {
@@ -652,18 +698,34 @@ export function undoLastReview(
 } {
   const allLogs = loadReviewLogs();
   const effectiveLogs = getEffectiveReviewLogs(allLogs);
-  if (effectiveLogs.length === 0) {
+  // Skip any review that has already been superseded by a deck reset for the same card
+  const latestResetTsByCard = new Map<string, number>();
+  for (const entry of allLogs) {
+    if (entry.eventType === 'reset') {
+      const ts = Date.parse(entry.reviewedAt || entry.timestamp);
+      const prev = latestResetTsByCard.get(entry.cardId) ?? -Infinity;
+      if (ts >= prev) latestResetTsByCard.set(entry.cardId, ts);
+    }
+  }
+  const undoableLogs = effectiveLogs.filter((entry) => {
+    const resetTs = latestResetTsByCard.get(entry.cardId);
+    if (resetTs === undefined) return true;
+    const entryTs = Date.parse(entry.reviewedAt || entry.timestamp);
+    return entryTs > resetTs;
+  });
+
+  if (undoableLogs.length === 0) {
     return {
       undoneEntry: null,
       undoMarkerEntry: null,
       updatedMap: currentSrsMap,
       updatedStats: deriveStudyStatsFromLogs(allLogs, now),
-      remainingLogs: [],
+      remainingLogs: effectiveLogs,
       allLogs,
     };
   }
 
-  const undoneEntry = effectiveLogs[effectiveLogs.length - 1];
+  const undoneEntry = undoableLogs[undoableLogs.length - 1];
   const undoIso = now.toISOString();
 
   // Append an immutable "undo" marker event rather than deleting the original review log entry
@@ -975,20 +1037,90 @@ export function resetCardsSrsProgress(
   updatedMap: Record<string, CardSrsState>;
   updatedStats: StudyStats;
 } {
-  const targetSet = new Set(cardIds);
-  const remainingLogs = loadReviewLogs().filter(
-    (entry) => !targetSet.has(entry.cardId)
-  );
-  saveReviewLogsMirror(remainingLogs);
-  void idbClearReviewsForCards(cardIds);
-
+  const uniqueIds = Array.from(new Set(cardIds.filter(Boolean)));
+  const existingLogs = loadReviewLogs();
+  const resetEntries: ReviewLogEntry[] = [];
+  const resetStateSnapshot: Record<string, CardSrsState> = {};
   const nextMap: Record<string, CardSrsState> = { ...currentSrsMap };
-  for (const cid of cardIds) {
-    nextMap[cid] = createDefaultSrsState(cid);
+
+  // Track the latest timestamp and replayed state per target card so reset markers
+  // act as clean SRS checkpoints while leaving all historical review logs & stats intact.
+  const maxTsByCard = new Map<string, number>();
+  for (const entry of existingLogs) {
+    const ts = Date.parse(entry.reviewedAt || entry.timestamp);
+    if (!Number.isNaN(ts)) {
+      const prev = maxTsByCard.get(entry.cardId) ?? -Infinity;
+      if (ts > prev) maxTsByCard.set(entry.cardId, ts);
+    }
+  }
+
+  const deviceId = getOrCreateDeviceId();
+
+  for (const cid of uniqueIds) {
+    const prevFromMap = currentSrsMap[cid];
+    const prevReplayed = replayCardStateFromLogs(cid, existingLogs);
+    const hasProgress =
+      (prevFromMap && !isCardNew(prevFromMap)) || !isCardNew(prevReplayed);
+    const freshState = createDefaultSrsState(cid);
+
+    nextMap[cid] = freshState;
+    resetStateSnapshot[cid] = freshState;
+
+    if (hasProgress) {
+      const priorState =
+        prevFromMap && !isCardNew(prevFromMap) ? prevFromMap : prevReplayed;
+      const resetMs = Math.max(
+        now.getTime(),
+        maxTsByCard.get(cid) ?? now.getTime()
+      );
+      const resetDate = new Date(resetMs);
+      const resetIso = resetDate.toISOString();
+
+      resetEntries.push({
+        id: generateUuid(),
+        eventType: 'reset',
+        undoTargetId: null,
+        cardId: cid,
+        timestamp: resetIso,
+        reviewedAt: resetIso,
+        studyDayKey: getLocalDateString(resetDate),
+        rating: 'again',
+        stateBefore: priorState.fsrsState || 'learning',
+        stateAfter: 'new',
+        dueBefore: priorState.dueAt,
+        dueAfter: freshState.dueAt,
+        intervalMinutesBefore: priorState.intervalMinutes || 0,
+        intervalMinutesAfter: 0,
+        stabilityAfter: 0,
+        difficultyAfter: 0,
+        durationMs: 0,
+        deviceId,
+        syncedAt: null,
+      });
+    }
+  }
+
+  const nextLogs =
+    resetEntries.length > 0
+      ? sortAndDedupeReviewLogs([...existingLogs, ...resetEntries])
+      : existingLogs;
+
+  if (resetEntries.length > 0) {
+    saveReviewLogsMirror(nextLogs);
   }
   saveSrsMap(nextMap);
-  const updatedStats = deriveStudyStatsFromLogs(remainingLogs, now);
-  void deleteReviewsFromSupabase(cardIds, updatedStats);
+
+  const updatedStats = deriveStudyStatsFromLogs(nextLogs, now);
+
+  if (uniqueIds.length > 0) {
+    void idbPutReviewLogsBulk(resetEntries, resetStateSnapshot);
+    void syncBatchReviewEventsToSupabase(
+      resetEntries,
+      Object.values(resetStateSnapshot),
+      updatedStats
+    );
+  }
+
   return { updatedMap: nextMap, updatedStats };
 }
 

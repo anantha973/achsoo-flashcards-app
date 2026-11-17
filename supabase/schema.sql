@@ -6,13 +6,12 @@
 -- ============================================================================
 
 -- 1. APPEND-ONLY REVIEW LOGS (Authoritative Event History)
--- Every rating ('again' | 'hard' | 'good' | 'easy') and 'undo' event is stored
--- with a unique UUID so multiple devices (MacBook, iPad, iPhone) merge
--- idempotently without ever losing a review.
+-- Every rating ('again' | 'hard' | 'good' | 'easy'), 'undo', and 'reset' event
+-- is stored with a unique UUID so multiple devices merge idempotently without ever losing stats history.
 CREATE TABLE IF NOT EXISTS public.achsoo_review_logs (
   id UUID PRIMARY KEY,
   profile_key TEXT NOT NULL DEFAULT 'default',
-  event_type TEXT NOT NULL DEFAULT 'review' CHECK (event_type IN ('review', 'undo')),
+  event_type TEXT NOT NULL DEFAULT 'review' CHECK (event_type IN ('review', 'undo', 'reset')),
   undo_target_id UUID NULL,
   card_id TEXT NOT NULL,
   reviewed_at TIMESTAMPTZ NOT NULL,

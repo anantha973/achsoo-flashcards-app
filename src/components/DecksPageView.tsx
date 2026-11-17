@@ -103,7 +103,7 @@ interface DecksPageViewProps {
   onSelectCardDetail: (card: VocabCard) => void;
   onPlayAudio: (text?: string, idTag?: string, e?: React.MouseEvent) => void;
   speakingId: string | null;
-  onResetDeckSrs: (cardIds: string[]) => void;
+  onResetDeckSrs: (cardIds: string[], deckId?: string) => void;
   onSubScreenChange?: (isNested: boolean) => void;
   controlledSubScreen?: DeckSubScreen;
   onControlledSubScreenChange?: (next: DeckSubScreen) => void;
@@ -1292,12 +1292,16 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
     isNewMenuOpen,
   ]);
 
-  const hasOpenSheet = Boolean(
+  const hasSwipeSheet = Boolean(
     editorState ||
       isFilterSheetOpen ||
-      deleteFolderTarget ||
       assignToFolderId ||
-      moveTargetDeckId ||
+      moveTargetDeckId
+  );
+
+  const hasOpenSheet = Boolean(
+    hasSwipeSheet ||
+      deleteFolderTarget ||
       actionFolderId ||
       actionDeckId
   );
@@ -1321,14 +1325,14 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
     sheetTouchHandlers: activeSheetTouchHandlers,
     sheetStyle: activeSheetStyle,
   } = useSheetSwipeDismiss({
-    isOpen: hasOpenSheet,
+    isOpen: hasSwipeSheet,
     onDismiss: dismissActiveSheet,
     scrollContainerRef: sheetScrollRef,
     threshold: 86,
   });
 
   const activeSheetBackdropStyle: React.CSSProperties | undefined =
-    activeSheetDragY > 0
+    hasSwipeSheet && activeSheetDragY > 0
       ? { opacity: Math.max(0.1, 1 - activeSheetDragY / 280) }
       : undefined;
 
@@ -1998,7 +2002,7 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
       </div>
 
       {/* ====================================================================
-       * SHEET 1: DECK "⋯" OVERFLOW MENU (Preview / Edit / Move / Reset / Delete)
+       * POPUP MODAL 1: DECK "⋯" OVERFLOW MENU (Preview / Edit / Move / Reset / Delete)
        * ==================================================================== */}
       {actionDeckId &&
         (() => {
@@ -2012,26 +2016,13 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
               aria-modal="true"
               aria-label={`Options for ${targetDeck.title}`}
               onClick={() => setActionDeckId(null)}
-              style={activeSheetBackdropStyle}
-              className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-black/50 backdrop-blur-xs anatomy-backdrop-enter"
+              className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs anatomy-backdrop-enter"
             >
               <div
                 onClick={(e) => e.stopPropagation()}
-                style={activeSheetStyle}
-                onTouchStart={activeSheetTouchHandlers.onTouchStart}
-                onTouchMove={activeSheetTouchHandlers.onTouchMove}
-                onTouchEnd={activeSheetTouchHandlers.onTouchEnd}
-                onTouchCancel={activeSheetTouchHandlers.onTouchCancel}
-                className="w-full max-w-md rounded-t-3xl sm:rounded-[var(--radius-card)] surface-overlay border p-5 pt-3 sm:pt-5 space-y-3 anatomy-sheet-enter"
+                className="w-full max-w-[380px] sm:max-w-md rounded-[var(--radius-card)] surface-overlay border p-4 sm:p-5 space-y-3 max-h-[85dvh] overflow-y-auto modal-pop-enter"
               >
-                <div
-                  data-sheet-handle="true"
-                  className="w-10 h-1 rounded-full bg-[var(--border-strong)] mx-auto sm:hidden"
-                />
-                <div
-                  data-sheet-handle="true"
-                  className="flex items-center justify-between gap-3 pb-2 border-b border-[var(--border-subtle)]"
-                >
+                <div className="flex items-center justify-between gap-3 pb-2.5 border-b border-[var(--border-subtle)]">
                   <div className="flex items-center gap-3 min-w-0">
                     {renderIconTile({
                       tint: targetDeck.tint,
@@ -2052,7 +2043,7 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
                     type="button"
                     onClick={() => setActionDeckId(null)}
                     aria-label="Close menu"
-                    className="w-[44px] h-[44px] rounded-full flex items-center justify-center text-[var(--fg-muted)] hover:text-[var(--fg-primary)] cursor-pointer"
+                    className="w-[44px] h-[44px] -mr-1.5 rounded-full flex items-center justify-center text-[var(--fg-muted)] hover:text-[var(--fg-primary)] hover:bg-[var(--surface-2)] transition-colors cursor-pointer shrink-0 theme-focus"
                   >
                     <X className="w-4 h-4" />
                   </button>
@@ -2076,10 +2067,12 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
                         'push'
                       );
                     }}
-                    className="w-full min-h-[44px] px-3 rounded-[var(--radius-control)] flex items-center gap-3 font-sans text-[14px] font-medium text-[var(--fg-primary)] hover:bg-[var(--surface-2)] cursor-pointer"
+                    className="w-full min-h-[44px] px-3 py-2 rounded-[var(--radius-control)] flex items-center gap-3 text-left font-sans text-[14px] font-medium text-[var(--fg-primary)] hover:bg-[var(--surface-2)] active:scale-[0.99] transition-colors cursor-pointer theme-focus"
                   >
-                    <Layers className="w-4 h-4 text-[var(--accent-secondary)]" />
-                    <span>Karten ansehen (Preview)</span>
+                    <Layers className="w-4 h-4 shrink-0 text-[var(--accent-secondary)]" />
+                    <span className="min-w-0 flex-1 leading-snug">
+                      Karten ansehen (Preview)
+                    </span>
                   </button>
 
                   {!targetDeck.isSystemSmart && (
@@ -2090,10 +2083,12 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
                         setActionDeckId(null);
                         openEditor('edit-deck', { targetId: dId });
                       }}
-                      className="w-full min-h-[44px] px-3 rounded-[var(--radius-control)] flex items-center gap-3 font-sans text-[14px] font-medium text-[var(--fg-primary)] hover:bg-[var(--surface-2)] cursor-pointer"
+                      className="w-full min-h-[44px] px-3 py-2 rounded-[var(--radius-control)] flex items-center gap-3 text-left font-sans text-[14px] font-medium text-[var(--fg-primary)] hover:bg-[var(--surface-2)] active:scale-[0.99] transition-colors cursor-pointer theme-focus"
                     >
-                      <Edit3 className="w-4 h-4 text-[var(--intent-primary)]" />
-                      <span>Deck bearbeiten (Name, Icon &amp; Farbe)</span>
+                      <Edit3 className="w-4 h-4 shrink-0 text-[var(--intent-primary)]" />
+                      <span className="min-w-0 flex-1 leading-snug">
+                        Deck bearbeiten (Name, Icon &amp; Farbe)
+                      </span>
                     </button>
                   )}
 
@@ -2106,10 +2101,12 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
                         setActionDeckId(null);
                         setMoveTargetDeckId(dId);
                       }}
-                      className="w-full min-h-[44px] px-3 rounded-[var(--radius-control)] flex items-center gap-3 font-sans text-[14px] font-medium text-[var(--fg-primary)] hover:bg-[var(--surface-2)] cursor-pointer"
+                      className="w-full min-h-[44px] px-3 py-2 rounded-[var(--radius-control)] flex items-center gap-3 text-left font-sans text-[14px] font-medium text-[var(--fg-primary)] hover:bg-[var(--surface-2)] active:scale-[0.99] transition-colors cursor-pointer theme-focus"
                     >
-                      <FolderInput className="w-4 h-4 text-[var(--intent-warning)]" />
-                      <span>In Ordner verschieben…</span>
+                      <FolderInput className="w-4 h-4 shrink-0 text-[var(--intent-warning)]" />
+                      <span className="min-w-0 flex-1 leading-snug">
+                        In Ordner verschieben…
+                      </span>
                     </button>
                   )}
 
@@ -2119,35 +2116,46 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
                       onClick={() =>
                         handleAssignDeckToFolder(targetDeck.id, null)
                       }
-                      className="w-full min-h-[44px] px-3 rounded-[var(--radius-control)] flex items-center gap-3 font-sans text-[14px] font-medium text-[var(--fg-primary)] hover:bg-[var(--surface-2)] cursor-pointer"
+                      className="w-full min-h-[44px] px-3 py-2 rounded-[var(--radius-control)] flex items-center gap-3 text-left font-sans text-[14px] font-medium text-[var(--fg-primary)] hover:bg-[var(--surface-2)] active:scale-[0.99] transition-colors cursor-pointer theme-focus"
                     >
-                      <Folder className="w-4 h-4 text-[var(--fg-secondary)]" />
-                      <span>Aus Ordner entfernen (Kein Ordner)</span>
+                      <Folder className="w-4 h-4 shrink-0 text-[var(--fg-secondary)]" />
+                      <span className="min-w-0 flex-1 leading-snug">
+                        Aus Ordner entfernen (Kein Ordner)
+                      </span>
                     </button>
                   )}
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onResetDeckSrs(targetDeck.cards.map((c) => c.id));
-                      setActionDeckId(null);
-                    }}
-                    className="w-full min-h-[44px] px-3 rounded-[var(--radius-control)] flex items-center gap-3 font-sans text-[14px] font-medium text-[var(--fg-primary)] hover:bg-[var(--surface-2)] cursor-pointer"
-                  >
-                    <RotateCcw className="w-4 h-4 text-[var(--fg-secondary)]" />
-                    <span>Fortschritt für dieses Deck zurücksetzen</span>
-                  </button>
-
-                  {!targetDeck.isSystemSmart && (
+                  <div className="pt-1.5 mt-1 border-t border-[var(--border-subtle)] space-y-1">
                     <button
                       type="button"
-                      onClick={() => handleDeleteDeck(targetDeck.id)}
-                      className="w-full min-h-[44px] px-3 rounded-[var(--radius-control)] flex items-center gap-3 font-sans text-[14px] font-medium text-[var(--intent-danger)] hover:bg-[var(--intent-danger-soft)] cursor-pointer"
+                      onClick={() => {
+                        onResetDeckSrs(
+                          targetDeck.cards.map((c) => c.id),
+                          targetDeck.id
+                        );
+                        setActionDeckId(null);
+                      }}
+                      className="w-full min-h-[44px] px-3 py-2 rounded-[var(--radius-control)] flex items-center gap-3 text-left font-sans text-[14px] font-medium text-[var(--fg-primary)] hover:bg-[var(--surface-2)] active:scale-[0.99] transition-colors cursor-pointer theme-focus"
                     >
-                      <Trash2 className="w-4 h-4" />
-                      <span>Deck löschen</span>
+                      <RotateCcw className="w-4 h-4 shrink-0 text-[var(--fg-secondary)]" />
+                      <span className="min-w-0 flex-1 leading-snug">
+                        Fortschritt für dieses Deck zurücksetzen
+                      </span>
                     </button>
-                  )}
+
+                    {!targetDeck.isSystemSmart && (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteDeck(targetDeck.id)}
+                        className="w-full min-h-[44px] px-3 py-2 rounded-[var(--radius-control)] flex items-center gap-3 text-left font-sans text-[14px] font-medium text-[var(--intent-danger)] hover:bg-[var(--intent-danger-soft)] active:scale-[0.99] transition-colors cursor-pointer theme-focus"
+                      >
+                        <Trash2 className="w-4 h-4 shrink-0" />
+                        <span className="min-w-0 flex-1 leading-snug">
+                          Deck löschen
+                        </span>
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -2155,7 +2163,7 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
         })()}
 
       {/* ====================================================================
-       * SHEET 2: FOLDER "⋯" OVERFLOW MENU (Edit Folder / Delete Folder)
+       * POPUP MODAL 2: FOLDER "⋯" OVERFLOW MENU (Edit Folder / Delete Folder)
        * ==================================================================== */}
       {actionFolderId &&
         (() => {
@@ -2168,26 +2176,13 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
               aria-modal="true"
               aria-label={`Folder options for ${targetFolder.name}`}
               onClick={() => setActionFolderId(null)}
-              style={activeSheetBackdropStyle}
-              className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-black/50 backdrop-blur-xs anatomy-backdrop-enter"
+              className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs anatomy-backdrop-enter"
             >
               <div
                 onClick={(e) => e.stopPropagation()}
-                style={activeSheetStyle}
-                onTouchStart={activeSheetTouchHandlers.onTouchStart}
-                onTouchMove={activeSheetTouchHandlers.onTouchMove}
-                onTouchEnd={activeSheetTouchHandlers.onTouchEnd}
-                onTouchCancel={activeSheetTouchHandlers.onTouchCancel}
-                className="w-full max-w-md rounded-t-3xl sm:rounded-[var(--radius-card)] surface-overlay border p-5 pt-3 sm:pt-5 space-y-3 anatomy-sheet-enter"
+                className="w-full max-w-[380px] sm:max-w-md rounded-[var(--radius-card)] surface-overlay border p-4 sm:p-5 space-y-3 max-h-[85dvh] overflow-y-auto modal-pop-enter"
               >
-                <div
-                  data-sheet-handle="true"
-                  className="w-10 h-1 rounded-full bg-[var(--border-strong)] mx-auto sm:hidden"
-                />
-                <div
-                  data-sheet-handle="true"
-                  className="flex items-center justify-between gap-3 pb-2 border-b border-[var(--border-subtle)]"
-                >
+                <div className="flex items-center justify-between gap-3 pb-2.5 border-b border-[var(--border-subtle)]">
                   <div className="flex items-center gap-3 min-w-0">
                     {renderIconTile({
                       tint: targetFolder.tint,
@@ -2201,7 +2196,7 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
                     type="button"
                     onClick={() => setActionFolderId(null)}
                     aria-label="Close folder menu"
-                    className="w-[44px] h-[44px] rounded-full flex items-center justify-center text-[var(--fg-muted)] hover:text-[var(--fg-primary)] cursor-pointer"
+                    className="w-[44px] h-[44px] -mr-1.5 rounded-full flex items-center justify-center text-[var(--fg-muted)] hover:text-[var(--fg-primary)] hover:bg-[var(--surface-2)] transition-colors cursor-pointer shrink-0 theme-focus"
                   >
                     <X className="w-4 h-4" />
                   </button>
@@ -2215,10 +2210,12 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
                       setActionFolderId(null);
                       openEditor('edit-folder', { targetId: fId });
                     }}
-                    className="w-full min-h-[44px] px-3 rounded-[var(--radius-control)] flex items-center gap-3 font-sans text-[14px] font-medium text-[var(--fg-primary)] hover:bg-[var(--surface-2)] cursor-pointer"
+                    className="w-full min-h-[44px] px-3 py-2 rounded-[var(--radius-control)] flex items-center gap-3 text-left font-sans text-[14px] font-medium text-[var(--fg-primary)] hover:bg-[var(--surface-2)] active:scale-[0.99] transition-colors cursor-pointer theme-focus"
                   >
-                    <Edit3 className="w-4 h-4 text-[var(--intent-primary)]" />
-                    <span>Ordner bearbeiten (Name, Icon &amp; Farbe)</span>
+                    <Edit3 className="w-4 h-4 shrink-0 text-[var(--intent-primary)]" />
+                    <span className="min-w-0 flex-1 leading-snug">
+                      Ordner bearbeiten (Name, Icon &amp; Farbe)
+                    </span>
                   </button>
 
                   <button
@@ -2227,10 +2224,12 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
                       setActionFolderId(null);
                       setDeleteFolderTarget(targetFolder);
                     }}
-                    className="w-full min-h-[44px] px-3 rounded-[var(--radius-control)] flex items-center gap-3 font-sans text-[14px] font-medium text-[var(--intent-danger)] hover:bg-[var(--intent-danger-soft)] cursor-pointer"
+                    className="w-full min-h-[44px] px-3 py-2 rounded-[var(--radius-control)] flex items-center gap-3 text-left font-sans text-[14px] font-medium text-[var(--intent-danger)] hover:bg-[var(--intent-danger-soft)] active:scale-[0.99] transition-colors cursor-pointer theme-focus"
                   >
-                    <Trash2 className="w-4 h-4" />
-                    <span>Ordner löschen…</span>
+                    <Trash2 className="w-4 h-4 shrink-0" />
+                    <span className="min-w-0 flex-1 leading-snug">
+                      Ordner löschen…
+                    </span>
                   </button>
                 </div>
               </div>
@@ -2482,23 +2481,13 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
           aria-modal="true"
           aria-label="Ordner löschen"
           onClick={() => setDeleteFolderTarget(null)}
-          style={activeSheetBackdropStyle}
-          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-black/50 backdrop-blur-xs anatomy-backdrop-enter"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs anatomy-backdrop-enter"
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            style={activeSheetStyle}
-            onTouchStart={activeSheetTouchHandlers.onTouchStart}
-            onTouchMove={activeSheetTouchHandlers.onTouchMove}
-            onTouchEnd={activeSheetTouchHandlers.onTouchEnd}
-            onTouchCancel={activeSheetTouchHandlers.onTouchCancel}
-            className="w-full max-w-md rounded-t-3xl sm:rounded-[var(--radius-card)] surface-overlay border p-5 pt-3 sm:pt-5 space-y-4 anatomy-sheet-enter"
+            className="w-full max-w-[380px] sm:max-w-md rounded-[var(--radius-card)] surface-overlay border p-5 space-y-4 max-h-[85dvh] overflow-y-auto modal-pop-enter"
           >
-            <div
-              data-sheet-handle="true"
-              className="w-10 h-1 rounded-full bg-[var(--border-strong)] mx-auto sm:hidden"
-            />
-            <div data-sheet-handle="true" className="space-y-1">
+            <div className="space-y-1">
               <h2 className="font-display text-[18px] font-bold text-[var(--fg-primary)]">
                 Ordner „{deleteFolderTarget.name}“ löschen?
               </h2>

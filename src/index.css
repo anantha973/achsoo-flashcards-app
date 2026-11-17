@@ -992,6 +992,37 @@
 /* ==========================================================================
  * FLUID PADDING (SCALED BY --density) & CLAMP() TYPOGRAPHY
  * ========================================================================== */
+.study-stage-shell {
+  width: 100%;
+  max-width: 520px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+@media (min-width: 768px) {
+  .study-stage-shell {
+    max-width: min(86vw, 680px);
+  }
+}
+
+@media (min-width: 1024px) and (orientation: portrait) {
+  .study-stage-shell {
+    max-width: min(82vw, 720px);
+  }
+}
+
+@media (min-width: 768px) and (orientation: landscape) {
+  .study-stage-shell {
+    max-width: clamp(620px, 64vw, 760px);
+  }
+}
+
+@media (min-width: 1280px) {
+  .study-stage-shell {
+    max-width: clamp(640px, 50vw, 760px);
+  }
+}
+
 .fluid-card-pad {
   padding: calc(clamp(1.1rem, 3.8vw, 1.85rem) * var(--density)) calc(clamp(1.2rem, 4.2vw, 2.25rem) * var(--density));
 }
@@ -1049,6 +1080,68 @@
 .fluid-sentence-long {
   font-size: clamp(0.875rem, 2.3vw, 1rem);
   line-height: 1.44;
+}
+
+/* Proportional iPad & Desktop Typography Ramp (Width + Height Bounded) */
+@media (min-width: 768px) {
+  .fluid-card-pad {
+    padding: calc(clamp(1.35rem, 2.6dvh, 2.1rem) * var(--density)) calc(clamp(1.75rem, 3.6vw, 2.75rem) * var(--density));
+  }
+
+  .fluid-lemma-short {
+    font-size: clamp(2.85rem, min(5.4vw, 5.8dvh), 3.9rem);
+    line-height: 1.12;
+  }
+
+  .fluid-lemma-medium {
+    font-size: clamp(2.3rem, min(4.4vw, 4.6dvh), 3.1rem);
+    line-height: 1.16;
+  }
+
+  .fluid-lemma-long {
+    font-size: clamp(1.85rem, min(3.4vw, 3.6dvh), 2.45rem);
+    line-height: 1.2;
+  }
+
+  .fluid-back-lemma {
+    font-size: clamp(2.25rem, min(4.2vw, 4.4dvh), 3.15rem);
+    line-height: 1.14;
+  }
+
+  .fluid-back-lemma-medium {
+    font-size: clamp(1.9rem, min(3.5vw, 3.7dvh), 2.55rem);
+    line-height: 1.18;
+  }
+
+  .fluid-back-lemma-long {
+    font-size: clamp(1.55rem, min(2.9vw, 3.1dvh), 2.1rem);
+    line-height: 1.22;
+  }
+
+  .fluid-meaning {
+    font-size: clamp(2rem, min(3.9vw, 4.1dvh), 2.85rem);
+    line-height: 1.22;
+  }
+
+  .fluid-meaning-long {
+    font-size: clamp(1.6rem, min(3vw, 3.2dvh), 2.2rem);
+    line-height: 1.28;
+  }
+
+  .fluid-form-value {
+    font-size: clamp(1.15rem, min(2vw, 2.2dvh), 1.45rem);
+    line-height: 1.25;
+  }
+
+  .fluid-sentence {
+    font-size: clamp(1.0625rem, min(1.85vw, 2.05dvh), 1.32rem);
+    line-height: 1.46;
+  }
+
+  .fluid-sentence-long {
+    font-size: clamp(1rem, min(1.7vw, 1.85dvh), 1.2rem);
+    line-height: 1.44;
+  }
 }
 
 /* ==========================================================================
@@ -1183,7 +1276,19 @@
 
 @media (min-width: 768px) {
   .flip-card-inner {
-    min-height: clamp(400px, 52dvh, 480px);
+    min-height: clamp(450px, 55dvh, 630px);
+  }
+}
+
+@media (min-width: 768px) and (orientation: landscape) {
+  .flip-card-inner {
+    min-height: clamp(370px, 52dvh, 550px);
+  }
+}
+
+@media (min-width: 1280px) {
+  .flip-card-inner {
+    min-height: clamp(390px, 54dvh, 570px);
   }
 }
 
@@ -1387,12 +1492,27 @@
   }
 }
 
+@keyframes modalPopIn {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 6px, 0) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
 .anatomy-backdrop-enter {
   animation: anatomyBackdropIn 200ms var(--ease) forwards;
 }
 
 .anatomy-sheet-enter {
   animation: anatomySheetIn 280ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.modal-pop-enter {
+  animation: modalPopIn 220ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
 .anatomy-body-transition {
@@ -1451,6 +1571,7 @@
 @media (prefers-reduced-motion: reduce) {
   .anatomy-backdrop-enter,
   .anatomy-sheet-enter,
+  .modal-pop-enter,
   .anatomy-tab-content-enter,
   .anatomy-tab-content-enter-prev,
   .popover-enter {

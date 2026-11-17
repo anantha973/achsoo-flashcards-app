@@ -198,11 +198,11 @@ export interface CardSrsState {
   learningSteps?: number;
 }
 
-export type ReviewEventType = 'review' | 'undo';
+export type ReviewEventType = 'review' | 'undo' | 'reset';
 
 export interface ReviewLogEntry {
   id: string; // UUID v4 primary key for idempotent multi-device union sync
-  eventType?: ReviewEventType; // 'review' (default) or 'undo' append-only marker
+  eventType?: ReviewEventType; // 'review' (default), 'undo', or 'reset' append-only marker
   undoTargetId?: string | null; // When eventType === 'undo', the UUID of the review log entry being undone
   cardId: string;
   timestamp: string; // ISO-8601 UTC review timestamp

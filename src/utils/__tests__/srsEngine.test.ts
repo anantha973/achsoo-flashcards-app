@@ -28,6 +28,7 @@ import {
   replayAllStatesFromLogs,
   replayCardStateFromLogs,
   resetAllSrsProgress,
+  resetCardsSrsProgress,
   undoLastReview,
 } from '../srsEngine';
 
@@ -435,5 +436,97 @@ describe('Achsoo FSRS & Append-Only Review Log Engine (T-01 .. T-12)', () => {
     expect(merge2.srsMap['v-teilnehmen'].reviewCount).toBe(2);
     expect(merge2.srsMap['v-teilnehmen'].fsrsState).toBe('review');
     expect(merge2.stats.streakDays).toBe(2);
+  });
+
+  it('T-13: Resetting a deck resets card SRS state cleanly across reloads while preserving all user stats & review history', async () => {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    yesterday.setHours(14, 0, 0, 0);
+
+    const earlierToday = new Date();
+    earlierToday.setHours(10, 0, 0, 0);
+    if (earlierToday.getHours() < 5) {
+      earlierToday.setHours(10, 0, 0, 0);
+    }
+
+    const resetNow = new Date(earlierToday.getTime() + 10 * 60_000);
+    const retestNow = new Date(resetNow.getTime() + 5 * 60_000);
+
+    let srsMap = loadSrsMap(INITIAL_CARDS);
+
+    // Day 1 (yesterday): review v-ankommen
+    srsMap = appendRatingEvent({
+      cardId: 'v-ankommen',
+      rating: 'good',
+      srsMap,
+      now: yesterday,
+      durationMs: 3200,
+    }).updatedMap;
+
+    // Day 2 (today): review v-ankommen and v-sprechen
+    srsMap = appendRatingEvent({
+      cardId: 'v-ankommen',
+      rating: 'easy',
+      srsMap,
+      now: earlierToday,
+      durationMs: 2400,
+    }).updatedMap;
+
+    const beforeReset = appendRatingEvent({
+      cardId: 'v-sprechen',
+      rating: 'good',
+      srsMap,
+      now: new Date(earlierToday.getTime() + 60_000),
+      durationMs: 1800,
+    });
+    srsMap = beforeReset.updatedMap;
+
+    expect(beforeReset.updatedStats.streakDays).toBe(2);
+    expect(beforeReset.updatedStats.totalReviewsToday).toBe(2);
+    expect(beforeReset.updatedStats.totalTimeStudiedMs).toBe(7400);
+
+    // Reset deck containing v-ankommen (leave v-sprechen untouched)
+    const { updatedMap, updatedStats } = resetCardsSrsProgress(
+      ['v-ankommen'],
+      srsMap,
+      resetNow
+    );
+
+    // Target card is reset to fresh new state; untouched card keeps its progress
+    expect(isCardNew(updatedMap['v-ankommen'])).toBe(true);
+    expect(updatedMap['v-ankommen'].reviewCount).toBe(0);
+    expect(updatedMap['v-ankommen'].mastered).toBe(false);
+    expect(updatedMap['v-sprechen'].reviewCount).toBe(1);
+
+    // User stats & history remain completely preserved!
+    expect(updatedStats.streakDays).toBe(2);
+    expect(updatedStats.totalReviewsToday).toBe(2);
+    expect(updatedStats.totalTimeStudiedMs).toBe(7400);
+    expect(updatedStats.timeStudiedMsToday).toBe(4200);
+    expect(updatedStats.retentionPct).toBe(100);
+
+    // Reload / replay purely from persisted logs & IndexedDB hydration must preserve both reset state AND stats
+    const reloadedMap = loadSrsMap(INITIAL_CARDS);
+    expect(isCardNew(reloadedMap['v-ankommen'])).toBe(true);
+    expect(reloadedMap['v-sprechen'].reviewCount).toBe(1);
+
+    const hydrated = await hydrateEngineFromIndexedDB(INITIAL_CARDS);
+    expect(isCardNew(hydrated.srsMap['v-ankommen'])).toBe(true);
+    expect(hydrated.stats.streakDays).toBe(2);
+    expect(hydrated.stats.totalReviewsToday).toBe(2);
+    expect(hydrated.stats.totalTimeStudiedMs).toBe(7400);
+
+    // Studying the reset card again starts SRS from reviewCount = 1 and adds to total stats
+    const retested = appendRatingEvent({
+      cardId: 'v-ankommen',
+      rating: 'good',
+      srsMap: hydrated.srsMap,
+      now: retestNow,
+      durationMs: 2000,
+    });
+    expect(retested.nextState.reviewCount).toBe(1);
+    expect(retested.nextState.fsrsState).toBe('learning');
+    expect(retested.updatedStats.totalReviewsToday).toBe(3);
+    expect(retested.updatedStats.totalTimeStudiedMs).toBe(9400);
   });
 });

@@ -106,11 +106,15 @@ interface CardStateRow {
 }
 
 function toReviewLogRow(entry: ReviewLogEntry): ReviewLogRow {
+  // Store 'reset' inside payload.eventType while keeping column event_type within ('review', 'undo')
+  // for seamless backward compatibility with deployed Postgres CHECK constraints.
+  const columnEventType =
+    entry.eventType === 'reset' ? 'undo' : (entry.eventType ?? 'review');
   return {
     id: entry.id,
     profile_key: SUPABASE_PROFILE_KEY,
-    event_type: entry.eventType ?? 'review',
-    undo_target_id: entry.undoTargetId ?? null,
+    event_type: columnEventType,
+    undo_target_id: entry.eventType === 'reset' ? null : (entry.undoTargetId ?? null),
     card_id: entry.cardId,
     reviewed_at: entry.reviewedAt || entry.timestamp,
     study_day_key: entry.studyDayKey,
@@ -136,9 +140,13 @@ function fromReviewLogRow(row: ReviewLogRow): ReviewLogEntry {
       syncedAt: row.payload.syncedAt || row.reviewed_at,
     };
   }
+  const inferredEventType: ReviewLogEntry['eventType'] =
+    row.event_type === 'undo' && !row.undo_target_id && row.state_after === 'new'
+      ? 'reset'
+      : ((row.event_type as ReviewLogEntry['eventType']) || 'review');
   return {
     id: row.id,
-    eventType: (row.event_type as ReviewLogEntry['eventType']) || 'review',
+    eventType: inferredEventType,
     undoTargetId: row.undo_target_id,
     cardId: row.card_id,
     timestamp: row.reviewed_at,
@@ -253,6 +261,37 @@ export async function syncReviewEventToSupabase(
         }),
       syncStudyStatsToSupabase(stats),
     ]);
+  } catch {
+    // Offline fallback handled by bulk sync on next connection
+  }
+}
+
+export async function syncBatchReviewEventsToSupabase(
+  logEntries: ReviewLogEntry[],
+  nextStates: CardSrsState[],
+  stats: StudyStats
+): Promise<void> {
+  const client = getSupabaseClient();
+  if (!client) return;
+  try {
+    const ops: PromiseLike<unknown>[] = [syncStudyStatsToSupabase(stats)];
+    if (logEntries.length > 0) {
+      ops.push(
+        client
+          .from('achsoo_review_logs')
+          .upsert(logEntries.map(toReviewLogRow), { onConflict: 'id' })
+      );
+    }
+    if (nextStates.length > 0) {
+      ops.push(
+        client
+          .from('achsoo_card_states')
+          .upsert(nextStates.map(toCardStateRow), {
+            onConflict: 'profile_key,card_id',
+          })
+      );
+    }
+    await Promise.all(ops);
   } catch {
     // Offline fallback handled by bulk sync on next connection
   }
