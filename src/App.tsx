@@ -31,7 +31,6 @@ import {
   Minimize2,
   Palette,
   Play,
-  Plus,
   RotateCcw,
   RotateCw,
   Search,
@@ -683,7 +682,7 @@ export default function App() {
     brandBadgeTimerRef.current = window.setTimeout(() => {
       setShowBrandAhaBadge(false);
       brandBadgeTimerRef.current = null;
-    }, 1550);
+    }, 2100);
 
     navigateToView('decks');
     setDecksSubScreen({ type: 'root' });
@@ -4279,32 +4278,21 @@ export default function App() {
                 </span>
               </button>
 
-              {/* Playful Click Micro-Interaction Pill ("Ach so! · Aha!") */}
+              {/* Playful Click Micro-Interaction Pop-Up ("Ach so! · Aha!") */}
               {showBrandAhaBadge && (
                 <span
                   key={`aha-${brandClickSeq}`}
                   aria-live="polite"
-                  className="brand-aha-pill hidden lg:inline-flex absolute left-full inset-y-0 my-auto h-fit ml-1.5 z-20 items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium surface-2 border border-[var(--border-subtle)] shadow-ring pointer-events-none whitespace-nowrap"
+                  className="brand-aha-pill inline-flex absolute left-full inset-y-0 my-auto h-fit ml-2.5 sm:ml-3.5 z-30 items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs sm:text-[13px] font-medium surface-paper backdrop-blur-md border border-[var(--border-strong)] shadow-sm pointer-events-none whitespace-nowrap max-w-[calc(100vw-230px)] sm:max-w-none truncate"
                 >
-                  <span className="inline-flex items-center gap-0.5" aria-hidden="true">
-                    <span
-                      className="w-1.5 h-1.5 rounded-full"
-                      style={{ backgroundColor: 'var(--brand-coral)' }}
-                    />
-                    <span
-                      className="w-1.5 h-1.5 rounded-full"
-                      style={{ backgroundColor: 'var(--brand-sage)' }}
-                    />
-                    <span
-                      className="w-1.5 h-1.5 rounded-full"
-                      style={{ backgroundColor: 'var(--brand-fjord)' }}
-                    />
-                  </span>
-                  <span className="font-semibold text-[var(--fg-primary)]">
+                  <span className="font-display font-bold text-[var(--intent-primary)]">
                     {activeBrandExpression.de}
                   </span>
-                  <span className="text-[var(--fg-muted)]">
-                    · {activeBrandExpression.en}
+                  <span className="text-[var(--fg-muted)]" aria-hidden="true">
+                    ·
+                  </span>
+                  <span className="text-[var(--fg-secondary)] truncate">
+                    {activeBrandExpression.en}
                   </span>
                 </span>
               )}
@@ -4356,20 +4344,9 @@ export default function App() {
               ))}
             </nav>
 
-            {/* Zone 3: Anchored Theme Popover + Separate Light/Dark Mode Toggle + New Card CTA */}
+            {/* Zone 3: Anchored Theme Popover + Separate Light/Dark Mode Toggle */}
             <div className="flex items-center gap-2 shrink-0">
               {renderAppearanceControls()}
-
-              <Button
-                intent="primary"
-                size="sm"
-                onClick={() => setIsAddModalOpen(true)}
-                aria-label="Create new flashcard"
-                className="min-h-[40px] sm:min-h-[36px] px-3.5"
-              >
-                <Plus className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
-                <span>New Card</span>
-              </Button>
             </div>
           </div>
         </header>
