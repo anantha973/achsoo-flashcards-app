@@ -1,9 +1,12 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import type {
-  CardSrsState,
-  ReviewLogEntry,
-  StudyStats,
-  VocabCard,
+import {
+  normalizeRatingKey,
+  type CardSrsState,
+  type LegacyRatingKey,
+  type RatingKey,
+  type ReviewLogEntry,
+  type StudyStats,
+  type VocabCard,
 } from '../data/vocabData';
 import type {
   CustomDeckRecord,
@@ -105,11 +108,21 @@ interface CardStateRow {
   updated_at: string;
 }
 
+const CONFIDENCE_TO_SQL_COLUMN: Record<RatingKey, LegacyRatingKey> = {
+  '1': 'again',
+  '2': 'hard',
+  '3': 'hard',
+  '4': 'good',
+  '5': 'easy',
+};
+
 function toReviewLogRow(entry: ReviewLogEntry): ReviewLogRow {
   // Store 'reset' inside payload.eventType while keeping column event_type within ('review', 'undo')
-  // for seamless backward compatibility with deployed Postgres CHECK constraints.
+  // and map column rating within ('again', 'hard', 'good', 'easy') for deployed Postgres CHECK constraints.
   const columnEventType =
     entry.eventType === 'reset' ? 'undo' : (entry.eventType ?? 'review');
+  const normRating = normalizeRatingKey(entry.rating) ?? '1';
+  const columnRating = CONFIDENCE_TO_SQL_COLUMN[normRating];
   return {
     id: entry.id,
     profile_key: SUPABASE_PROFILE_KEY,
@@ -118,7 +131,7 @@ function toReviewLogRow(entry: ReviewLogEntry): ReviewLogRow {
     card_id: entry.cardId,
     reviewed_at: entry.reviewedAt || entry.timestamp,
     study_day_key: entry.studyDayKey,
-    rating: entry.rating,
+    rating: columnRating,
     state_before: entry.stateBefore,
     state_after: entry.stateAfter,
     due_before: entry.dueBefore,
@@ -193,17 +206,37 @@ function toCardStateRow(state: CardSrsState): CardStateRow {
 
 function fromCardStateRow(row: CardStateRow): CardSrsState {
   if (row.state_json && typeof row.state_json === 'object' && row.state_json.cardId) {
-    return row.state_json;
+    const normalizedLast = normalizeRatingKey(row.state_json.lastRating);
+    const confidence =
+      typeof row.state_json.confidence === 'number'
+        ? row.state_json.confidence
+        : row.state_json.mastered
+        ? 4
+        : (row.state_json.reviewCount ?? 0) > 0
+        ? 3
+        : 0;
+    return {
+      ...row.state_json,
+      confidence: Math.max(0, Math.min(5, Math.round(confidence))) as CardSrsState['confidence'],
+      lastRating: normalizedLast,
+    };
   }
+  const normalizedLast = normalizeRatingKey(row.last_rating);
+  const confidence = row.mastered
+    ? 4
+    : (row.review_count ?? 0) > 0
+    ? 3
+    : 0;
   return {
     cardId: row.card_id,
+    confidence,
     intervalMinutes: row.interval_minutes,
     easeFactor: row.ease_factor,
     repetitions: row.repetitions,
     reviewCount: row.review_count,
     lastReviewedAt: row.last_reviewed_at,
     dueAt: row.due_at,
-    lastRating: (row.last_rating as CardSrsState['lastRating']) || undefined,
+    lastRating: normalizedLast,
     mastered: row.mastered,
     fsrsState: (row.fsrs_state as CardSrsState['fsrsState']) || 'new',
     stability: row.stability,

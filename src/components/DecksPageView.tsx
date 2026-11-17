@@ -47,10 +47,11 @@ import {
   suggestIconFromKeywords,
 } from '../utils/decksManager';
 import { useSheetSwipeDismiss } from '../hooks/useMobileGestures';
+import { computeConfidenceMasteryPct } from '../utils/confidenceLoopEngine';
 import {
   createDefaultSrsState,
-  formatIntervalBadge,
-  isCardDueToday,
+  formatConfidenceBadge,
+  isCardLowConfidence,
   triggerHapticFeedback,
 } from '../utils/srsEngine';
 import { SlidingPillSwitcher } from './SlidingPillSwitcher';
@@ -77,7 +78,7 @@ export interface EnrichedUnifiedDeck {
   total: number;
   mastered: number;
   learning: number;
-  due: number;
+  lowConfidence: number;
   masteredPct: number;
   learningPct: number;
   progressPct: number;
@@ -408,9 +409,10 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
     setSubScreenDragX(0);
   }, []);
 
-  // System Smart Decks (Daily Due Queue & Complete Core Wortschatz)
-  const dueQueueDeck = useMemo(
-    () => enrichedDecks.find((d) => d.id === 'due') || enrichedDecks[0],
+  // System Smart Decks (Low Confidence 1-2 Queue & Complete Core Wortschatz)
+  const lowConfidenceDeck = useMemo(
+    () =>
+      enrichedDecks.find((d) => d.id === 'low-confidence') || enrichedDecks[0],
     [enrichedDecks]
   );
 
@@ -435,18 +437,20 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
     []
   );
 
-  // Active deck comparator based on Sort dropdown ('last-studied' | 'due' | 'name')
+  // Active deck comparator based on Sort dropdown ('last-studied' | 'low-confidence' | 'name')
   const compareDecksBySort = useCallback(
     (a: EnrichedUnifiedDeck, b: EnrichedUnifiedDeck) => {
       if (sortOption === 'last-studied') {
         return (
           b.lastStudiedAt - a.lastStudiedAt ||
-          b.due - a.due ||
+          b.lowConfidence - a.lowConfidence ||
           compareDecksAlphanumeric(a, b)
         );
       }
-      if (sortOption === 'due') {
-        return b.due - a.due || compareDecksAlphanumeric(a, b);
+      if (sortOption === 'low-confidence') {
+        return (
+          b.lowConfidence - a.lowConfidence || compareDecksAlphanumeric(a, b)
+        );
       }
       return compareDecksAlphanumeric(a, b);
     },
@@ -493,19 +497,21 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
         let totalCards = 0;
         let totalMastered = 0;
         let totalLearning = 0;
-        let totalDue = 0;
+        let totalLowConfidence = 0;
         let lastStudiedAt = 0;
         const levelCounts: Record<string, number> = { A1: 0, A2: 0, B1: 0 };
+        const folderCardIds: string[] = [];
 
         for (const d of childDecks) {
           totalCards += d.total;
           totalMastered += d.mastered;
           totalLearning += d.learning;
-          totalDue += d.due;
+          totalLowConfidence += d.lowConfidence;
           if (d.lastStudiedAt > lastStudiedAt) {
             lastStudiedAt = d.lastStudiedAt;
           }
           for (const c of d.cards) {
+            folderCardIds.push(c.id);
             levelCounts[c.cefr] = (levelCounts[c.cefr] || 0) + 1;
           }
         }
@@ -514,13 +520,7 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
           totalCards > 0 ? (totalMastered / totalCards) * 100 : 0;
         const learningPct =
           totalCards > 0 ? (totalLearning / totalCards) * 100 : 0;
-        const progressPct =
-          totalCards > 0
-            ? Math.min(
-                100,
-                Math.round(((totalMastered + totalLearning) / totalCards) * 100)
-              )
-            : 0;
+        const progressPct = computeConfidenceMasteryPct(folderCardIds, srsMap);
 
         let dominantLevel = 'A1–B1';
         const topEntry = Object.entries(levelCounts).sort(
@@ -537,7 +537,7 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
           totalCards,
           totalMastered,
           totalLearning,
-          totalDue,
+          totalLowConfidence,
           lastStudiedAt,
           masteredPct,
           learningPct,
@@ -551,8 +551,11 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
             b.lastStudiedAt - a.lastStudiedAt || b.createdAt - a.createdAt
           );
         }
-        if (sortOption === 'due') {
-          return b.totalDue - a.totalDue || b.createdAt - a.createdAt;
+        if (sortOption === 'low-confidence') {
+          return (
+            b.totalLowConfidence - a.totalLowConfidence ||
+            b.createdAt - a.createdAt
+          );
         }
         return b.createdAt - a.createdAt;
       })
@@ -575,6 +578,7 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
   }, [
     folders,
     userDecks,
+    srsMap,
     compareDecksBySort,
     sortOption,
     searchQuery,
@@ -610,7 +614,7 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
           totalCards: 0,
           totalMastered: 0,
           totalLearning: 0,
-          totalDue: 0,
+          totalLowConfidence: 0,
           lastStudiedAt: 0,
           masteredPct: 0,
           learningPct: 0,
@@ -1016,34 +1020,21 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
             {deck.title}
           </h3>
 
-          {/* Segmented progress bar: mastered (solid) + reviewed (soft) */}
+          {/* Confidence progress bar */}
           <div className="flex items-center gap-2">
             <div
               role="progressbar"
               aria-valuenow={deck.progressPct}
               aria-valuemin={0}
               aria-valuemax={100}
-              aria-label={`${deck.title} progress: ${deck.mastered} mastered, ${deck.learning} reviewed`}
+              aria-label={`${deck.title} Vertrauen: ${deck.progressPct}%`}
               className="h-1 flex-1 rounded-full bg-[var(--surface-3)] overflow-hidden flex"
             >
-              {deck.masteredPct > 0 && (
+              {deck.progressPct > 0 && (
                 <div
                   style={{
-                    width: `${Math.min(100, deck.masteredPct)}%`,
+                    width: `${Math.min(100, deck.progressPct)}%`,
                     backgroundColor: swatch.fgVar,
-                  }}
-                  className="h-full transition-all duration-300"
-                />
-              )}
-              {deck.learningPct > 0 && (
-                <div
-                  style={{
-                    width: `${Math.min(
-                      100 - Math.min(100, deck.masteredPct),
-                      deck.learningPct
-                    )}%`,
-                    backgroundColor: swatch.fgVar,
-                    opacity: 0.42,
                   }}
                   className="h-full transition-all duration-300"
                 />
@@ -1056,16 +1047,16 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
 
           {/* Stats: ONE line, muted, tabular-nums */}
           <div className="font-sans text-[12px] text-[var(--fg-muted)] tabular-nums whitespace-nowrap overflow-hidden text-ellipsis leading-tight">
-            <span>{deck.total} cards</span>
-            {deck.learning > 0 && (
+            <span>{deck.total} Karten</span>
+            {deck.lowConfidence > 0 && (
               <span className="hidden min-[375px]:inline">
                 {' '}
-                · {deck.learning} reviewed
+                · {deck.lowConfidence} Fokus (1–2)
               </span>
             )}
             <span className="hidden min-[375px]:inline">
               {' '}
-              · {deck.mastered} mastered
+              · {deck.mastered} sicher (4–5)
             </span>
           </div>
         </div>
@@ -1170,27 +1161,14 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
               aria-valuenow={folder.progressPct}
               aria-valuemin={0}
               aria-valuemax={100}
-              aria-label={`${folder.name} folder progress: ${folder.totalMastered} mastered, ${folder.totalLearning} reviewed`}
+              aria-label={`${folder.name} Vertrauen: ${folder.progressPct}%`}
               className="h-1 flex-1 rounded-full bg-[var(--surface-3)] overflow-hidden flex"
             >
-              {folder.masteredPct > 0 && (
+              {folder.progressPct > 0 && (
                 <div
                   style={{
-                    width: `${Math.min(100, folder.masteredPct)}%`,
+                    width: `${Math.min(100, folder.progressPct)}%`,
                     backgroundColor: swatch.fgVar,
-                  }}
-                  className="h-full transition-all duration-300"
-                />
-              )}
-              {folder.learningPct > 0 && (
-                <div
-                  style={{
-                    width: `${Math.min(
-                      100 - Math.min(100, folder.masteredPct),
-                      folder.learningPct
-                    )}%`,
-                    backgroundColor: swatch.fgVar,
-                    opacity: 0.42,
                   }}
                   className="h-full transition-all duration-300"
                 />
@@ -1205,12 +1183,12 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
             <span>{folder.dominantLevel}</span>
             <span>
               {' '}
-              · {folder.deckCount} {folder.deckCount === 1 ? 'deck' : 'decks'}
+              · {folder.deckCount} {folder.deckCount === 1 ? 'Deck' : 'Decks'}
             </span>
-            {folder.totalLearning > 0 && (
+            {folder.totalLowConfidence > 0 && (
               <span className="hidden min-[375px]:inline">
                 {' '}
-                · {folder.totalLearning} reviewed
+                · {folder.totalLowConfidence} Fokus (1–2)
               </span>
             )}
           </div>
@@ -1507,7 +1485,7 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
                   className="min-w-0"
                 />
 
-                {/* Sort Dropdown Menu ("Last Studied" | "Due Cards" | "Name") */}
+                {/* Sort Dropdown Menu ("Last Studied" | "Low Confidence 1–2" | "Name") */}
                 <div ref={sortMenuRef} className="relative shrink-0">
                   <button
                     type="button"
@@ -1529,8 +1507,8 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
                     <span>
                       {sortOption === 'last-studied'
                         ? 'Last Studied'
-                        : sortOption === 'due'
-                        ? 'Due Cards'
+                        : sortOption === 'low-confidence'
+                        ? 'Fokus 1–2'
                         : 'Name'}
                     </span>
                     <ChevronDown
@@ -1545,12 +1523,12 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
                       role="menu"
                       aria-label="Sort order"
                       data-state={sortMenuState}
-                      className="absolute right-0 top-[calc(100%+6px)] z-50 w-44 p-1.5 surface-overlay border space-y-0.5 popover-panel"
+                      className="absolute right-0 top-[calc(100%+6px)] z-50 w-48 p-1.5 surface-overlay border space-y-0.5 popover-panel"
                     >
                       {(
                         [
                           { id: 'last-studied', label: 'Last Studied' },
-                          { id: 'due', label: 'Due Cards' },
+                          { id: 'low-confidence', label: 'Low Confidence (1–2)' },
                           { id: 'name', label: 'Name' },
                         ] as const
                       ).map((opt) => {
@@ -1598,7 +1576,7 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
               )}
             </div>
 
-            {/* 4. PINNED HERO CARD AT TOP: "Heute lernen: 24 due" with a single Start button */}
+            {/* 4. PINNED HERO CARD AT TOP: Low Confidence (1-2) Focus Queue */}
             <div className="surface-paper border px-3 py-2.5 flex items-center justify-between gap-2.5">
               <div className="flex items-center gap-2.5 min-w-0">
                 {renderIconTile({
@@ -1607,15 +1585,21 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
                 })}
                 <div className="min-w-0 space-y-0.5">
                   <div className="font-display text-[15px] font-semibold text-[var(--fg-primary)] leading-snug">
-                    Heute lernen:{' '}
-                    <span className="tabular-nums text-[var(--accent-terracotta)]">
-                      {dueQueueDeck.due} due
-                    </span>
+                    {lowConfidenceDeck.lowConfidence > 0 ? (
+                      <>
+                        Fokus-Loop:{' '}
+                        <span className="tabular-nums text-[var(--accent-terracotta)]">
+                          {lowConfidenceDeck.lowConfidence} unsicher (1–2)
+                        </span>
+                      </>
+                    ) : (
+                      'Wortschatz-Loop bereit'
+                    )}
                   </div>
                   <div className="font-sans text-[12px] text-[var(--fg-muted)] tabular-nums truncate">
-                    {dueQueueDeck.due > 0
-                      ? `Daily Due Queue · ${dueQueueDeck.mastered} mastered`
-                      : `Alle ${allCards.length} Karten für heute erledigt`}
+                    {lowConfidenceDeck.lowConfidence > 0
+                      ? `Low Confidence 1–2 · ${lowConfidenceDeck.mastered} sicher (4–5)`
+                      : `Alle ${allCards.length} Karten · Wähle ein Deck oder starte den Gesamt-Loop`}
                   </div>
                 </div>
               </div>
@@ -1624,8 +1608,12 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
                 type="button"
                 onClick={() =>
                   onStartDeckStudy(
-                    dueQueueDeck.due > 0 ? 'due' : 'all',
-                    dueQueueDeck.due > 0 ? dueQueueDeck.cards : allCards
+                    lowConfidenceDeck.lowConfidence > 0
+                      ? 'low-confidence'
+                      : 'all',
+                    lowConfidenceDeck.lowConfidence > 0
+                      ? lowConfidenceDeck.cards
+                      : allCards
                   )
                 }
                 className="h-9 px-3.5 rounded-[var(--radius-control)] bg-[var(--intent-primary)] hover:bg-[var(--intent-primary-hover)] text-[var(--intent-primary-fg)] font-sans text-[12.5px] font-semibold inline-flex items-center gap-1.5 shrink-0 shadow-ring active:scale-95 transition-all cursor-pointer theme-focus"
@@ -1748,7 +1736,7 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
               </div>
             </div>
 
-            {/* "Study all due in this folder" Top CTA Card */}
+            {/* "Ordner im Loop üben" Top CTA Card */}
             <div className="surface-paper border px-3 py-2.5 flex items-center justify-between gap-2.5">
               <div className="flex items-center gap-2.5 min-w-0">
                 {renderIconTile({
@@ -1757,12 +1745,13 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
                 })}
                 <div className="min-w-0 space-y-0.5">
                   <div className="font-display text-[15px] font-semibold text-[var(--fg-primary)] leading-snug">
-                    Study all due in this folder
+                    Ordner im Loop üben
                   </div>
                   <div className="font-sans text-[12px] text-[var(--fg-muted)] tabular-nums truncate">
                     {activeFolder.deckCount}{' '}
-                    {activeFolder.deckCount === 1 ? 'deck' : 'decks'} ·{' '}
-                    {activeFolder.totalDue} due · {activeFolder.progressPct}%
+                    {activeFolder.deckCount === 1 ? 'Deck' : 'Decks'} ·{' '}
+                    {activeFolder.totalLowConfidence} Fokus (1–2) ·{' '}
+                    {activeFolder.progressPct}% Vertrauen
                   </div>
                 </div>
               </div>
@@ -1771,28 +1760,30 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
                 type="button"
                 disabled={activeFolder.totalCards === 0}
                 onClick={() => {
-                  const now = new Date();
                   const allFolderCards = activeFolder.childDecks.flatMap(
                     (d) => d.cards
                   );
                   const uniqueMap = new Map<string, VocabCard>();
                   for (const c of allFolderCards) uniqueMap.set(c.id, c);
                   const uniqueCards = Array.from(uniqueMap.values());
-                  const dueCards = uniqueCards.filter((c) =>
-                    isCardDueToday(
-                      srsMap[c.id] || createDefaultSrsState(c.id),
-                      now
+                  const focusCards = uniqueCards.filter((c) =>
+                    isCardLowConfidence(
+                      srsMap[c.id] || createDefaultSrsState(c.id)
                     )
                   );
                   onStartDeckStudy(
-                    activeFolder.childDecks[0]?.id || 'all',
-                    dueCards.length > 0 ? dueCards : uniqueCards
+                    `folder-${activeFolder.id}`,
+                    focusCards.length > 0 ? focusCards : uniqueCards
                   );
                 }}
                 className="h-9 px-3.5 rounded-[var(--radius-control)] bg-[var(--intent-primary)] hover:bg-[var(--intent-primary-hover)] disabled:opacity-40 text-[var(--intent-primary-fg)] font-sans text-[12.5px] font-semibold inline-flex items-center gap-1.5 shrink-0 shadow-ring cursor-pointer theme-focus"
               >
                 <Play className="w-3 h-3 fill-current" />
-                <span>Start ({activeFolder.totalDue})</span>
+                <span>
+                  {activeFolder.totalLowConfidence > 0
+                    ? `Fokus (${activeFolder.totalLowConfidence})`
+                    : `Start (${activeFolder.totalCards})`}
+                </span>
               </button>
             </div>
 
@@ -1905,9 +1896,9 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
                     {activeDetailDeck.title}
                   </h1>
                   <div className="font-sans text-[12px] text-[var(--fg-muted)] tabular-nums whitespace-nowrap">
-                    <span>{activeDetailDeck.total} cards</span>
-                    <span> · {activeDetailDeck.mastered} mastered</span>
-                    <span> · {activeDetailDeck.due} due</span>
+                    <span>{activeDetailDeck.total} Karten</span>
+                    <span> · {activeDetailDeck.mastered} sicher (4–5)</span>
+                    <span> · {activeDetailDeck.progressPct}% Vertrauen</span>
                   </div>
                 </div>
               </div>
@@ -1925,11 +1916,12 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
               </button>
             </div>
 
-            {/* Unified Grouped Card List inside this Deck (No separate spaced tiles per word) */}
+            {/* Unified Grouped Card List inside this Deck */}
             <div className="surface-paper border overflow-hidden divide-y divide-[var(--border-subtle)]">
               {activeDetailDeck.cards.map((card) => {
                 const st = srsMap[card.id] || createDefaultSrsState(card.id);
-                const isDue = isCardDueToday(st);
+                const isLow = isCardLowConfidence(st);
+                const badgeText = formatConfidenceBadge(st);
                 return (
                   <div
                     key={card.id}
@@ -1955,7 +1947,7 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
                           {card.cefr}
                         </span>
                         <span className="font-sans text-[11.5px] text-[var(--fg-muted)] tabular-nums">
-                          · {formatIntervalBadge(st.intervalMinutes, st.reviewCount)}
+                          · {badgeText}
                         </span>
                       </div>
                       <div className="font-sans text-[12.5px] text-[var(--fg-secondary)] truncate">
@@ -1964,17 +1956,21 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
                     </div>
 
                     <div className="flex items-center gap-1 shrink-0">
-                      {isDue ? (
-                        <span className="h-[22px] px-2 rounded-[var(--radius-pill)] bg-[var(--intent-warning-soft)] text-[var(--intent-warning)] font-sans text-[11px] font-semibold inline-flex items-center">
-                          Due
+                      {isLow ? (
+                        <span className="h-[22px] px-2 rounded-[var(--radius-pill)] bg-[var(--conf-1-soft)] text-[var(--conf-1)] font-sans text-[11px] font-semibold inline-flex items-center tabular-nums">
+                          Stufe {st.confidence}
                         </span>
-                      ) : st.reviewCount === 0 ? (
+                      ) : st.reviewCount === 0 || st.confidence === 0 ? (
                         <span className="h-[22px] px-2 rounded-[var(--radius-pill)] bg-[var(--surface-2)] text-[var(--fg-secondary)] font-sans text-[11px] font-semibold inline-flex items-center">
-                          New
+                          Neu
+                        </span>
+                      ) : st.confidence >= 4 ? (
+                        <span className="h-[22px] px-2 rounded-[var(--radius-pill)] bg-[var(--conf-5-soft)] text-[var(--conf-5)] font-sans text-[11px] font-semibold inline-flex items-center tabular-nums">
+                          ✓ {st.confidence}/5
                         </span>
                       ) : (
-                        <span className="w-6 h-6 rounded-full bg-[var(--surface-2)] text-[var(--intent-success)] flex items-center justify-center font-sans text-[11px] font-semibold">
-                          ✓
+                        <span className="h-[22px] px-2 rounded-[var(--radius-pill)] bg-[var(--conf-3-soft)] text-[var(--conf-3)] font-sans text-[11px] font-semibold inline-flex items-center tabular-nums">
+                          Stufe {st.confidence}
                         </span>
                       )}
 
@@ -2035,7 +2031,7 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
                         {targetDeck.title}
                       </h2>
                       <p className="font-sans text-[13px] text-[var(--fg-muted)] tabular-nums">
-                        {targetDeck.total} cards · {targetDeck.due} due
+                        {targetDeck.total} Karten · {targetDeck.progressPct}% Vertrauen
                       </p>
                     </div>
                   </div>
@@ -2139,7 +2135,7 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
                     >
                       <RotateCcw className="w-4 h-4 shrink-0 text-[var(--fg-secondary)]" />
                       <span className="min-w-0 flex-1 leading-snug">
-                        Fortschritt für dieses Deck zurücksetzen
+                        Fresh start (Deck zurücksetzen)
                       </span>
                     </button>
 
@@ -2458,7 +2454,7 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
                               {d.title}
                             </div>
                             <div className="font-sans text-[12px] text-[var(--fg-muted)] tabular-nums">
-                              {d.total} cards · {d.due} due
+                              {d.total} Karten · {d.progressPct}% Vertrauen
                             </div>
                           </div>
                         </div>

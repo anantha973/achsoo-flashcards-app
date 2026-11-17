@@ -82,27 +82,36 @@
     --gender-n-soft: rgb(46 102 80 / 0.11);
     --gender-n-border: rgb(46 102 80 / 0.26);
 
-    /* 4-Button SRS Rating Dock */
-    --srs-again: #B23A32;
-    --srs-again-soft: rgb(178 58 50 / 0.06);
-    --srs-again-border: rgb(178 58 50 / 0.45);
-    --srs-hard: #9C5518;
-    --srs-hard-soft: rgb(156 85 24 / 0.06);
-    --srs-hard-border: rgb(156 85 24 / 0.45);
-    --srs-good: #147188;
-    --srs-good-soft: rgb(20 113 136 / 0.07);
-    --srs-good-border: rgb(20 113 136 / 0.48);
-    --srs-easy: #2E6650;
-    --srs-easy-soft: rgb(46 102 80 / 0.07);
-    --srs-easy-border: rgb(46 102 80 / 0.45);
-    --srs-again-solid-bg: #B23A32;
-    --srs-again-solid-fg: #FFFEFC;
-    --srs-hard-solid-bg: #9C5518;
-    --srs-hard-solid-fg: #FFFEFC;
-    --srs-good-solid-bg: #147188;
-    --srs-good-solid-fg: #FFFEFC;
-    --srs-easy-solid-bg: #2E6650;
-    --srs-easy-solid-fg: #FFFEFC;
+    /* 5-Button Confidence Rating Dock (1 Gar nicht -> 5 Sicher) */
+    --conf-1: #B23A32;
+    --conf-1-soft: rgb(178 58 50 / 0.08);
+    --conf-1-border: rgb(178 58 50 / 0.45);
+    --conf-1-solid-bg: #B23A32;
+    --conf-1-solid-fg: #FFFEFC;
+
+    --conf-2: #C24E32;
+    --conf-2-soft: rgb(194 78 50 / 0.08);
+    --conf-2-border: rgb(194 78 50 / 0.45);
+    --conf-2-solid-bg: #C24E32;
+    --conf-2-solid-fg: #FFFEFC;
+
+    --conf-3: #9C5518;
+    --conf-3-soft: rgb(156 85 24 / 0.08);
+    --conf-3-border: rgb(156 85 24 / 0.45);
+    --conf-3-solid-bg: #9C5518;
+    --conf-3-solid-fg: #FFFEFC;
+
+    --conf-4: #147188;
+    --conf-4-soft: rgb(20 113 136 / 0.08);
+    --conf-4-border: rgb(20 113 136 / 0.48);
+    --conf-4-solid-bg: #147188;
+    --conf-4-solid-fg: #FFFEFC;
+
+    --conf-5: #2E6650;
+    --conf-5-soft: rgb(46 102 80 / 0.09);
+    --conf-5-border: rgb(46 102 80 / 0.48);
+    --conf-5-solid-bg: #2E6650;
+    --conf-5-solid-fg: #FFFEFC;
 
     /* Segmented Sliding Pill Switcher */
     --seg-track: #F3EFEA;
@@ -200,27 +209,36 @@
     --gender-n-soft: rgb(116 176 148 / 0.16);
     --gender-n-border: rgb(116 176 148 / 0.32);
 
-    /* 4-Button SRS Rating Dock */
-    --srs-again: #EC7B72;
-    --srs-again-soft: rgb(236 123 114 / 0.09);
-    --srs-again-border: rgb(236 123 114 / 0.45);
-    --srs-hard: #E09F5A;
-    --srs-hard-soft: rgb(224 159 90 / 0.09);
-    --srs-hard-border: rgb(224 159 90 / 0.45);
-    --srs-good: #4EB8CE;
-    --srs-good-soft: rgb(78 184 206 / 0.10);
-    --srs-good-border: rgb(78 184 206 / 0.50);
-    --srs-easy: #74B094;
-    --srs-easy-soft: rgb(116 176 148 / 0.10);
-    --srs-easy-border: rgb(116 176 148 / 0.48);
-    --srs-again-solid-bg: #B84239;
-    --srs-again-solid-fg: #FFFEFC;
-    --srs-hard-solid-bg: #A65C1C;
-    --srs-hard-solid-fg: #FFFEFC;
-    --srs-good-solid-bg: #187A91;
-    --srs-good-solid-fg: #FFFEFC;
-    --srs-easy-solid-bg: #327057;
-    --srs-easy-solid-fg: #FFFEFC;
+    /* 5-Button Confidence Rating Dock */
+    --conf-1: #EC7B72;
+    --conf-1-soft: rgb(236 123 114 / 0.11);
+    --conf-1-border: rgb(236 123 114 / 0.45);
+    --conf-1-solid-bg: #B84239;
+    --conf-1-solid-fg: #FFFEFC;
+
+    --conf-2: #E88267;
+    --conf-2-soft: rgb(232 130 103 / 0.11);
+    --conf-2-border: rgb(232 130 103 / 0.45);
+    --conf-2-solid-bg: #B85237;
+    --conf-2-solid-fg: #FFFEFC;
+
+    --conf-3: #E09F5A;
+    --conf-3-soft: rgb(224 159 90 / 0.11);
+    --conf-3-border: rgb(224 159 90 / 0.45);
+    --conf-3-solid-bg: #A65C1C;
+    --conf-3-solid-fg: #FFFEFC;
+
+    --conf-4: #4EB8CE;
+    --conf-4-soft: rgb(78 184 206 / 0.11);
+    --conf-4-border: rgb(78 184 206 / 0.50);
+    --conf-4-solid-bg: #187A91;
+    --conf-4-solid-fg: #FFFEFC;
+
+    --conf-5: #74B094;
+    --conf-5-soft: rgb(116 176 148 / 0.12);
+    --conf-5-border: rgb(116 176 148 / 0.48);
+    --conf-5-solid-bg: #327057;
+    --conf-5-solid-fg: #FFFEFC;
 
     /* Segmented Sliding Pill Switcher */
     --seg-track: #1C1815;
@@ -330,27 +348,36 @@
     --gender-n-soft: rgb(5 150 105 / 0.10);
     --gender-n-border: rgb(5 150 105 / 0.24);
 
-    /* 4-Button SRS Rating Dock */
-    --srs-again: #E11D48;
-    --srs-again-soft: rgb(225 29 72 / 0.06);
-    --srs-again-border: rgb(225 29 72 / 0.45);
-    --srs-hard: #D97706;
-    --srs-hard-soft: rgb(217 119 6 / 0.06);
-    --srs-hard-border: rgb(217 119 6 / 0.45);
-    --srs-good: #2563eb;
-    --srs-good-soft: rgb(37 99 235 / 0.06);
-    --srs-good-border: rgb(37 99 235 / 0.45);
-    --srs-easy: #059669;
-    --srs-easy-soft: rgb(5 150 105 / 0.06);
-    --srs-easy-border: rgb(5 150 105 / 0.45);
-    --srs-again-solid-bg: #E11D48;
-    --srs-again-solid-fg: #FFFFFF;
-    --srs-hard-solid-bg: #C26108;
-    --srs-hard-solid-fg: #FFFFFF;
-    --srs-good-solid-bg: #2563EB;
-    --srs-good-solid-fg: #FFFFFF;
-    --srs-easy-solid-bg: #059669;
-    --srs-easy-solid-fg: #FFFFFF;
+    /* 5-Button Confidence Rating Dock */
+    --conf-1: #E11D48;
+    --conf-1-soft: rgb(225 29 72 / 0.07);
+    --conf-1-border: rgb(225 29 72 / 0.45);
+    --conf-1-solid-bg: #E11D48;
+    --conf-1-solid-fg: #FFFFFF;
+
+    --conf-2: #EA580C;
+    --conf-2-soft: rgb(234 88 12 / 0.07);
+    --conf-2-border: rgb(234 88 12 / 0.45);
+    --conf-2-solid-bg: #EA580C;
+    --conf-2-solid-fg: #FFFFFF;
+
+    --conf-3: #D97706;
+    --conf-3-soft: rgb(217 119 6 / 0.07);
+    --conf-3-border: rgb(217 119 6 / 0.45);
+    --conf-3-solid-bg: #C26108;
+    --conf-3-solid-fg: #FFFFFF;
+
+    --conf-4: #2563eb;
+    --conf-4-soft: rgb(37 99 235 / 0.07);
+    --conf-4-border: rgb(37 99 235 / 0.45);
+    --conf-4-solid-bg: #2563EB;
+    --conf-4-solid-fg: #FFFFFF;
+
+    --conf-5: #059669;
+    --conf-5-soft: rgb(5 150 105 / 0.08);
+    --conf-5-border: rgb(5 150 105 / 0.45);
+    --conf-5-solid-bg: #059669;
+    --conf-5-solid-fg: #FFFFFF;
 
     /* Segmented Sliding Pill Switcher */
     --seg-track: #F1F5F9;
@@ -448,27 +475,36 @@
     --gender-n-soft: rgb(52 211 153 / 0.14);
     --gender-n-border: rgb(52 211 153 / 0.28);
 
-    /* 4-Button SRS Rating Dock */
-    --srs-again: #FB7185;
-    --srs-again-soft: rgb(251 113 133 / 0.08);
-    --srs-again-border: rgb(251 113 133 / 0.45);
-    --srs-hard: #FBBF24;
-    --srs-hard-soft: rgb(251 191 36 / 0.08);
-    --srs-hard-border: rgb(251 191 36 / 0.45);
-    --srs-good: #3b82f6;
-    --srs-good-soft: rgb(59 130 246 / 0.08);
-    --srs-good-border: rgb(59 130 246 / 0.48);
-    --srs-easy: #34D399;
-    --srs-easy-soft: rgb(52 211 153 / 0.08);
-    --srs-easy-border: rgb(52 211 153 / 0.45);
-    --srs-again-solid-bg: #E11D48;
-    --srs-again-solid-fg: #FFFFFF;
-    --srs-hard-solid-bg: #B45309;
-    --srs-hard-solid-fg: #FFFFFF;
-    --srs-good-solid-bg: #2563EB;
-    --srs-good-solid-fg: #FFFFFF;
-    --srs-easy-solid-bg: #047857;
-    --srs-easy-solid-fg: #FFFFFF;
+    /* 5-Button Confidence Rating Dock */
+    --conf-1: #FB7185;
+    --conf-1-soft: rgb(251 113 133 / 0.10);
+    --conf-1-border: rgb(251 113 133 / 0.45);
+    --conf-1-solid-bg: #E11D48;
+    --conf-1-solid-fg: #FFFFFF;
+
+    --conf-2: #FB923C;
+    --conf-2-soft: rgb(251 146 60 / 0.10);
+    --conf-2-border: rgb(251 146 60 / 0.45);
+    --conf-2-solid-bg: #C2410C;
+    --conf-2-solid-fg: #FFFFFF;
+
+    --conf-3: #FBBF24;
+    --conf-3-soft: rgb(251 191 36 / 0.10);
+    --conf-3-border: rgb(251 191 36 / 0.45);
+    --conf-3-solid-bg: #B45309;
+    --conf-3-solid-fg: #FFFFFF;
+
+    --conf-4: #3b82f6;
+    --conf-4-soft: rgb(59 130 246 / 0.10);
+    --conf-4-border: rgb(59 130 246 / 0.48);
+    --conf-4-solid-bg: #2563EB;
+    --conf-4-solid-fg: #FFFFFF;
+
+    --conf-5: #34D399;
+    --conf-5-soft: rgb(52 211 153 / 0.10);
+    --conf-5-border: rgb(52 211 153 / 0.45);
+    --conf-5-solid-bg: #047857;
+    --conf-5-solid-fg: #FFFFFF;
 
     /* Segmented Sliding Pill Switcher */
     --seg-track: #18181E;
@@ -578,27 +614,36 @@
     --gender-n-soft: rgb(5 150 105 / 0.10);
     --gender-n-border: rgb(5 150 105 / 0.24);
 
-    /* 4-Button SRS Rating Dock */
-    --srs-again: #DC2626;
-    --srs-again-soft: rgb(220 38 38 / 0.06);
-    --srs-again-border: rgb(220 38 38 / 0.45);
-    --srs-hard: #D97706;
-    --srs-hard-soft: rgb(217 119 6 / 0.06);
-    --srs-hard-border: rgb(217 119 6 / 0.45);
-    --srs-good: #18181B;
-    --srs-good-soft: rgb(24 24 27 / 0.06);
-    --srs-good-border: rgb(24 24 27 / 0.45);
-    --srs-easy: #059669;
-    --srs-easy-soft: rgb(5 150 105 / 0.06);
-    --srs-easy-border: rgb(5 150 105 / 0.45);
-    --srs-again-solid-bg: #DC2626;
-    --srs-again-solid-fg: #FFFFFF;
-    --srs-hard-solid-bg: #B45309;
-    --srs-hard-solid-fg: #FFFFFF;
-    --srs-good-solid-bg: #18181B;
-    --srs-good-solid-fg: #FAFAFA;
-    --srs-easy-solid-bg: #047857;
-    --srs-easy-solid-fg: #FFFFFF;
+    /* 5-Button Confidence Rating Dock */
+    --conf-1: #DC2626;
+    --conf-1-soft: rgb(220 38 38 / 0.07);
+    --conf-1-border: rgb(220 38 38 / 0.45);
+    --conf-1-solid-bg: #DC2626;
+    --conf-1-solid-fg: #FFFFFF;
+
+    --conf-2: #EA580C;
+    --conf-2-soft: rgb(234 88 12 / 0.07);
+    --conf-2-border: rgb(234 88 12 / 0.45);
+    --conf-2-solid-bg: #C2410C;
+    --conf-2-solid-fg: #FFFFFF;
+
+    --conf-3: #D97706;
+    --conf-3-soft: rgb(217 119 6 / 0.07);
+    --conf-3-border: rgb(217 119 6 / 0.45);
+    --conf-3-solid-bg: #B45309;
+    --conf-3-solid-fg: #FFFFFF;
+
+    --conf-4: #18181B;
+    --conf-4-soft: rgb(24 24 27 / 0.07);
+    --conf-4-border: rgb(24 24 27 / 0.45);
+    --conf-4-solid-bg: #18181B;
+    --conf-4-solid-fg: #FAFAFA;
+
+    --conf-5: #059669;
+    --conf-5-soft: rgb(5 150 105 / 0.07);
+    --conf-5-border: rgb(5 150 105 / 0.45);
+    --conf-5-solid-bg: #047857;
+    --conf-5-solid-fg: #FFFFFF;
 
     /* Segmented Sliding Pill Switcher */
     --seg-track: #F4F4F5;
@@ -695,27 +740,36 @@
     --gender-n-soft: rgb(52 211 153 / 0.14);
     --gender-n-border: rgb(52 211 153 / 0.28);
 
-    /* 4-Button SRS Rating Dock */
-    --srs-again: #F87171;
-    --srs-again-soft: rgb(248 113 113 / 0.08);
-    --srs-again-border: rgb(248 113 113 / 0.45);
-    --srs-hard: #FBBF24;
-    --srs-hard-soft: rgb(251 191 36 / 0.08);
-    --srs-hard-border: rgb(251 191 36 / 0.45);
-    --srs-good: #FAFAFA;
-    --srs-good-soft: rgb(250 250 250 / 0.08);
-    --srs-good-border: rgb(250 250 250 / 0.45);
-    --srs-easy: #34D399;
-    --srs-easy-soft: rgb(52 211 153 / 0.08);
-    --srs-easy-border: rgb(52 211 153 / 0.45);
-    --srs-again-solid-bg: #DC2626;
-    --srs-again-solid-fg: #FFFFFF;
-    --srs-hard-solid-bg: #B45309;
-    --srs-hard-solid-fg: #FFFFFF;
-    --srs-good-solid-bg: #FAFAFA;
-    --srs-good-solid-fg: #09090B;
-    --srs-easy-solid-bg: #047857;
-    --srs-easy-solid-fg: #FFFFFF;
+    /* 5-Button Confidence Rating Dock */
+    --conf-1: #F87171;
+    --conf-1-soft: rgb(248 113 113 / 0.10);
+    --conf-1-border: rgb(248 113 113 / 0.45);
+    --conf-1-solid-bg: #DC2626;
+    --conf-1-solid-fg: #FFFFFF;
+
+    --conf-2: #FB923C;
+    --conf-2-soft: rgb(251 146 60 / 0.10);
+    --conf-2-border: rgb(251 146 60 / 0.45);
+    --conf-2-solid-bg: #C2410C;
+    --conf-2-solid-fg: #FFFFFF;
+
+    --conf-3: #FBBF24;
+    --conf-3-soft: rgb(251 191 36 / 0.10);
+    --conf-3-border: rgb(251 191 36 / 0.45);
+    --conf-3-solid-bg: #B45309;
+    --conf-3-solid-fg: #FFFFFF;
+
+    --conf-4: #FAFAFA;
+    --conf-4-soft: rgb(250 250 250 / 0.10);
+    --conf-4-border: rgb(250 250 250 / 0.45);
+    --conf-4-solid-bg: #FAFAFA;
+    --conf-4-solid-fg: #09090B;
+
+    --conf-5: #34D399;
+    --conf-5-soft: rgb(52 211 153 / 0.10);
+    --conf-5-border: rgb(52 211 153 / 0.45);
+    --conf-5-solid-bg: #047857;
+    --conf-5-solid-fg: #FFFFFF;
 
     /* Segmented Sliding Pill Switcher */
     --seg-track: #18181B;
@@ -1217,24 +1271,29 @@
   }
 }
 
-.flip-card-face.card-rated-wash-again {
-  border-color: var(--srs-again) !important;
-  box-shadow: inset 0 0 0 1px var(--srs-again-border), inset 0 36px 72px -28px var(--srs-again-soft), var(--shadow-card);
+.flip-card-face.card-rated-wash-1 {
+  border-color: var(--conf-1) !important;
+  box-shadow: inset 0 0 0 1px var(--conf-1-border), inset 0 36px 72px -28px var(--conf-1-soft), var(--shadow-card);
 }
 
-.flip-card-face.card-rated-wash-hard {
-  border-color: var(--srs-hard) !important;
-  box-shadow: inset 0 0 0 1px var(--srs-hard-border), inset 0 36px 72px -28px var(--srs-hard-soft), var(--shadow-card);
+.flip-card-face.card-rated-wash-2 {
+  border-color: var(--conf-2) !important;
+  box-shadow: inset 0 0 0 1px var(--conf-2-border), inset 0 36px 72px -28px var(--conf-2-soft), var(--shadow-card);
 }
 
-.flip-card-face.card-rated-wash-good {
-  border-color: var(--srs-good) !important;
-  box-shadow: inset 0 0 0 1px var(--srs-good-border), inset 0 36px 72px -28px var(--srs-good-soft), var(--shadow-card);
+.flip-card-face.card-rated-wash-3 {
+  border-color: var(--conf-3) !important;
+  box-shadow: inset 0 0 0 1px var(--conf-3-border), inset 0 36px 72px -28px var(--conf-3-soft), var(--shadow-card);
 }
 
-.flip-card-face.card-rated-wash-easy {
-  border-color: var(--srs-easy) !important;
-  box-shadow: inset 0 0 0 1px var(--srs-easy-border), inset 0 36px 72px -28px var(--srs-easy-soft), var(--shadow-card);
+.flip-card-face.card-rated-wash-4 {
+  border-color: var(--conf-4) !important;
+  box-shadow: inset 0 0 0 1px var(--conf-4-border), inset 0 36px 72px -28px var(--conf-4-soft), var(--shadow-card);
+}
+
+.flip-card-face.card-rated-wash-5 {
+  border-color: var(--conf-5) !important;
+  box-shadow: inset 0 0 0 1px var(--conf-5-border), inset 0 36px 72px -28px var(--conf-5-soft), var(--shadow-card);
 }
 
 @keyframes rateFirstEnter {

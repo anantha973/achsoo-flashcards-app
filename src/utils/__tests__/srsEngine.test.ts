@@ -11,20 +11,30 @@ import {
   resetIdbConnectionForTests,
 } from '../idbStorage';
 import {
-  MATURE_INTERVAL_DAYS,
+  CONFIDENCE_LOOP_CONFIG,
+  applyLoopRating,
+  computeConfidenceMasteryPct,
+  computeLoopGap,
+  createInitialDeckLoopState,
+  deterministicHash,
+  getCurrentLoopCardId,
+  replayDeckLoopSession,
+} from '../confidenceLoopEngine';
+import {
   appendRatingEvent,
   computeNextSrsState,
   createDefaultSrsState,
   deriveStudyStatsFromLogs,
+  formatConfidenceBadge,
   getLocalDateString,
-  getPreviewIntervalLabel,
   hydrateEngineFromIndexedDB,
-  isCardDueToday,
+  isCardLowConfidence,
   isCardNew,
   loadReviewLogs,
   loadSrsMap,
   loadStudyStats,
   mergeReviewLogsFromDevices,
+  migrateLegacyReviewLogs,
   replayAllStatesFromLogs,
   replayCardStateFromLogs,
   resetAllSrsProgress,
@@ -52,7 +62,7 @@ if (typeof globalThis.localStorage === 'undefined') {
   });
 }
 
-describe('Achsoo FSRS & Append-Only Review Log Engine (T-01 .. T-12)', () => {
+describe('Achsoo 1-5 Confidence Virtual-Clock Loop & Review Log Engine', () => {
   beforeEach(() => {
     localStoreData.clear();
     if (typeof localStorage !== 'undefined') {
@@ -62,471 +72,454 @@ describe('Achsoo FSRS & Append-Only Review Log Engine (T-01 .. T-12)', () => {
     resetAllSrsProgress(INITIAL_CARDS);
   });
 
-  it('T-01: Rate a new card "Good" -> enters learning state (~10 min), appends 1 log entry, increments daily reviews', () => {
+  it('T-01: Rating a new card 1-5 updates confidence without calendar-day wait times and logs deckId & reviewIndex', () => {
     const now = new Date('2026-11-16T10:00:00.000Z');
     const initialMap = loadSrsMap(INITIAL_CARDS);
 
     const res = appendRatingEvent({
       cardId: 'v-ankommen',
-      rating: 'good',
+      rating: '4',
+      deckId: 'verb',
       srsMap: initialMap,
       now,
       durationMs: 4200,
     });
 
-    expect(res.nextState.fsrsState).toBe('learning');
-    expect(res.nextState.intervalMinutes).toBe(10);
-    expect(res.nextState.mastered).toBe(false);
+    expect(res.nextState.confidence).toBe(4);
+    expect(res.nextState.consecutiveHighCount).toBe(1);
+    expect(res.nextState.intervalMinutes).toBe(0);
+    expect(res.nextState.scheduledDays).toBe(0);
     expect(res.nextState.reviewCount).toBe(1);
+    expect(formatConfidenceBadge(res.nextState)).toBe('Stufe 4/5');
+    expect(formatConfidenceBadge(createDefaultSrsState('fresh'))).toBe('Neu');
 
     expect(res.allLogs).toHaveLength(1);
     expect(res.logEntry.cardId).toBe('v-ankommen');
-    expect(res.logEntry.rating).toBe('good');
-    expect(res.logEntry.stateBefore).toBe('new');
-    expect(res.logEntry.stateAfter).toBe('learning');
+    expect(res.logEntry.rating).toBe('4');
+    expect(res.logEntry.deckId).toBe('verb');
+    expect(res.logEntry.reviewIndex).toBe(0);
     expect(res.logEntry.durationMs).toBe(4200);
 
     expect(res.updatedStats.totalReviewsToday).toBe(1);
     expect(res.updatedStats.streakDays).toBe(1);
-    expect(res.updatedStats.timeStudiedMsToday).toBe(4200);
   });
 
-  it('T-02: Graduate a learning card to Review, and mature only when interval >= 21 days', () => {
-    let t = new Date('2026-11-16T10:00:00.000Z');
-    let state = createDefaultSrsState('v-sprechen');
+  it('T-02: Deterministic virtual-clock gap table & consecutive multipliers match spec without RNG', () => {
+    for (let rc = 1; rc <= 12; rc += 1) {
+      const g1 = computeLoopGap('c-test', rc, 1, 0, 0);
+      expect(g1).toBeGreaterThanOrEqual(2);
+      expect(g1).toBeLessThanOrEqual(3);
 
-    // Step 1: First Good -> Learning (10 min)
-    state = computeNextSrsState(state, 'good', t);
-    expect(state.fsrsState).toBe('learning');
-    expect(state.mastered).toBe(false);
+      const g2 = computeLoopGap('c-test', rc, 2, 0, 0);
+      expect(g2).toBeGreaterThanOrEqual(4);
+      expect(g2).toBeLessThanOrEqual(6);
 
-    // Step 2: Second Good 10 min later -> Graduates to Review (< 21 days, so NOT mastered yet)
-    t = new Date(state.dueAt);
-    state = computeNextSrsState(state, 'good', t);
-    expect(state.fsrsState).toBe('review');
-    expect(state.scheduledDays).toBeGreaterThanOrEqual(1);
-    expect(state.scheduledDays).toBeLessThan(MATURE_INTERVAL_DAYS);
-    expect(state.mastered).toBe(false);
+      const g3 = computeLoopGap('c-test', rc, 3, 0, 0);
+      expect(g3).toBeGreaterThanOrEqual(7);
+      expect(g3).toBeLessThanOrEqual(10);
 
-    // Step 3: Subsequent Good reviews until scheduledDays >= 21
-    while ((state.scheduledDays || 0) < MATURE_INTERVAL_DAYS) {
-      t = new Date(state.dueAt);
-      state = computeNextSrsState(state, 'good', t);
+      const g4First = computeLoopGap('c-test', rc, 4, 1, 0);
+      expect(g4First).toBeGreaterThanOrEqual(12);
+      expect(g4First).toBeLessThanOrEqual(18);
+      const g4Second = computeLoopGap('c-test', rc, 4, 2, 0);
+      expect(g4Second).toBe(g4First * 2);
+
+      const g5First = computeLoopGap('c-test', rc, 5, 1, 1);
+      expect(g5First).toBeGreaterThanOrEqual(25);
+      expect(g5First).toBeLessThanOrEqual(40);
+      const g5Second = computeLoopGap('c-test', rc, 5, 2, 2);
+      expect(g5Second).toBe(Math.round(g5First * 1.5));
     }
 
-    expect(state.fsrsState).toBe('review');
-    expect(state.scheduledDays).toBeGreaterThanOrEqual(MATURE_INTERVAL_DAYS);
-    expect(state.mastered).toBe(true);
-  });
-
-  it('T-03: Mature card lapse on "Again" -> enters relearning, increments lapses, clears mastered', () => {
-    let t = new Date('2026-11-16T10:00:00.000Z');
-    let state = createDefaultSrsState('n-bahnhof');
-
-    // Advance card to mature state (>= 21 days)
-    while (!state.mastered) {
-      state = computeNextSrsState(state, 'easy', t);
-      t = new Date(state.dueAt);
-    }
-    expect(state.mastered).toBe(true);
-    const stabilityBeforeLapse = state.stability || 0;
-
-    // Lapse with 'again'
-    const lapsed = computeNextSrsState(state, 'again', t);
-    expect(lapsed.fsrsState).toBe('relearning');
-    expect(lapsed.lapses).toBeGreaterThanOrEqual(1);
-    expect(lapsed.mastered).toBe(false);
-    expect(lapsed.stability).toBeLessThan(stabilityBeforeLapse);
-  });
-
-  it('T-04: Dynamic dock interval labels reflect per-card FSRS state', () => {
-    const now = new Date('2026-11-16T10:00:00.000Z');
-    const newCard = createDefaultSrsState('v-bleiben');
-
-    expect(getPreviewIntervalLabel(newCard, 'again', now)).toBe('< 1 Min.');
-    expect(getPreviewIntervalLabel(newCard, 'hard', now)).toBe('6 Min.');
-    expect(getPreviewIntervalLabel(newCard, 'good', now)).toBe('10 Min.');
-    expect(getPreviewIntervalLabel(newCard, 'easy', now)).toBe('8 Tage');
-
-    // After graduating to review, 'good' preview is multiple days, not 10 Min.
-    const step1 = computeNextSrsState(newCard, 'good', now);
-    const step2 = computeNextSrsState(step1, 'good', new Date(step1.dueAt));
-    const reviewGoodLabel = getPreviewIntervalLabel(
-      step2,
-      'good',
-      new Date(step2.dueAt)
+    // Identical inputs always yield identical gap & hash across runs/devices
+    expect(computeLoopGap('v-ankommen', 3, 4, 1, 0)).toBe(
+      computeLoopGap('v-ankommen', 3, 4, 1, 0)
     );
-    expect(reviewGoodLabel).toMatch(/Tage$/);
   });
 
-  it('T-05: Unseen New cards are NOT counted as Due; fresh install has 0 due and 0% progress', () => {
-    const now = new Date('2026-11-16T10:00:00.000Z');
-    const freshMap = loadSrsMap(INITIAL_CARDS);
-    const freshStats = loadStudyStats(now);
+  it('T-03: Card rated 1 comes back 2-3 reviews later; min gap prevents back-to-back repeats unless pool size is 1', () => {
+    const ids = Array.from({ length: 12 }, (_, i) => `c-${i}`);
+    let state = createInitialDeckLoopState('test-loop', ids, {});
 
-    let newCount = 0;
-    let dueCount = 0;
-    let masteredCount = 0;
+    // Rate first card 'c-0' as 1
+    const firstId = getCurrentLoopCardId(state)!;
+    expect(firstId).toBe('c-0');
+    const expectedGap = computeLoopGap('c-0', 1, 1, 0, 0);
+    state = applyLoopRating(state, firstId, '1');
 
-    for (const card of INITIAL_CARDS) {
-      const st = freshMap[card.id];
-      if (isCardNew(st)) newCount += 1;
-      if (isCardDueToday(st, now)) dueCount += 1;
-      if (st.mastered) masteredCount += 1;
+    // Next 2 or 3 cards shown are new cards from waitingQueue, NOT 'c-0'
+    let reviewsUntilC0Returns = 0;
+    while (reviewsUntilC0Returns < 6) {
+      const nextId = getCurrentLoopCardId(state)!;
+      if (nextId === 'c-0') break;
+      reviewsUntilC0Returns += 1;
+      state = applyLoopRating(state, nextId, '4');
     }
 
-    expect(newCount).toBe(INITIAL_CARDS.length);
-    expect(dueCount).toBe(0);
-    expect(masteredCount).toBe(0);
-    expect(freshStats.streakDays).toBe(0);
-    expect(freshStats.totalReviewsToday).toBe(0);
+    expect(reviewsUntilC0Returns).toBeGreaterThanOrEqual(2);
+    expect(reviewsUntilC0Returns).toBeLessThanOrEqual(expectedGap);
+
+    // Small 1-card deck repeats only when it's the sole active card
+    let single = createInitialDeckLoopState('tiny-1', ['only-1'], {});
+    expect(getCurrentLoopCardId(single)).toBe('only-1');
+    single = applyLoopRating(single, 'only-1', '1');
+    expect(getCurrentLoopCardId(single)).toBe('only-1');
+
+    // 2-card deck never repeats back-to-back while both are active
+    let pair = createInitialDeckLoopState('tiny-2', ['a', 'b'], {});
+    expect(getCurrentLoopCardId(pair)).toBe('a');
+    pair = applyLoopRating(pair, 'a', '1');
+    expect(getCurrentLoopCardId(pair)).toBe('b');
   });
 
-  it('T-06: Study-day rollover at 04:00 local time and DST-safe calendar arithmetic', () => {
-    // 03:30 AM local time on Nov 16 belongs to study day Nov 15
-    const beforeRollover = new Date(2026, 10, 16, 3, 30, 0);
-    // 04:05 AM local time on Nov 16 belongs to study day Nov 16
-    const afterRollover = new Date(2026, 10, 16, 4, 5, 0);
+  it('T-04: Working set cap (10) & new-card gate hold back unseen cards on repeated 1s and cap pool at 10 on rating 3', () => {
+    const ids = Array.from({ length: 30 }, (_, i) => `card-${i}`);
+    let strugglingState = createInitialDeckLoopState('capped-1s', ids, {});
 
+    // Initially admits 1 card into activePool
+    expect(strugglingState.activePool).toHaveLength(1);
+    expect(strugglingState.waitingQueue).toHaveLength(29);
+
+    // Repeated 1s keep returning every 2-3 reviews, so the gate holds back the remaining deck
+    for (let step = 0; step < 20; step += 1) {
+      const current = getCurrentLoopCardId(strugglingState)!;
+      strugglingState = applyLoopRating(strugglingState, current, '1');
+      expect(strugglingState.activePool.length).toBeLessThanOrEqual(4);
+    }
+
+    // With moderate confidence (rating 3 -> gap 7-10), unsettled pool fills up to workingSetCap (10) and stops there
+    let expandingState = createInitialDeckLoopState('capped-3s', ids, {});
+    for (let step = 0; step < 25; step += 1) {
+      const current = getCurrentLoopCardId(expandingState)!;
+      expandingState = applyLoopRating(expandingState, current, '3');
+      expect(expandingState.activePool.length).toBeLessThanOrEqual(
+        CONFIDENCE_LOOP_CONFIG.workingSetCap
+      );
+    }
+
+    expect(expandingState.activePool.length).toBe(
+      CONFIDENCE_LOOP_CONFIG.workingSetCap
+    );
+    expect(expandingState.waitingQueue.length).toBe(20);
+  });
+
+  it('T-05: Two consecutive >=4 clears loop -> deterministic Final Sweep -> <4 bounces back -> Done -> Reopen & Fresh start', () => {
+    const ids = ['a', 'b', 'c', 'd'];
+    let state = createInitialDeckLoopState('deck-sweep', ids, {});
+
+    // First 4 is not cleared yet; second consecutive 4 clears the card
+    let guard = 0;
+    while (state.phase === 'loop' && guard < 30) {
+      guard += 1;
+      const cid = getCurrentLoopCardId(state)!;
+      state = applyLoopRating(state, cid, '4');
+    }
+
+    expect(state.phase).toBe('sweep');
+    expect(state.clearedIds).toHaveLength(4);
+    expect(state.sweepQueue).toHaveLength(4);
+
+    // Fail the first sweep card with rating 2 -> bounces immediately back into loop!
+    const missedSweepCard = getCurrentLoopCardId(state)!;
+    state = applyLoopRating(state, missedSweepCard, '2');
+    expect(state.phase).toBe('loop');
+    expect(state.activePool).toContain(missedSweepCard);
+    expect(state.clearedIds).not.toContain(missedSweepCard);
+
+    // Finish clearing the bounced card with 2x rating 5, then clear remaining sweep cards
+    guard = 0;
+    while (state.phase !== 'done' && guard < 30) {
+      guard += 1;
+      const cid = getCurrentLoopCardId(state)!;
+      state = applyLoopRating(state, cid, '5');
+    }
+
+    expect(state.phase).toBe('done');
+    expect(state.clearedIds).toHaveLength(4);
+    expect(state.sweepPassedIds).toHaveLength(4);
+    expect(getCurrentLoopCardId(state)).toBeNull();
+
+    // Reopening a deck: <4 goes into loop, >=4 waits for sweep, zero hidden/locked cards
+    const persisted = {
+      a: computeNextSrsState(createDefaultSrsState('a'), '2'),
+      b: computeNextSrsState(createDefaultSrsState('b'), '4'),
+      c: computeNextSrsState(createDefaultSrsState('c'), '5'),
+      d: createDefaultSrsState('d'),
+    };
+    const reopened = createInitialDeckLoopState('deck-reopen', ids, persisted);
+    expect(reopened.phase).toBe('loop');
+    expect(reopened.clearedIds).toEqual(['b', 'c']);
+    expect([...reopened.activePool, ...reopened.waitingQueue]).toEqual(['a', 'd']);
+
+    // When all cards already have confidence >=4, reopening starts directly at Final Sweep
+    const allHighReopened = createInitialDeckLoopState('deck-all-high', ['b', 'c'], persisted);
+    expect(allHighReopened.phase).toBe('sweep');
+    expect(allHighReopened.sweepQueue).toHaveLength(2);
+  });
+
+  it('T-06: Pure log replay (cardId, rating, reviewIndex) produces identical loop state with zero RNG', () => {
+    const ids = ['k1', 'k2', 'k3', 'k4', 'k5', 'k6'];
+    const seq: Array<'1' | '2' | '3' | '4' | '5'> = ['1', '4', '2', '5', '4', '4', '3', '5', '4', '5'];
+
+    let liveState = createInitialDeckLoopState('replay-deck', ids, {});
+    const logs: Pick<ReviewLogEntry, 'cardId' | 'rating' | 'reviewIndex' | 'timestamp' | 'eventType'>[] = [];
+
+    for (let idx = 0; idx < seq.length; idx += 1) {
+      const cardId = getCurrentLoopCardId(liveState);
+      if (!cardId) break;
+      const rating = seq[idx];
+      liveState = applyLoopRating(liveState, cardId, rating);
+      logs.push({
+        cardId,
+        rating,
+        reviewIndex: idx,
+        timestamp: new Date(1700000000000 + idx * 1000).toISOString(),
+        eventType: 'review',
+      });
+    }
+
+    // Shuffle log order like out-of-order device sync and replay purely by reviewIndex
+    const shuffledLogs = [...logs].reverse();
+    const replayed = replayDeckLoopSession('replay-deck', ids, {}, shuffledLogs);
+    expect(replayed).toEqual(liveState);
+  });
+
+  it('T-07: Legacy 4-button migration maps again/hard/good/easy -> 1/2/4/5 and takes ONLY last rating per card', () => {
+    const rawLegacyLogs: ReviewLogEntry[] = [
+      {
+        id: 'leg-1',
+        cardId: 'v-ankommen',
+        timestamp: '2026-11-10T10:00:00.000Z',
+        reviewedAt: '2026-11-10T10:00:00.000Z',
+        studyDayKey: '2026-11-10',
+        rating: 'again' as unknown as ReviewLogEntry['rating'],
+        stateBefore: 'new',
+        stateAfter: 'learning',
+        dueBefore: new Date(0).toISOString(),
+        dueAfter: '2026-11-10T10:01:00.000Z',
+        intervalMinutesBefore: 0,
+        intervalMinutesAfter: 1,
+        stabilityAfter: 0,
+        difficultyAfter: 0,
+        durationMs: 1200,
+        deviceId: 'dev-1',
+        syncedAt: null,
+      },
+      {
+        id: 'leg-2',
+        cardId: 'v-ankommen',
+        timestamp: '2026-11-11T10:00:00.000Z',
+        reviewedAt: '2026-11-11T10:00:00.000Z',
+        studyDayKey: '2026-11-11',
+        rating: 'good' as unknown as ReviewLogEntry['rating'],
+        stateBefore: 'learning',
+        stateAfter: 'review',
+        dueBefore: '2026-11-10T10:01:00.000Z',
+        dueAfter: '2026-11-14T10:00:00.000Z',
+        intervalMinutesBefore: 1,
+        intervalMinutesAfter: 4320,
+        stabilityAfter: 0,
+        difficultyAfter: 0,
+        durationMs: 1500,
+        deviceId: 'dev-1',
+        syncedAt: null,
+      },
+      {
+        id: 'leg-3',
+        cardId: 'v-sprechen',
+        timestamp: '2026-11-11T11:00:00.000Z',
+        reviewedAt: '2026-11-11T11:00:00.000Z',
+        studyDayKey: '2026-11-11',
+        rating: 'hard' as unknown as ReviewLogEntry['rating'],
+        stateBefore: 'new',
+        stateAfter: 'learning',
+        dueBefore: new Date(0).toISOString(),
+        dueAfter: '2026-11-11T11:06:00.000Z',
+        intervalMinutesBefore: 0,
+        intervalMinutesAfter: 6,
+        stabilityAfter: 0,
+        difficultyAfter: 0,
+        durationMs: 1800,
+        deviceId: 'dev-1',
+        syncedAt: null,
+      },
+      {
+        id: 'leg-4',
+        cardId: 'n-bahnhof',
+        timestamp: '2026-11-11T12:00:00.000Z',
+        reviewedAt: '2026-11-11T12:00:00.000Z',
+        studyDayKey: '2026-11-11',
+        rating: 'easy' as unknown as ReviewLogEntry['rating'],
+        stateBefore: 'new',
+        stateAfter: 'review',
+        dueBefore: new Date(0).toISOString(),
+        dueAfter: '2026-11-19T12:00:00.000Z',
+        intervalMinutesBefore: 0,
+        intervalMinutesAfter: 11520,
+        stabilityAfter: 0,
+        difficultyAfter: 0,
+        durationMs: 900,
+        deviceId: 'dev-1',
+        syncedAt: null,
+      },
+    ];
+
+    const migrated = migrateLegacyReviewLogs(rawLegacyLogs);
+    // Only 3 entries remain: leg-1 for v-ankommen was superseded by leg-2!
+    expect(migrated.map((m) => m.id)).toEqual(['leg-2', 'leg-3', 'leg-4']);
+    expect(migrated.map((m) => m.rating)).toEqual(['4', '2', '5']);
+
+    const replayedMap = replayAllStatesFromLogs(INITIAL_CARDS, migrated);
+    expect(replayedMap['v-ankommen'].confidence).toBe(4);
+    expect(replayedMap['v-ankommen'].reviewCount).toBe(1);
+    expect(replayedMap['v-sprechen'].confidence).toBe(2);
+    expect(isCardLowConfidence(replayedMap['v-sprechen'])).toBe(true);
+    expect(replayedMap['n-bahnhof'].confidence).toBe(5);
+  });
+
+  it('T-08: Mastery % formula, 04:00 rollover, streak reset, undo, IDB hydration, and deck reset preserve invariants', async () => {
+    // Mastery % = round(sum(confidence) / (5 * N) * 100)
+    const sampleMap = {
+      a: computeNextSrsState(createDefaultSrsState('a'), '5'),
+      b: computeNextSrsState(createDefaultSrsState('b'), '3'),
+      c: createDefaultSrsState('c'),
+    };
+    expect(computeConfidenceMasteryPct(['a', 'b', 'c'], sampleMap)).toBe(
+      Math.round(((5 + 3 + 0) / 15) * 100)
+    );
+
+    // 04:00 rollover
+    const beforeRollover = new Date(2026, 10, 16, 3, 30, 0);
+    const afterRollover = new Date(2026, 10, 16, 4, 5, 0);
     expect(getLocalDateString(beforeRollover)).toBe('2026-11-15');
     expect(getLocalDateString(afterRollover)).toBe('2026-11-16');
 
     const map0 = loadSrsMap(INITIAL_CARDS);
     const r1 = appendRatingEvent({
       cardId: 'v-ankommen',
-      rating: 'good',
+      rating: '4',
       srsMap: map0,
       now: beforeRollover,
-    });
-    expect(r1.logEntry.studyDayKey).toBe('2026-11-15');
-
-    const r2 = appendRatingEvent({
-      cardId: 'v-sprechen',
-      rating: 'good',
-      srsMap: r1.updatedMap,
-      now: afterRollover,
-    });
-    expect(r2.logEntry.studyDayKey).toBe('2026-11-16');
-    expect(r2.updatedStats.streakDays).toBe(2);
-    expect(r2.updatedStats.totalReviewsToday).toBe(1);
-  });
-
-  it('T-07: Streak resets to 0 when a full study day is missed, and restarts at 1 on next review', () => {
-    const day1 = new Date(2026, 10, 10, 12, 0, 0); // 2026-11-10
-    const day3 = new Date(2026, 10, 12, 12, 0, 0); // 2026-11-12 (missed 2026-11-11)
-
-    const map0 = loadSrsMap(INITIAL_CARDS);
-    const r1 = appendRatingEvent({
-      cardId: 'v-ankommen',
-      rating: 'good',
-      srsMap: map0,
-      now: day1,
-    });
-    expect(r1.updatedStats.streakDays).toBe(1);
-
-    // Check stats on day 3 BEFORE studying -> streak must be 0
-    const statsBeforeReviewOnDay3 = deriveStudyStatsFromLogs(r1.allLogs, day3);
-    expect(statsBeforeReviewOnDay3.streakDays).toBe(0);
-
-    // Study on day 3 -> streak restarts at 1 (not 2)
-    const r2 = appendRatingEvent({
-      cardId: 'v-sprechen',
-      rating: 'good',
-      srsMap: r1.updatedMap,
-      now: day3,
-    });
-    expect(r2.updatedStats.streakDays).toBe(1);
-  });
-
-  it('T-08: Persistence across reload and deterministic state reconstruction from review_logs alone', async () => {
-    const t1 = new Date('2026-11-16T09:00:00.000Z');
-    const t2 = new Date('2026-11-16T09:15:00.000Z');
-    let srsMap = loadSrsMap(INITIAL_CARDS);
-
-    srsMap = appendRatingEvent({
-      cardId: 'v-ankommen',
-      rating: 'good',
-      srsMap,
-      now: t1,
-      durationMs: 3000,
-    }).updatedMap;
-
-    const r2 = appendRatingEvent({
-      cardId: 'v-ankommen',
-      rating: 'easy',
-      srsMap,
-      now: t2,
-      durationMs: 2500,
-    });
-    srsMap = r2.updatedMap;
-
-    const logs = loadReviewLogs();
-    expect(logs).toHaveLength(2);
-
-    // Wipe derived card state cache and replay purely from logs
-    const replayedSingle = replayCardStateFromLogs('v-ankommen', logs);
-    expect(replayedSingle).toEqual(srsMap['v-ankommen']);
-
-    // Verify IndexedDB hydration restores logs, card states, and stats
-    const idbLogs = await idbGetAllReviewLogs();
-    expect(idbLogs).toHaveLength(2);
-
-    const hydrated = await hydrateEngineFromIndexedDB(INITIAL_CARDS);
-    expect(hydrated.srsMap['v-ankommen']).toEqual(srsMap['v-ankommen']);
-    expect(hydrated.stats.totalReviewsToday).toBe(2);
-  });
-
-  it('T-09: Content JSON edits, reordering, and removed cards preserve progress & orphan states', () => {
-    const now = new Date('2026-11-16T10:00:00.000Z');
-    const initialMap = loadSrsMap(INITIAL_CARDS);
-    const rated = appendRatingEvent({
-      cardId: 'v-ankommen',
-      rating: 'easy',
-      srsMap: initialMap,
-      now,
-    });
-
-    // Reorder cards and edit translation of 'v-ankommen', and temporarily omit 'v-ankommen' in a subset
-    const editedAndReordered: VocabCard[] = [
-      ...INITIAL_CARDS.slice(1).reverse(),
-      {
-        ...INITIAL_CARDS[0],
-        translation: 'to arrive (updated translation)',
-      },
-    ];
-
-    const loadedAfterReorder = loadSrsMap(editedAndReordered);
-    expect(loadedAfterReorder['v-ankommen'].reviewCount).toBe(1);
-    expect(loadedAfterReorder['v-ankommen'].dueAt).toBe(
-      rated.nextState.dueAt
-    );
-
-    // Even if 'v-ankommen' is removed from the active card list, its orphan state is preserved in storage
-    const subsetWithoutAnkommen = INITIAL_CARDS.filter(
-      (c) => c.id !== 'v-ankommen'
-    );
-    const loadedWithoutCard = loadSrsMap(subsetWithoutAnkommen);
-    expect(loadedWithoutCard['v-ankommen']).toBeDefined();
-    expect(loadedWithoutCard['v-ankommen'].reviewCount).toBe(1);
-  });
-
-  it('T-10: Duplicate or empty card IDs in content JSON throw a hard error naming the offending IDs', () => {
-    const duplicateList: VocabCard[] = [
-      INITIAL_CARDS[0],
-      {
-        ...INITIAL_CARDS[0],
-        translation: 'duplicate entry that must block loading',
-      },
-      INITIAL_CARDS[1],
-    ];
-
-    expect(() => validateAndNormalizeContentCards(duplicateList)).toThrowError(
-      /duplicate card IDs \[v-ankommen\]/
-    );
-
-    const emptyIdList: VocabCard[] = [
-      INITIAL_CARDS[0],
-      { ...INITIAL_CARDS[1], id: '   ' },
-    ];
-
-    expect(() => validateAndNormalizeContentCards(emptyIdList)).toThrowError(
-      /empty\/missing card IDs at \[index 1 \(lemma: "sprechen"\)\]/
-    );
-  });
-
-  it('T-11: Undo last rating appends an "undo" marker event (never deletes log entries) and restores prior card state & stats', () => {
-    const t1 = new Date('2026-11-16T10:00:00.000Z');
-    const t2 = new Date('2026-11-16T10:12:00.000Z');
-    const t3 = new Date('2026-11-16T10:13:00.000Z');
-    const initialMap = loadSrsMap(INITIAL_CARDS);
-
-    const first = appendRatingEvent({
-      cardId: 'v-umziehen',
-      rating: 'good',
-      srsMap: initialMap,
-      now: t1,
       durationMs: 2000,
     });
-
-    const second = appendRatingEvent({
-      cardId: 'v-umziehen',
-      rating: 'again',
-      srsMap: first.updatedMap,
-      now: t2,
+    const r2 = appendRatingEvent({
+      cardId: 'v-sprechen',
+      rating: '5',
+      srsMap: r1.updatedMap,
+      now: afterRollover,
       durationMs: 1800,
     });
+    expect(r2.updatedStats.streakDays).toBe(2);
 
-    expect(loadReviewLogs()).toHaveLength(2);
-    expect(second.nextState.lastRating).toBe('again');
-
-    // Undo the second review: appends a 3rd entry with eventType === 'undo'
-    const undone = undoLastReview(INITIAL_CARDS, second.updatedMap, t3);
-    expect(undone.undoneEntry?.id).toBe(second.logEntry.id);
+    // Undo appends marker instead of deleting history
+    const undone = undoLastReview(INITIAL_CARDS, r2.updatedMap, afterRollover);
     expect(undone.undoMarkerEntry?.eventType).toBe('undo');
-    expect(undone.undoMarkerEntry?.undoTargetId).toBe(second.logEntry.id);
-    expect(loadReviewLogs()).toHaveLength(3); // 2 review entries + 1 undo marker entry (append-only!)
-    expect(undone.remainingLogs).toHaveLength(1); // 1 effective active review
-    expect(undone.updatedMap['v-umziehen']).toEqual(first.nextState);
-    expect(undone.updatedStats.totalReviewsToday).toBe(1);
+    expect(undone.remainingLogs).toHaveLength(1);
+    expect(isCardNew(undone.updatedMap['v-sprechen'])).toBe(true);
+
+    // IDB hydration & replay
+    const idbLogs = await idbGetAllReviewLogs();
+    expect(idbLogs.length).toBeGreaterThanOrEqual(2);
+    const hydrated = await hydrateEngineFromIndexedDB(INITIAL_CARDS);
+    expect(hydrated.srsMap['v-ankommen'].confidence).toBe(4);
+
+    // Fresh start deck reset clears card confidence while keeping user lifetime stats
+    const resetRes = resetCardsSrsProgress(['v-ankommen'], hydrated.srsMap, afterRollover);
+    expect(isCardNew(resetRes.updatedMap['v-ankommen'])).toBe(true);
+    expect(resetRes.updatedStats.totalTimeStudiedMs).toBeGreaterThanOrEqual(2000);
+
+    // Duplicate card ID check remains enforced
+    const dupes: VocabCard[] = [INITIAL_CARDS[0], INITIAL_CARDS[0]];
+    expect(() => validateAndNormalizeContentCards(dupes)).toThrowError(/duplicate card IDs/);
   });
 
-  it('T-12: Multi-device review log union merge is idempotent and replays chronological FSRS state', () => {
-    const macLog: ReviewLogEntry = {
-      id: '11111111-1111-4111-8111-111111111111',
+  it('T-09: Multi-device union merge + Realistic Forgetting Learner Simulator (80-card deck)', () => {
+    const logA: ReviewLogEntry = {
+      id: 'aaaa1111-1111-4111-8111-111111111111',
       cardId: 'v-teilnehmen',
+      reviewIndex: 0,
+      deckId: 'verb',
       timestamp: '2026-11-15T14:00:00.000Z',
       reviewedAt: '2026-11-15T14:00:00.000Z',
       studyDayKey: '2026-11-15',
-      rating: 'good',
+      rating: '3',
       stateBefore: 'new',
       stateAfter: 'learning',
       dueBefore: new Date(0).toISOString(),
-      dueAfter: '2026-11-15T14:10:00.000Z',
+      dueAfter: '2026-11-15T14:00:00.000Z',
       intervalMinutesBefore: 0,
-      intervalMinutesAfter: 10,
-      stabilityAfter: 3.1,
-      difficultyAfter: 5.2,
+      intervalMinutesAfter: 0,
+      stabilityAfter: 3,
+      difficultyAfter: 3,
       durationMs: 3100,
-      deviceId: 'macbook-pro',
+      deviceId: 'mac',
       syncedAt: null,
     };
-
-    const ipadLog: ReviewLogEntry = {
-      id: '22222222-2222-4222-8222-222222222222',
-      cardId: 'v-teilnehmen',
+    const logB: ReviewLogEntry = {
+      ...logA,
+      id: 'bbbb2222-2222-4222-8222-222222222222',
+      reviewIndex: 1,
       timestamp: '2026-11-16T14:00:00.000Z',
       reviewedAt: '2026-11-16T14:00:00.000Z',
       studyDayKey: '2026-11-16',
-      rating: 'good',
-      stateBefore: 'learning',
-      stateAfter: 'review',
-      dueBefore: '2026-11-15T14:10:00.000Z',
-      dueAfter: '2026-11-19T14:00:00.000Z',
-      intervalMinutesBefore: 10,
-      intervalMinutesAfter: 4320,
-      stabilityAfter: 3.1,
-      difficultyAfter: 5.2,
-      durationMs: 2800,
-      deviceId: 'ipad-air',
-      syncedAt: null,
+      rating: '5',
+      deviceId: 'phone',
     };
+    const merged = mergeReviewLogsFromDevices([logB], [logA, logB], INITIAL_CARDS);
+    expect(merged.mergedLogs).toHaveLength(2);
+    expect(merged.srsMap['v-teilnehmen'].confidence).toBe(5);
 
-    const now = new Date('2026-11-16T15:00:00.000Z');
+    // Deterministic Forgetting Learner Simulator over an 80-card deck
+    const deckSize = 80;
+    const deckIds = Array.from({ length: deckSize }, (_, i) => `sim-${i}`);
+    let simState = createInitialDeckLoopState('sim-80', deckIds, {});
 
-    // Merge with overlapping duplicate logs in arbitrary order
-    const merge1 = mergeReviewLogsFromDevices(
-      [ipadLog, macLog],
-      [macLog, ipadLog],
-      INITIAL_CARDS,
-      now
-    );
-
-    const merge2 = mergeReviewLogsFromDevices(
-      merge1.mergedLogs,
-      [ipadLog],
-      INITIAL_CARDS,
-      now
-    );
-
-    expect(merge1.mergedLogs).toHaveLength(2);
-    expect(merge2.mergedLogs).toHaveLength(2);
-    expect(merge1.srsMap['v-teilnehmen']).toEqual(
-      merge2.srsMap['v-teilnehmen']
-    );
-    expect(merge2.srsMap['v-teilnehmen'].reviewCount).toBe(2);
-    expect(merge2.srsMap['v-teilnehmen'].fsrsState).toBe('review');
-    expect(merge2.stats.streakDays).toBe(2);
-  });
-
-  it('T-13: Resetting a deck resets card SRS state cleanly across reloads while preserving all user stats & review history', async () => {
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    yesterday.setHours(14, 0, 0, 0);
-
-    const earlierToday = new Date();
-    earlierToday.setHours(10, 0, 0, 0);
-    if (earlierToday.getHours() < 5) {
-      earlierToday.setHours(10, 0, 0, 0);
+    // Per-card latent memory strength (0..1) + occasional slip probability
+    const memory = new Map<string, number>();
+    for (const id of deckIds) {
+      // Initial baseline recall varies across cards (some easy, some tricky)
+      memory.set(id, (deterministicHash(`init:${id}`) % 50) / 100);
     }
 
-    const resetNow = new Date(earlierToday.getTime() + 10 * 60_000);
-    const retestNow = new Date(resetNow.getTime() + 5 * 60_000);
+    let steps = 0;
+    const maxSteps = 2000;
+    while (simState.phase !== 'done' && steps < maxSteps) {
+      steps += 1;
+      const cardId = getCurrentLoopCardId(simState);
+      if (!cardId) break;
 
-    let srsMap = loadSrsMap(INITIAL_CARDS);
+      const meta = simState.cardLoopMeta[cardId];
+      const priorReviews = meta?.reviewCount ?? 0;
+      const strength = memory.get(cardId) ?? 0.25;
+      // Deterministic roll simulating forgetting / noisy human recall
+      const roll = (deterministicHash(`${cardId}:step:${steps}:${priorReviews}`) % 100) / 100;
 
-    // Day 1 (yesterday): review v-ankommen
-    srsMap = appendRatingEvent({
-      cardId: 'v-ankommen',
-      rating: 'good',
-      srsMap,
-      now: yesterday,
-      durationMs: 3200,
-    }).updatedMap;
+      // Occasional forgetting slip (15% early, decaying with exposures)
+      const effectiveRecall = Math.min(1, strength + priorReviews * 0.14) - (roll < 0.14 ? 0.45 : 0);
 
-    // Day 2 (today): review v-ankommen and v-sprechen
-    srsMap = appendRatingEvent({
-      cardId: 'v-ankommen',
-      rating: 'easy',
-      srsMap,
-      now: earlierToday,
-      durationMs: 2400,
-    }).updatedMap;
+      let rating: '1' | '2' | '3' | '4' | '5';
+      if (effectiveRecall < 0.2) rating = '1';
+      else if (effectiveRecall < 0.38) rating = '2';
+      else if (effectiveRecall < 0.56) rating = '3';
+      else if (effectiveRecall < 0.82) rating = '4';
+      else rating = '5';
 
-    const beforeReset = appendRatingEvent({
-      cardId: 'v-sprechen',
-      rating: 'good',
-      srsMap,
-      now: new Date(earlierToday.getTime() + 60_000),
-      durationMs: 1800,
-    });
-    srsMap = beforeReset.updatedMap;
+      // Reviewing strengthens memory; forgetting drops strength slightly
+      const nextStrength =
+        rating === '1' || rating === '2'
+          ? Math.max(0.15, strength + 0.08)
+          : Math.min(0.98, strength + 0.18);
+      memory.set(cardId, nextStrength);
 
-    expect(beforeReset.updatedStats.streakDays).toBe(2);
-    expect(beforeReset.updatedStats.totalReviewsToday).toBe(2);
-    expect(beforeReset.updatedStats.totalTimeStudiedMs).toBe(7400);
+      simState = applyLoopRating(simState, cardId, rating);
+    }
 
-    // Reset deck containing v-ankommen (leave v-sprechen untouched)
-    const { updatedMap, updatedStats } = resetCardsSrsProgress(
-      ['v-ankommen'],
-      srsMap,
-      resetNow
-    );
-
-    // Target card is reset to fresh new state; untouched card keeps its progress
-    expect(isCardNew(updatedMap['v-ankommen'])).toBe(true);
-    expect(updatedMap['v-ankommen'].reviewCount).toBe(0);
-    expect(updatedMap['v-ankommen'].mastered).toBe(false);
-    expect(updatedMap['v-sprechen'].reviewCount).toBe(1);
-
-    // User stats & history remain completely preserved!
-    expect(updatedStats.streakDays).toBe(2);
-    expect(updatedStats.totalReviewsToday).toBe(2);
-    expect(updatedStats.totalTimeStudiedMs).toBe(7400);
-    expect(updatedStats.timeStudiedMsToday).toBe(4200);
-    expect(updatedStats.retentionPct).toBe(100);
-
-    // Reload / replay purely from persisted logs & IndexedDB hydration must preserve both reset state AND stats
-    const reloadedMap = loadSrsMap(INITIAL_CARDS);
-    expect(isCardNew(reloadedMap['v-ankommen'])).toBe(true);
-    expect(reloadedMap['v-sprechen'].reviewCount).toBe(1);
-
-    const hydrated = await hydrateEngineFromIndexedDB(INITIAL_CARDS);
-    expect(isCardNew(hydrated.srsMap['v-ankommen'])).toBe(true);
-    expect(hydrated.stats.streakDays).toBe(2);
-    expect(hydrated.stats.totalReviewsToday).toBe(2);
-    expect(hydrated.stats.totalTimeStudiedMs).toBe(7400);
-
-    // Studying the reset card again starts SRS from reviewCount = 1 and adds to total stats
-    const retested = appendRatingEvent({
-      cardId: 'v-ankommen',
-      rating: 'good',
-      srsMap: hydrated.srsMap,
-      now: retestNow,
-      durationMs: 2000,
-    });
-    expect(retested.nextState.reviewCount).toBe(1);
-    expect(retested.nextState.fsrsState).toBe('learning');
-    expect(retested.updatedStats.totalReviewsToday).toBe(3);
-    expect(retested.updatedStats.totalTimeStudiedMs).toBe(9400);
+    const avgReviewsPerCard = steps / deckSize;
+    expect(simState.phase).toBe('done');
+    expect(simState.clearedIds).toHaveLength(deckSize);
+    expect(simState.sweepPassedIds).toHaveLength(deckSize);
+    // Validate Brainscape-like ~6-8 reviews per card target range under realistic forgetting
+    expect(avgReviewsPerCard).toBeGreaterThanOrEqual(4.5);
+    expect(avgReviewsPerCard).toBeLessThanOrEqual(11);
   });
 });

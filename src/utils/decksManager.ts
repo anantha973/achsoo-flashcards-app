@@ -38,7 +38,12 @@ import {
   Utensils,
   Wine,
 } from 'lucide-react';
-import { CardCategory, CefrLevel, RatingKey } from '../data/vocabData';
+import {
+  CardCategory,
+  CefrLevel,
+  normalizeRatingKey,
+  RatingKey,
+} from '../data/vocabData';
 import { DEFAULT_A2_CUSTOM_DECKS } from '../data/defaultDecks';
 import { syncWorkspaceToSupabase } from './supabaseSync';
 
@@ -440,7 +445,7 @@ export const DUMMY_BUILTIN_DECK_IDS = [
   'cefr-b1',
 ] as const;
 
-export type DeckSortOption = 'last-studied' | 'due' | 'name';
+export type DeckSortOption = 'last-studied' | 'low-confidence' | 'name';
 
 export interface DeckFolder {
   id: string;
@@ -837,8 +842,11 @@ export function ensureInitialTestFolderSeed(): {
 export function loadDeckSortOption(): DeckSortOption {
   try {
     const raw = localStorage.getItem(DECK_SORT_STORAGE_KEY);
-    if (raw === 'last-studied' || raw === 'due' || raw === 'name') {
+    if (raw === 'last-studied' || raw === 'low-confidence' || raw === 'name') {
       return raw;
+    }
+    if (raw === 'due') {
+      return 'low-confidence';
     }
   } catch {
     // Fallback
@@ -916,7 +924,8 @@ export function loadLastStudySession(): LastStudySessionState | null {
       return null;
     }
     return {
-      deckId: parsed.deckId,
+      deckId:
+        parsed.deckId === 'due' ? 'low-confidence' : parsed.deckId,
       isCustomQueue: Boolean(parsed.isCustomQueue),
       shortTitle:
         typeof parsed.shortTitle === 'string' ? parsed.shortTitle : undefined,
@@ -1031,11 +1040,17 @@ export function loadStudyDeckTrails(): Record<string, StudyDeckTrail> {
         Array.isArray(trail.entries) &&
         typeof trail.cursor === 'number'
       ) {
-        normalized[deckId] = clampTrail({
-          entries: trail.entries.filter(
-            (e): e is StudyVisitEntry =>
-              Boolean(e) && typeof e.cardId === 'string'
-          ),
+        const targetDeckId = deckId === 'due' ? 'low-confidence' : deckId;
+        normalized[targetDeckId] = clampTrail({
+          entries: trail.entries
+            .filter(
+              (e): e is StudyVisitEntry =>
+                Boolean(e) && typeof e.cardId === 'string'
+            )
+            .map((e) => ({
+              ...e,
+              rating: e.rating ? normalizeRatingKey(e.rating) : undefined,
+            })),
           cursor: trail.cursor,
         });
       }

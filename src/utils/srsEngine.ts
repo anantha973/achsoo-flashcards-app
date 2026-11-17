@@ -1,17 +1,12 @@
 import {
-  type Card as FsrsCard,
-  type Grade,
-  Rating,
-  State,
-  createEmptyCard,
-  fsrs,
-  generatorParameters,
-} from 'ts-fsrs';
-import {
   CardSrsState,
-  FsrsStateKind,
+  ConfidenceRating,
   INITIAL_CARDS,
+  LEGACY_RATING_MAP,
+  LegacyRatingKey,
+  normalizeRatingKey,
   RatingKey,
+  ratingToConfidence,
   ReviewLogEntry,
   StudyStats,
   VocabCard,
@@ -22,7 +17,6 @@ import {
   getOrCreateDeviceId,
   idbAppendReviewLogAndState,
   idbClearReviewsForCards,
-  idbDeleteReviewLogAndPutState,
   idbGetAllCardStates,
   idbGetAllCustomCards,
   idbGetAllReviewLogs,
@@ -41,44 +35,13 @@ import {
   syncWorkspaceToSupabase,
 } from './supabaseSync';
 
-export const STUDY_DAY_ROLLOVER_HOUR = 4; // 04:00 local time rollover (Anki standard)
-export const MATURE_INTERVAL_DAYS = 21;
-export const MATURE_INTERVAL_MINUTES = MATURE_INTERVAL_DAYS * 1440;
+export const STUDY_DAY_ROLLOVER_HOUR = 4; // 04:00 local time rollover
 
 const SRS_STORAGE_KEY = 'wortschatz_srs_v2';
 const REVIEW_LOGS_STORAGE_KEY = 'wortschatz_review_logs_v2';
 const STATS_STORAGE_KEY = 'wortschatz_stats_v2';
 const THEME_STORAGE_KEY = 'wortschatz_theme_v1';
 const CUSTOM_CARDS_STORAGE_KEY = 'wortschatz_custom_cards_v1';
-
-// Deterministic FSRS scheduler instance (fuzz disabled so log replay is bit-exact across devices)
-const fsrsScheduler = fsrs(
-  generatorParameters({
-    enable_fuzz: false,
-    enable_short_term: true,
-  })
-);
-
-const RATING_TO_FSRS: Record<RatingKey, Grade> = {
-  again: Rating.Again,
-  hard: Rating.Hard,
-  good: Rating.Good,
-  easy: Rating.Easy,
-};
-
-const FSRS_STATE_TO_KIND: Record<State, FsrsStateKind> = {
-  [State.New]: 'new',
-  [State.Learning]: 'learning',
-  [State.Review]: 'review',
-  [State.Relearning]: 'relearning',
-};
-
-const KIND_TO_FSRS_STATE: Record<FsrsStateKind, State> = {
-  new: State.New,
-  learning: State.Learning,
-  review: State.Review,
-  relearning: State.Relearning,
-};
 
 // In-memory append-only review log cache (authoritative runtime log, backed by IndexedDB + localStorage mirror)
 let memoryReviewLogs: ReviewLogEntry[] | null = null;
@@ -106,7 +69,6 @@ export function triggerHapticFeedback(pattern: number | number[] = 10): void {
 
 /**
  * Returns the local study-day key (YYYY-MM-DD) using a 04:00 AM local rollover.
- * Using local calendar components with `getHours() - rolloverHour` is DST-safe.
  */
 export function getLocalDateString(
   date: Date = new Date(),
@@ -147,18 +109,29 @@ export function getYesterdayDateString(
   return `${year}-${month}-${day}`;
 }
 
-export function difficultyToEaseFactor(difficulty?: number): number {
-  if (typeof difficulty !== 'number' || Number.isNaN(difficulty) || difficulty <= 0) {
-    return 2.5;
+export function confidenceToLegacyEase(confidence: ConfidenceRating): number {
+  switch (confidence) {
+    case 1:
+      return 1.3;
+    case 2:
+      return 1.7;
+    case 3:
+      return 2.1;
+    case 4:
+      return 2.6;
+    case 5:
+      return 3.0;
+    default:
+      return 2.5;
   }
-  // Map FSRS difficulty [1..10] (1 = easiest, 10 = hardest) onto [1.30..3.00] ease scale for UI compatibility
-  const mapped = 3.0 - ((difficulty - 1) / 9) * 1.7;
-  return Math.max(1.3, Math.min(3.0, Number(mapped.toFixed(2))));
 }
 
 export function createDefaultSrsState(cardId: string): CardSrsState {
   return {
     cardId,
+    confidence: 0,
+    consecutiveHighCount: 0,
+    consecutiveFiveCount: 0,
     intervalMinutes: 0,
     easeFactor: 2.5,
     repetitions: 0,
@@ -176,149 +149,95 @@ export function createDefaultSrsState(cardId: string): CardSrsState {
   };
 }
 
-function toFsrsCard(state: CardSrsState, now: Date): FsrsCard {
-  const base = createEmptyCard(now);
-  if (!state.lastReviewedAt || state.reviewCount === 0) {
-    return base;
-  }
-  const fsrsStateEnum = state.fsrsState
-    ? KIND_TO_FSRS_STATE[state.fsrsState]
-    : state.mastered
-    ? State.Review
-    : State.Learning;
-
-  return {
-    ...base,
-    due: new Date(state.dueAt),
-    stability: state.stability ?? Math.max(0.2, state.intervalMinutes / 1440),
-    difficulty:
-      state.difficulty && state.difficulty > 0
-        ? state.difficulty
-        : Math.max(
-            1,
-            Math.min(10, 1 + ((3.0 - (state.easeFactor || 2.5)) / 1.7) * 9)
-          ),
-    scheduled_days:
-      state.scheduledDays ?? Math.floor(state.intervalMinutes / 1440),
-    reps: state.reviewCount,
-    lapses: state.lapses ?? 0,
-    learning_steps: state.learningSteps ?? 0,
-    state: fsrsStateEnum,
-    last_review: new Date(state.lastReviewedAt),
-  };
-}
-
 export function isCardNew(state: CardSrsState): boolean {
   return (
     state.reviewCount === 0 ||
     !state.lastReviewedAt ||
-    state.fsrsState === 'new'
+    state.confidence === 0
   );
 }
 
 /**
- * A card is "due" ONLY if it has been reviewed at least once (not an unseen New card)
- * AND its scheduled `dueAt` timestamp is at or before `now`.
+ * Low Confidence smart-deck filter: previously studied cards currently rated 1 or 2.
  */
-export function isCardDueToday(
-  state: CardSrsState,
-  now: Date = new Date()
-): boolean {
-  if (isCardNew(state)) return false;
-  const dueTime = new Date(state.dueAt).getTime();
-  if (Number.isNaN(dueTime)) return false;
-  return dueTime <= now.getTime();
+export function isCardLowConfidence(state: CardSrsState): boolean {
+  return !isCardNew(state) && state.confidence > 0 && state.confidence <= 2;
 }
 
 export function computeNextSrsState(
   current: CardSrsState,
-  rating: RatingKey,
+  rating: RatingKey | LegacyRatingKey,
   now: Date = new Date()
 ): CardSrsState {
-  const fsrsCard = toFsrsCard(current, now);
-  const grade = RATING_TO_FSRS[rating];
-  const scheduling = fsrsScheduler.next(fsrsCard, now, grade);
-  const nextFsrs = scheduling.card;
-  const elapsedDays = current.lastReviewedAt
-    ? Math.max(
-        0,
-        Math.floor(
-          (now.getTime() - new Date(current.lastReviewedAt).getTime()) /
-            86_400_000
-        )
-      )
-    : 0;
+  const normalizedRating = normalizeRatingKey(rating) ?? '1';
+  const conf = ratingToConfidence(normalizedRating);
+  const prevConsHigh =
+    typeof current.consecutiveHighCount === 'number'
+      ? current.consecutiveHighCount
+      : current.confidence >= 4
+      ? 2
+      : 0;
+  const prevConsFive =
+    typeof current.consecutiveFiveCount === 'number'
+      ? current.consecutiveFiveCount
+      : current.confidence === 5
+      ? 1
+      : 0;
 
-  const diffMs = Math.max(60_000, nextFsrs.due.getTime() - now.getTime());
-  const intervalMinutes = Math.max(1, Math.round(diffMs / 60_000));
-  const fsrsStateKind = FSRS_STATE_TO_KIND[nextFsrs.state] || 'learning';
-  const scheduledDays = nextFsrs.scheduled_days;
-
-  // A card is "mastered" (mature) only when it is in FSRS Review state with an interval >= 21 days
-  const mastered =
-    fsrsStateKind === 'review' &&
-    (scheduledDays >= MATURE_INTERVAL_DAYS ||
-      intervalMinutes >= MATURE_INTERVAL_MINUTES);
-
-  const easeFactor = difficultyToEaseFactor(nextFsrs.difficulty);
-  const repetitions =
-    rating === 'again'
-      ? 0
-      : fsrsStateKind === 'review'
-      ? (current.repetitions || 0) + 1
-      : current.repetitions || 0;
+  const nextConsHigh = conf >= 4 ? prevConsHigh + 1 : 0;
+  const nextConsFive = conf === 5 ? prevConsFive + 1 : 0;
+  const mastered = conf >= 4;
+  const reviewCount = (current.reviewCount || 0) + 1;
+  const repetitions = conf >= 4 ? (current.repetitions || 0) + 1 : 0;
+  const iso = now.toISOString();
 
   return {
     cardId: current.cardId,
-    intervalMinutes,
-    easeFactor,
+    confidence: conf,
+    consecutiveHighCount: nextConsHigh,
+    consecutiveFiveCount: nextConsFive,
+    intervalMinutes: 0,
+    easeFactor: confidenceToLegacyEase(conf),
     repetitions,
-    reviewCount: nextFsrs.reps,
-    lastReviewedAt: now.toISOString(),
-    dueAt: nextFsrs.due.toISOString(),
-    lastRating: rating,
+    reviewCount,
+    lastReviewedAt: iso,
+    dueAt: iso,
+    lastRating: normalizedRating,
     mastered,
-    fsrsState: fsrsStateKind,
-    stability: Number(nextFsrs.stability.toFixed(4)),
-    difficulty: Number(nextFsrs.difficulty.toFixed(4)),
-    elapsedDays,
-    scheduledDays,
-    lapses: nextFsrs.lapses,
-    learningSteps: nextFsrs.learning_steps,
+    fsrsState: mastered ? 'review' : 'learning',
+    stability: conf,
+    difficulty: 6 - conf,
+    elapsedDays: 0,
+    scheduledDays: 0,
+    lapses: conf <= 2 ? (current.lapses || 0) + 1 : current.lapses || 0,
+    learningSteps: nextConsHigh,
   };
 }
 
-export function formatMinutesAsGermanInterval(intervalMinutes: number): string {
-  if (intervalMinutes <= 1) return '< 1 Min.';
-  if (intervalMinutes < 60) return `${Math.round(intervalMinutes)} Min.`;
-  if (intervalMinutes < 1440) {
-    const hours = Math.max(1, Math.round(intervalMinutes / 60));
-    return `${hours} Std.`;
+export function formatConfidenceBadge(
+  confidenceOrState: ConfidenceRating | CardSrsState,
+  reviewCountArg?: number
+): string {
+  if (typeof confidenceOrState === 'object') {
+    if (isCardNew(confidenceOrState)) return 'Neu';
+    return `Stufe ${confidenceOrState.confidence}/5`;
   }
-  const days = Math.max(1, Math.round(intervalMinutes / 1440));
-  return `${days} ${days === 1 ? 'Tag' : 'Tage'}`;
-}
-
-export function getPreviewIntervalLabel(
-  current: CardSrsState,
-  rating: RatingKey,
-  now: Date = new Date()
-): string {
-  const previewState = computeNextSrsState(current, rating, now);
-  return formatMinutesAsGermanInterval(previewState.intervalMinutes);
-}
-
-export function formatIntervalBadge(
-  intervalMinutes: number,
-  reviewCount: number
-): string {
-  if (reviewCount === 0) return 'Neu';
-  return formatMinutesAsGermanInterval(intervalMinutes);
+  if (!reviewCountArg || confidenceOrState === 0) return 'Neu';
+  return `Stufe ${confidenceOrState}/5`;
 }
 
 // ============================================================================
-// APPEND-ONLY REVIEW LOG & DETERMINISTIC STATE REPLAY
+// LEGACY 4-BUTTON MIGRATION & APPEND-ONLY REVIEW LOG REPLAY
 // ============================================================================
+
+function isLegacyRatingString(rating: unknown): rating is LegacyRatingKey {
+  return (
+    rating === 'again' ||
+    rating === 'hard' ||
+    rating === 'good' ||
+    rating === 'easy'
+  );
+}
 
 function getLogEventOrderRank(entry: ReviewLogEntry): number {
   const kind = entry.eventType ?? 'review';
@@ -343,19 +262,75 @@ export function sortAndDedupeReviewLogs(
     if (ta !== tb) return ta - tb;
     const rankDiff = getLogEventOrderRank(a) - getLogEventOrderRank(b);
     if (rankDiff !== 0) return rankDiff;
+    const ia = typeof a.reviewIndex === 'number' ? a.reviewIndex : Infinity;
+    const ib = typeof b.reviewIndex === 'number' ? b.reviewIndex : Infinity;
+    if (ia !== ib) return ia - ib;
     return a.id.localeCompare(b.id);
   });
 }
 
 /**
- * Resolves append-only "undo" marker events against "review" events.
- * The underlying log array remains strictly append-only for idempotent multi-device sync,
- * while statistics operate on all non-undone review events (including reviews before a deck reset).
+ * Migrates legacy 4-button review entries (`again` / `hard` / `good` / `easy`)
+ * onto the 1-5 confidence scale (`1` / `2` / `4` / `5`) while keeping ONLY
+ * the last legacy rating per card (before any reset or newer 1-5 entries).
  */
+export function migrateLegacyReviewLogs(
+  rawLogs: ReviewLogEntry[]
+): ReviewLogEntry[] {
+  const sorted = sortAndDedupeReviewLogs(rawLogs);
+  const undoneTargets = new Set<string>();
+  for (const entry of sorted) {
+    if (entry.eventType === 'undo' && entry.undoTargetId) {
+      undoneTargets.add(entry.undoTargetId);
+    }
+  }
+
+  // Track last active legacy review id per card
+  const lastLegacyIdByCard = new Map<string, string>();
+  for (const entry of sorted) {
+    const kind = entry.eventType ?? 'review';
+    if (kind === 'reset') {
+      lastLegacyIdByCard.delete(entry.cardId);
+      continue;
+    }
+    if (kind === 'review' && !undoneTargets.has(entry.id)) {
+      if (isLegacyRatingString(entry.rating)) {
+        lastLegacyIdByCard.set(entry.cardId, entry.id);
+      }
+    }
+  }
+
+  const migrated: ReviewLogEntry[] = [];
+  for (const entry of sorted) {
+    const kind = entry.eventType ?? 'review';
+    const rawRating = entry.rating as unknown;
+    if (kind === 'review' && isLegacyRatingString(rawRating)) {
+      if (undoneTargets.has(entry.id)) continue;
+      if (lastLegacyIdByCard.get(entry.cardId) !== entry.id) {
+        // Drop earlier legacy ratings for the same card: take only the last rating per card
+        continue;
+      }
+      migrated.push({
+        ...entry,
+        rating: LEGACY_RATING_MAP[rawRating],
+      });
+      continue;
+    }
+
+    const normalizedRating = normalizeRatingKey(rawRating) ?? '1';
+    migrated.push({
+      ...entry,
+      rating: normalizedRating,
+    });
+  }
+
+  return migrated;
+}
+
 export function getEffectiveReviewLogs(
   logs: ReviewLogEntry[]
 ): ReviewLogEntry[] {
-  const sorted = sortAndDedupeReviewLogs(logs);
+  const sorted = migrateLegacyReviewLogs(logs);
   const undoneTargetIds = new Set<string>();
   for (const entry of sorted) {
     if (entry.eventType === 'undo' && entry.undoTargetId) {
@@ -369,14 +344,10 @@ export function getEffectiveReviewLogs(
   );
 }
 
-/**
- * Resolves chronological card-state timeline events (active non-undone 'review' events
- * interleaved with 'reset' checkpoints) for deterministic SRS state reconstruction.
- */
 function getEffectiveCardTimelineLogs(
   logs: ReviewLogEntry[]
 ): ReviewLogEntry[] {
-  const sorted = sortAndDedupeReviewLogs(logs);
+  const sorted = migrateLegacyReviewLogs(logs);
   const undoneTargetIds = new Set<string>();
   for (const entry of sorted) {
     if (entry.eventType === 'undo' && entry.undoTargetId) {
@@ -408,7 +379,8 @@ export function loadReviewLogs(): ReviewLogEntry[] {
       memoryReviewLogs = [];
       return memoryReviewLogs;
     }
-    memoryReviewLogs = sortAndDedupeReviewLogs(parsed as ReviewLogEntry[]);
+    const migrated = migrateLegacyReviewLogs(parsed as ReviewLogEntry[]);
+    memoryReviewLogs = migrated;
     return memoryReviewLogs;
   } catch {
     memoryReviewLogs = [];
@@ -417,7 +389,7 @@ export function loadReviewLogs(): ReviewLogEntry[] {
 }
 
 export function saveReviewLogsMirror(logs: ReviewLogEntry[]): void {
-  const normalized = sortAndDedupeReviewLogs(logs);
+  const normalized = migrateLegacyReviewLogs(logs);
   memoryReviewLogs = normalized;
   try {
     if (typeof localStorage !== 'undefined') {
@@ -460,16 +432,18 @@ export function replayAllStatesFromLogs(
     }
   }
 
-  const map: Record<string, CardSrsState> = { ...existingOrphanStates };
+  const map: Record<string, CardSrsState> = {};
+  for (const [cid, st] of Object.entries(existingOrphanStates)) {
+    map[cid] = normalizeStoredSrsState(cid, st);
+  }
 
   for (const c of cards) {
-    map[c.id] = createDefaultSrsState(c.id);
+    if (!map[c.id]) map[c.id] = createDefaultSrsState(c.id);
   }
   for (const cid of allReferencedCardIds) {
     map[cid] = createDefaultSrsState(cid);
   }
 
-  // Group timeline logs (active reviews + reset checkpoints) by cardId
   const logsByCard = new Map<string, ReviewLogEntry[]>();
   for (const entry of timelineLogs) {
     const list = logsByCard.get(entry.cardId) || [];
@@ -496,6 +470,58 @@ export function replayAllStatesFromLogs(
   return map;
 }
 
+export function normalizeStoredSrsState(
+  cardId: string,
+  stored?: Partial<CardSrsState> | null
+): CardSrsState {
+  const base = createDefaultSrsState(cardId);
+  if (!stored || typeof stored !== 'object') return base;
+
+  const normalizedLast = normalizeRatingKey(stored.lastRating);
+  let confidence: ConfidenceRating = 0;
+
+  if (
+    typeof stored.confidence === 'number' &&
+    stored.confidence >= 0 &&
+    stored.confidence <= 5
+  ) {
+    confidence = Math.round(stored.confidence) as ConfidenceRating;
+  } else if (normalizedLast) {
+    confidence = ratingToConfidence(normalizedLast);
+  } else if (stored.mastered) {
+    confidence = 4;
+  } else if ((stored.reviewCount ?? 0) > 0) {
+    confidence = 3;
+  }
+
+  const reviewCount = Math.max(0, stored.reviewCount ?? 0);
+  if (reviewCount === 0 && !stored.lastReviewedAt) {
+    confidence = 0;
+  }
+
+  return {
+    ...base,
+    ...stored,
+    cardId,
+    confidence,
+    consecutiveHighCount:
+      typeof stored.consecutiveHighCount === 'number'
+        ? stored.consecutiveHighCount
+        : confidence >= 4
+        ? 2
+        : 0,
+    consecutiveFiveCount:
+      typeof stored.consecutiveFiveCount === 'number'
+        ? stored.consecutiveFiveCount
+        : confidence === 5
+        ? 1
+        : 0,
+    lastRating: normalizedLast,
+    mastered: confidence >= 4,
+    easeFactor: confidence > 0 ? confidenceToLegacyEase(confidence) : 2.5,
+  };
+}
+
 export function deriveStudyStatsFromLogs(
   logs: ReviewLogEntry[],
   now: Date = new Date()
@@ -511,11 +537,10 @@ export function deriveStudyStatsFromLogs(
 
   let totalTimeStudiedMs = 0;
   let timeStudiedMsToday = 0;
-  let nonAgainCount = 0;
+  let recalledCount = 0;
 
   for (const entry of timelineLogs) {
     if (entry.eventType === 'reset') {
-      // Resetting a deck clears the card's active mastery forward without erasing past history
       currentlyMastered.delete(entry.cardId);
       continue;
     }
@@ -534,16 +559,14 @@ export function deriveStudyStatsFromLogs(
       timeStudiedMsToday += dur;
     }
 
-    if (entry.rating !== 'again') {
-      nonAgainCount += 1;
+    const norm = normalizeRatingKey(entry.rating) ?? '1';
+    const conf = ratingToConfidence(norm);
+    if (conf >= 3) {
+      recalledCount += 1;
     }
-
-    const isMatureAfter =
-      entry.stateAfter === 'review' &&
-      entry.intervalMinutesAfter >= MATURE_INTERVAL_MINUTES;
-    if (isMatureAfter) {
+    if (conf >= 4) {
       currentlyMastered.add(entry.cardId);
-    } else if (entry.rating === 'again') {
+    } else if (conf <= 2) {
       currentlyMastered.delete(entry.cardId);
     }
 
@@ -555,7 +578,6 @@ export function deriveStudyStatsFromLogs(
     activeDayKeys.length > 0 ? activeDayKeys[activeDayKeys.length - 1] : null;
   const totalReviewsToday = reviewsByDay[todayKey] || 0;
 
-  // Compute consecutive day streak ending at todayKey or yesterdayKey (04:00 rollover)
   let streakDays = 0;
   const activeDaySet = new Set(activeDayKeys);
   let cursorDate: Date | null = null;
@@ -586,7 +608,7 @@ export function deriveStudyStatsFromLogs(
 
   const retentionPct =
     sortedReviews.length > 0
-      ? Math.round((nonAgainCount / sortedReviews.length) * 100)
+      ? Math.round((recalledCount / sortedReviews.length) * 100)
       : 100;
 
   const stats: StudyStats = {
@@ -624,6 +646,8 @@ export function appendRatingEvent(params: {
   cardId: string;
   rating: RatingKey;
   srsMap: Record<string, CardSrsState>;
+  deckId?: string;
+  reviewIndex?: number;
   now?: Date;
   durationMs?: number;
 }): RateCardResult {
@@ -637,29 +661,43 @@ export function appendRatingEvent(params: {
       ? Math.min(60_000, Math.max(50, Math.round(params.durationMs)))
       : 0;
 
+  const currentLogs = loadReviewLogs();
+  const nextReviewIndex =
+    typeof params.reviewIndex === 'number'
+      ? params.reviewIndex
+      : currentLogs.reduce(
+          (maxIdx, l) =>
+            typeof l.reviewIndex === 'number' && l.reviewIndex > maxIdx
+              ? l.reviewIndex
+              : maxIdx,
+          -1
+        ) + 1;
+
   const logEntry: ReviewLogEntry = {
     id: generateUuid(),
     eventType: 'review',
     undoTargetId: null,
     cardId: params.cardId,
+    deckId: params.deckId,
+    reviewIndex: nextReviewIndex,
     timestamp: now.toISOString(),
     reviewedAt: now.toISOString(),
     studyDayKey: getLocalDateString(now),
     rating: params.rating,
-    stateBefore: current.fsrsState || (current.reviewCount === 0 ? 'new' : 'learning'),
+    stateBefore:
+      current.fsrsState || (current.reviewCount === 0 ? 'new' : 'learning'),
     stateAfter: nextState.fsrsState || 'learning',
     dueBefore: current.dueAt,
     dueAfter: nextState.dueAt,
-    intervalMinutesBefore: current.intervalMinutes,
-    intervalMinutesAfter: nextState.intervalMinutes,
-    stabilityAfter: nextState.stability || 0,
-    difficultyAfter: nextState.difficulty || 0,
+    intervalMinutesBefore: 0,
+    intervalMinutesAfter: 0,
+    stabilityAfter: nextState.confidence,
+    difficultyAfter: 6 - nextState.confidence,
     durationMs: clampedDuration,
     deviceId: getOrCreateDeviceId(),
     syncedAt: null,
   };
 
-  const currentLogs = loadReviewLogs();
   const nextLogs = [...currentLogs, logEntry];
   saveReviewLogsMirror(nextLogs);
 
@@ -669,7 +707,6 @@ export function appendRatingEvent(params: {
   };
   saveSrsMap(updatedMap);
 
-  // Persist asynchronously to IndexedDB & Supabase
   void idbAppendReviewLogAndState(logEntry, nextState);
 
   const updatedStats = deriveStudyStatsFromLogs(nextLogs, now);
@@ -698,7 +735,6 @@ export function undoLastReview(
 } {
   const allLogs = loadReviewLogs();
   const effectiveLogs = getEffectiveReviewLogs(allLogs);
-  // Skip any review that has already been superseded by a deck reset for the same card
   const latestResetTsByCard = new Map<string, number>();
   for (const entry of allLogs) {
     if (entry.eventType === 'reset') {
@@ -728,12 +764,12 @@ export function undoLastReview(
   const undoneEntry = undoableLogs[undoableLogs.length - 1];
   const undoIso = now.toISOString();
 
-  // Append an immutable "undo" marker event rather than deleting the original review log entry
   const undoMarkerEntry: ReviewLogEntry = {
     id: generateUuid(),
     eventType: 'undo',
     undoTargetId: undoneEntry.id,
     cardId: undoneEntry.cardId,
+    deckId: undoneEntry.deckId,
     timestamp: undoIso,
     reviewedAt: undoIso,
     studyDayKey: getLocalDateString(now),
@@ -742,8 +778,8 @@ export function undoLastReview(
     stateAfter: undoneEntry.stateBefore,
     dueBefore: undoneEntry.dueAfter,
     dueAfter: undoneEntry.dueBefore,
-    intervalMinutesBefore: undoneEntry.intervalMinutesAfter,
-    intervalMinutesAfter: undoneEntry.intervalMinutesBefore,
+    intervalMinutesBefore: 0,
+    intervalMinutesAfter: 0,
     stabilityAfter: 0,
     difficultyAfter: 0,
     durationMs: 0,
@@ -764,7 +800,6 @@ export function undoLastReview(
   };
   saveSrsMap(updatedMap);
 
-  // Append the undo marker event and updated card state to IndexedDB & Supabase (never delete from review_logs)
   void idbAppendReviewLogAndState(undoMarkerEntry, restoredCardState);
 
   const remainingLogs = getEffectiveReviewLogs(nextAllLogs);
@@ -785,10 +820,6 @@ export function undoLastReview(
   };
 }
 
-/**
- * Multi-device sync helper: merges two review log arrays idempotently by UUID,
- * replays FSRS card states chronologically, and derives combined StudyStats.
- */
 export function mergeReviewLogsFromDevices(
   localLogs: ReviewLogEntry[],
   remoteLogs: ReviewLogEntry[],
@@ -799,7 +830,7 @@ export function mergeReviewLogsFromDevices(
   srsMap: Record<string, CardSrsState>;
   stats: StudyStats;
 } {
-  const mergedLogs = sortAndDedupeReviewLogs([...localLogs, ...remoteLogs]);
+  const mergedLogs = migrateLegacyReviewLogs([...localLogs, ...remoteLogs]);
   saveReviewLogsMirror(mergedLogs);
   const srsMap = replayAllStatesFromLogs(cards, mergedLogs);
   saveSrsMap(srsMap);
@@ -808,10 +839,6 @@ export function mergeReviewLogsFromDevices(
   return { mergedLogs, srsMap, stats };
 }
 
-/**
- * Hydrates the in-memory engine state from IndexedDB and Supabase on app launch,
- * merging any local and cloud logs idempotently and requesting persistent storage.
- */
 export async function hydrateEngineFromIndexedDB(
   _currentCards: VocabCard[],
   localWorkspace?: RemoteWorkspaceSnapshot
@@ -839,7 +866,7 @@ export async function hydrateEngineFromIndexedDB(
   }
 
   const localLogs = loadReviewLogs();
-  const baseLocalLogs = sortAndDedupeReviewLogs([...idbLogs, ...localLogs]);
+  const baseLocalLogs = migrateLegacyReviewLogs([...idbLogs, ...localLogs]);
   const baseCustomCards = Array.from(mergedCustomMap.values());
 
   const tempCards = validateAndNormalizeContentCards([
@@ -847,12 +874,11 @@ export async function hydrateEngineFromIndexedDB(
     ...baseCustomCards,
   ]);
   const localSrs = loadSrsMap(tempCards);
-  const baseOrphanStates: Record<string, CardSrsState> = {
-    ...idbStates,
-    ...localSrs,
-  };
+  const baseOrphanStates: Record<string, CardSrsState> = {};
+  for (const [k, v] of Object.entries({ ...idbStates, ...localSrs })) {
+    baseOrphanStates[k] = normalizeStoredSrsState(k, v);
+  }
 
-  // Pull & merge with Supabase cloud database if available
   const remoteResult = await pullAndSyncSupabaseState({
     localLogs: baseLocalLogs,
     localStates: baseOrphanStates,
@@ -882,16 +908,19 @@ export async function hydrateEngineFromIndexedDB(
     ...Array.from(mergedCustomMap.values()),
   ]);
 
-  const mergedLogs = sortAndDedupeReviewLogs([
+  const mergedLogs = migrateLegacyReviewLogs([
     ...baseLocalLogs,
     ...(remoteResult?.remoteLogs || []),
   ]);
   saveReviewLogsMirror(mergedLogs);
 
-  const orphanBase: Record<string, CardSrsState> = {
+  const orphanBase: Record<string, CardSrsState> = {};
+  for (const [k, v] of Object.entries({
     ...(remoteResult?.remoteStates || {}),
     ...baseOrphanStates,
-  };
+  })) {
+    orphanBase[k] = normalizeStoredSrsState(k, v);
+  }
 
   const srsMap =
     mergedLogs.length > 0
@@ -964,22 +993,16 @@ export function loadSrsMap(cards: VocabCard[]): Record<string, CardSrsState> {
         : null;
     if (raw) {
       const parsed = JSON.parse(raw) as Record<string, CardSrsState>;
-      // Preserve ALL entries in storage (including orphaned card IDs not currently in `cards`)
       for (const [cardId, storedState] of Object.entries(parsed)) {
         if (storedState && typeof storedState === 'object') {
-          map[cardId] = {
-            ...createDefaultSrsState(cardId),
-            ...storedState,
-            cardId,
-          };
+          map[cardId] = normalizeStoredSrsState(cardId, storedState);
         }
       }
     }
   } catch {
-    // Fallback to default map if localStorage is unavailable
+    // Fallback to default map
   }
 
-  // If review logs exist, ensure card states match deterministic log replay
   const logs = loadReviewLogs();
   if (logs.length > 0) {
     return replayAllStatesFromLogs(cards, logs, map);
@@ -991,7 +1014,6 @@ export function loadSrsMap(cards: VocabCard[]): Record<string, CardSrsState> {
 export function saveSrsMap(map: Record<string, CardSrsState>): void {
   try {
     if (typeof localStorage !== 'undefined') {
-      // Merge with existing stored keys so orphaned card progress is never stripped
       const existingRaw = localStorage.getItem(SRS_STORAGE_KEY);
       const existing = existingRaw
         ? (JSON.parse(existingRaw) as Record<string, CardSrsState>)
@@ -1043,8 +1065,6 @@ export function resetCardsSrsProgress(
   const resetStateSnapshot: Record<string, CardSrsState> = {};
   const nextMap: Record<string, CardSrsState> = { ...currentSrsMap };
 
-  // Track the latest timestamp and replayed state per target card so reset markers
-  // act as clean SRS checkpoints while leaving all historical review logs & stats intact.
   const maxTsByCard = new Map<string, number>();
   for (const entry of existingLogs) {
     const ts = Date.parse(entry.reviewedAt || entry.timestamp);
@@ -1084,12 +1104,12 @@ export function resetCardsSrsProgress(
         timestamp: resetIso,
         reviewedAt: resetIso,
         studyDayKey: getLocalDateString(resetDate),
-        rating: 'again',
+        rating: '1',
         stateBefore: priorState.fsrsState || 'learning',
         stateAfter: 'new',
         dueBefore: priorState.dueAt,
         dueAfter: freshState.dueAt,
-        intervalMinutesBefore: priorState.intervalMinutes || 0,
+        intervalMinutesBefore: 0,
         intervalMinutesAfter: 0,
         stabilityAfter: 0,
         difficultyAfter: 0,

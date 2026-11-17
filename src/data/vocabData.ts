@@ -9,8 +9,50 @@ export type CardCategory =
   | 'conn'
   | 'phrase';
 export type NounGender = 'der' | 'die' | 'das';
-export type RatingKey = 'again' | 'hard' | 'good' | 'easy';
+export type RatingKey = '1' | '2' | '3' | '4' | '5';
+export type ConfidenceRating = 0 | 1 | 2 | 3 | 4 | 5;
+export type LegacyRatingKey = 'again' | 'hard' | 'good' | 'easy';
 export type FsrsStateKind = 'new' | 'learning' | 'review' | 'relearning';
+
+export const LEGACY_RATING_MAP: Record<LegacyRatingKey, RatingKey> = {
+  again: '1',
+  hard: '2',
+  good: '4',
+  easy: '5',
+};
+
+export function normalizeRatingKey(value: unknown): RatingKey | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (
+    trimmed === '1' ||
+    trimmed === '2' ||
+    trimmed === '3' ||
+    trimmed === '4' ||
+    trimmed === '5'
+  ) {
+    return trimmed;
+  }
+  if (trimmed in LEGACY_RATING_MAP) {
+    return LEGACY_RATING_MAP[trimmed as LegacyRatingKey];
+  }
+  return undefined;
+}
+
+export function ratingToConfidence(rating: RatingKey): 1 | 2 | 3 | 4 | 5 {
+  switch (rating) {
+    case '1':
+      return 1;
+    case '2':
+      return 2;
+    case '3':
+      return 3;
+    case '4':
+      return 4;
+    case '5':
+      return 5;
+  }
+}
 
 export interface SixPersonGrid {
   ich: string;
@@ -180,6 +222,9 @@ export interface VocabCard {
 
 export interface CardSrsState {
   cardId: string;
+  confidence: ConfidenceRating;
+  consecutiveHighCount?: number;
+  consecutiveFiveCount?: number;
   intervalMinutes: number;
   easeFactor: number;
   repetitions: number;
@@ -188,7 +233,7 @@ export interface CardSrsState {
   dueAt: string;
   lastRating?: RatingKey;
   mastered: boolean;
-  // FSRS native scheduling fields
+  // Optional legacy/compat metadata
   fsrsState?: FsrsStateKind;
   stability?: number;
   difficulty?: number;
@@ -205,6 +250,8 @@ export interface ReviewLogEntry {
   eventType?: ReviewEventType; // 'review' (default), 'undo', or 'reset' append-only marker
   undoTargetId?: string | null; // When eventType === 'undo', the UUID of the review log entry being undone
   cardId: string;
+  deckId?: string;
+  reviewIndex?: number;
   timestamp: string; // ISO-8601 UTC review timestamp
   reviewedAt: string; // Alias of timestamp for indexed sorting
   studyDayKey: string; // YYYY-MM-DD using 04:00 local time rollover

@@ -20,7 +20,7 @@ export function generateStandaloneVanillaHtml(): string {
       --text: #1C1917;
       --text-muted: #57534E;
       --border: #E7E5E4;
-      --accent: #B45309;
+      --accent: #2E6650;
       --der-color: #0284c7;
       --die-color: #dc2626;
       --das-color: #059669;
@@ -32,7 +32,7 @@ export function generateStandaloneVanillaHtml(): string {
       --text: #f5f5f4;
       --text-muted: #a8a29e;
       --border: #262c36;
-      --accent: #f59e0b;
+      --accent: #74B094;
       --der-color: #38bdf8;
       --die-color: #f87171;
       --das-color: #34d399;
@@ -76,24 +76,6 @@ export function generateStandaloneVanillaHtml(): string {
     }
     .nav-btn.active { color: var(--text); border-bottom-color: var(--accent); }
     .container { max-width: 1120px; margin: 0 auto; padding: 2rem 1.5rem; }
-    .stats-row {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 1rem;
-      margin-bottom: 2rem;
-    }
-    .stat-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 1.25rem;
-    }
-    .stat-value {
-      font-family: 'Fraunces', serif;
-      font-size: 1.85rem;
-      font-weight: 600;
-      font-variant-numeric: tabular-nums;
-    }
     .perspective-stage {
       perspective: 1400px;
       max-width: 680px;
@@ -132,14 +114,14 @@ export function generateStandaloneVanillaHtml(): string {
       max-width: 680px;
       margin: 1.25rem auto 0;
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 0.75rem;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 0.5rem;
     }
     .rate-btn {
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 10px;
-      padding: 0.75rem;
+      padding: 0.65rem 0.4rem;
       color: var(--text);
       font: inherit;
       cursor: pointer;
@@ -152,23 +134,17 @@ export function generateStandaloneVanillaHtml(): string {
 </head>
 <body>
   <header>
-    <a href="#dashboard" class="brand" id="brandLink">Achsoo</a>
+    <a href="#study" class="brand" id="brandLink">Achsoo</a>
     <nav class="nav-links">
-      <button class="nav-btn active" id="tabDashboard">Decks & Übersicht</button>
-      <button class="nav-btn" id="tabStudy">Lernstudio</button>
-      <span id="streakDisplay" style="font-size:0.85rem;font-variant-numeric:tabular-nums;">Serie: 1 Tag</span>
+      <button class="nav-btn active" id="tabStudy">Lernstudio</button>
     </nav>
     <button class="nav-btn" id="themeBtn">Erscheinungsbild</button>
   </header>
   <main class="container">
-    <section id="dashboardView">
-      <div class="stats-row" id="statsRow"></div>
-      <div id="deckList" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1rem;"></div>
-    </section>
-    <section id="studyView" class="hidden">
+    <section id="studyView">
       <div style="max-width:680px;margin:0 auto 1rem;display:flex;justify-content:space-between;font-size:0.875rem;color:var(--text-muted);">
-        <span id="deckTitleLabel">Alle Karten</span>
-        <span id="progressLabel" style="font-variant-numeric:tabular-nums;">Karte 1 von 20</span>
+        <span id="deckTitleLabel">Alle Karten · Loop</span>
+        <span id="progressLabel" style="font-variant-numeric:tabular-nums;">Sicher: 0 / 0</span>
       </div>
       <div class="perspective-stage">
         <div class="flip-card-inner" id="cardInner">
@@ -177,19 +153,43 @@ export function generateStandaloneVanillaHtml(): string {
         </div>
       </div>
       <div class="rating-dock" id="ratingDock">
-        <button class="rate-btn" data-rate="again"><strong>Nochmal</strong><br><small>&lt; 1 Min. [1]</small></button>
-        <button class="rate-btn" data-rate="hard"><strong>Schwer</strong><br><small>10 Min. [2]</small></button>
-        <button class="rate-btn" data-rate="good"><strong>Gut</strong><br><small>1 Tag [3]</small></button>
-        <button class="rate-btn" data-rate="easy"><strong>Leicht</strong><br><small>4 Tage [4]</small></button>
+        <button class="rate-btn" data-rate="1"><strong>1</strong><br><small>Gar nicht</small></button>
+        <button class="rate-btn" data-rate="2"><strong>2</strong><br><small>Kaum</small></button>
+        <button class="rate-btn" data-rate="3"><strong>3</strong><br><small>Mühsam</small></button>
+        <button class="rate-btn" data-rate="4"><strong>4</strong><br><small>Gut</small></button>
+        <button class="rate-btn" data-rate="5"><strong>5</strong><br><small>Sicher</small></button>
       </div>
     </section>
   </main>
   <script>
     const CARDS = ${cardsJson};
-    let currentIndex = 0;
+    const GAPS = { 1: 2, 2: 5, 3: 8, 4: 14, 5: 30 };
+    let nowClock = 0;
     let isFlipped = false;
-    let activeCards = [...CARDS];
-    let srs = JSON.parse(localStorage.getItem('wortschatz_srs_v1') || '{}');
+    let activePool = [];
+    let waiting = CARDS.map((c) => c.id);
+    let cleared = new Set();
+    let meta = {};
+    let currentId = null;
+
+    function admitOne() {
+      if (waiting.length === 0 || activePool.length >= 10) return;
+      const minDue = activePool.length === 0 ? Infinity : Math.min(...activePool.map((id) => meta[id].dueAt));
+      if (activePool.length > 0 && minDue <= nowClock) return;
+      const nextId = waiting.shift();
+      meta[nextId] = { dueAt: nowClock, consHigh: 0 };
+      activePool.push(nextId);
+    }
+
+    function pickNext() {
+      admitOne();
+      if (activePool.length === 0) {
+        currentId = null;
+        return;
+      }
+      activePool.sort((a, b) => meta[a].dueAt - meta[b].dueAt);
+      currentId = activePool[0];
+    }
 
     function speak(text) {
       if (!('speechSynthesis' in window)) return;
@@ -201,11 +201,15 @@ export function generateStandaloneVanillaHtml(): string {
     }
 
     function renderCard() {
-      const c = activeCards[currentIndex];
-      if (!c) return;
+      const c = CARDS.find((x) => x.id === currentId);
+      document.getElementById('progressLabel').textContent = 'Sicher: ' + cleared.size + ' / ' + CARDS.length;
+      if (!c) {
+        document.getElementById('cardFront').innerHTML = '<div style="margin:auto;text-align:center;"><h2>Deck geschafft!</h2><p style="margin-top:0.5rem;color:var(--text-muted);">Alle Karten sicher verankert.</p></div>';
+        document.getElementById('cardBack').innerHTML = '';
+        return;
+      }
       const inner = document.getElementById('cardInner');
       inner.classList.toggle('is-flipped', isFlipped);
-      document.getElementById('progressLabel').textContent = 'Karte ' + (currentIndex + 1) + ' von ' + activeCards.length;
       document.getElementById('cardFront').innerHTML = \`
         <div style="display:flex;justify-content:space-between;color:var(--text-muted);font-size:0.85rem;">
           <span>\${c.cefr} · \${c.grammarLabel}</span>
@@ -216,53 +220,37 @@ export function generateStandaloneVanillaHtml(): string {
         </div>
         <div style="text-align:center;color:var(--text-muted);font-size:0.8rem;">Klicken oder Leertaste zum Umdrehen</div>
       \`;
-      let grammarHtml = '';
-      if (c.verbDetails) {
-        grammarHtml = \`<div>Präsens: <strong>\${c.verbDetails.praesens}</strong> · Präteritum: <strong>\${c.verbDetails.praeteritum}</strong> · Perfekt: <strong>\${c.verbDetails.perfekt}</strong> (Hilfsverb: \${c.verbDetails.auxiliary})</div>\`;
-      } else if (c.nounDetails) {
-        grammarHtml = \`<div>Genus: <strong>\${c.nounDetails.gender} (\${c.nounDetails.genderLabel})</strong> · Plural: <strong>\${c.nounDetails.plural}</strong></div>\`;
-      } else if (c.prepDetails) {
-        grammarHtml = \`<div>Kasus: <strong>\${c.prepDetails.governedCase}</strong> · \${c.prepDetails.collocations.join(' · ')}</div>\`;
-      }
       document.getElementById('cardBack').innerHTML = \`
         <div style="font-size:0.85rem;color:var(--text-muted);">\${c.lemma} · \${c.cefr}</div>
         <div>
           <div style="font-size:1.5rem;font-weight:600;margin-bottom:0.75rem;">\${c.translation}</div>
-          <div style="font-size:0.9rem;padding:0.75rem;background:var(--surface-subtle);border-radius:8px;margin-bottom:0.75rem;">\${grammarHtml}</div>
           <div style="font-size:1.02rem;font-weight:500;line-height:1.6;margin-bottom:0.25rem;">„\${c.exampleDe}“</div>
           <div style="font-size:0.875rem;line-height:1.5;color:var(--text-muted);">\${c.exampleEn}</div>
         </div>
-        <div style="font-size:0.75rem;color:var(--text-muted);">Bewertung wählen (Tasten 1–4)</div>
+        <div style="font-size:0.75rem;color:var(--text-muted);">Vertrauen bewerten (Tasten 1–5)</div>
       \`;
     }
 
-    function rateCard(rating) {
-      const c = activeCards[currentIndex];
-      if (!c) return;
-      const prev = srs[c.id] || { intervalMinutes: 0, reviewCount: 0 };
-      const mult = rating === 'again' ? 1 : rating === 'hard' ? 6 : rating === 'good' ? 10 : 11520;
-      const nextInterval = prev.reviewCount === 0
-        ? mult
-        : rating === 'again'
-        ? 5
-        : Math.max(1440, Math.round((prev.intervalMinutes || 1440) * (rating === 'hard' ? 1.2 : rating === 'good' ? 2.5 : 3.5)));
-      srs[c.id] = {
-        cardId: c.id,
-        intervalMinutes: nextInterval,
-        reviewCount: (prev.reviewCount || 0) + 1,
-        dueDate: new Date(Date.now() + nextInterval * 60000).toISOString(),
-        lastRating: rating,
-      };
-      localStorage.setItem('wortschatz_srs_v1', JSON.stringify(srs));
+    function rateCard(ratingNum) {
+      if (!currentId) return;
+      nowClock += 1;
+      const m = meta[currentId];
+      m.consHigh = ratingNum >= 4 ? m.consHigh + 1 : 0;
+      if (m.consHigh >= 2) {
+        activePool = activePool.filter((id) => id !== currentId);
+        cleared.add(currentId);
+      } else {
+        m.dueAt = nowClock + (GAPS[ratingNum] || 3);
+      }
       isFlipped = false;
-      currentIndex = (currentIndex + 1) % activeCards.length;
+      pickNext();
       renderCard();
     }
 
     document.querySelectorAll('.rate-btn').forEach((btn) => {
       btn.addEventListener('click', () => {
-        const r = btn.getAttribute('data-rate');
-        if (r) rateCard(r);
+        const r = Number(btn.getAttribute('data-rate'));
+        if (r >= 1 && r <= 5) rateCard(r);
       });
     });
 
@@ -271,17 +259,17 @@ export function generateStandaloneVanillaHtml(): string {
       renderCard();
     });
 
-    window.addEventListener('keydown', (e) => {
-      if (e.code === 'Space') { e.preventDefault(); isFlipped = !isFlipped; renderCard(); }
-      if (e.key === '1') { e.preventDefault(); rateCard('again'); }
-      if (e.key === '2') { e.preventDefault(); rateCard('hard'); }
-      if (e.key === '3') { e.preventDefault(); rateCard('good'); }
-      if (e.key === '4') { e.preventDefault(); rateCard('easy'); }
-      if (e.key.toLowerCase() === 'a') { const c = activeCards[currentIndex]; if (c) speak(c.spokenText); }
-      if (e.key === 'ArrowRight') { currentIndex = (currentIndex + 1) % activeCards.length; isFlipped = false; renderCard(); }
-      if (e.key === 'ArrowLeft') { currentIndex = (currentIndex - 1 + activeCards.length) % activeCards.length; isFlipped = false; renderCard(); }
+    document.getElementById('themeBtn').addEventListener('click', () => {
+      document.documentElement.classList.toggle('dark');
     });
 
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'Space') { e.preventDefault(); isFlipped = !isFlipped; renderCard(); }
+      if (['1','2','3','4','5'].includes(e.key)) { e.preventDefault(); if (isFlipped) rateCard(Number(e.key)); else { isFlipped = true; renderCard(); } }
+      if (e.key.toLowerCase() === 'a') { const c = CARDS.find((x) => x.id === currentId); if (c) speak(c.spokenText); }
+    });
+
+    pickNext();
     renderCard();
   </script>
 </body>

@@ -116,10 +116,10 @@ import {
   appendRatingEvent,
   applyThemePreferencesToDom,
   createDefaultSrsState,
-  formatIntervalBadge,
+  formatConfidenceBadge,
   getLast7DaysVelocityData,
   hydrateEngineFromIndexedDB,
-  isCardDueToday,
+  isCardLowConfidence,
   loadAllCards,
   loadSrsMap,
   loadStudyStats,
@@ -132,6 +132,14 @@ import {
   triggerHapticFeedback,
   undoLastReview,
 } from './utils/srsEngine';
+import {
+  CONFIDENCE_LOOP_CONFIG,
+  DeckLoopState,
+  applyLoopRating,
+  computeConfidenceMasteryPct,
+  createInitialDeckLoopState,
+  getCurrentLoopCardId,
+} from './utils/confidenceLoopEngine';
 import { generateStandaloneVanillaHtml } from './utils/standaloneExporter';
 
 type ActiveView = 'study' | 'decks' | 'dashboard' | 'archive';
@@ -144,7 +152,7 @@ const VIEW_ORDER: Record<ActiveView, number> = {
 };
 type DeckId =
   | 'all'
-  | 'due'
+  | 'low-confidence'
   | 'verb'
   | 'noun'
   | 'adj'
@@ -157,7 +165,7 @@ type DeckId =
 
 const BUILT_IN_DECK_IDS: ReadonlySet<string> = new Set<string>([
   'all',
-  'due',
+  'low-confidence',
   'verb',
   'noun',
   'adj',
@@ -316,7 +324,8 @@ const RATING_META: Record<
   RatingKey,
   {
     label: string;
-    shortcutKey: '1' | '2' | '3' | '4';
+    shortLabel: string;
+    shortcutKey: '1' | '2' | '3' | '4' | '5';
     colorVar: string;
     softVar: string;
     borderVar: string;
@@ -325,45 +334,60 @@ const RATING_META: Record<
     textClass: string;
   }
 > = {
-  again: {
-    label: 'Nochmal',
+  '1': {
+    label: '1 · Gar nicht',
+    shortLabel: 'Gar nicht',
     shortcutKey: '1',
-    colorVar: 'var(--srs-again)',
-    softVar: 'var(--srs-again-soft)',
-    borderVar: 'var(--srs-again-border)',
-    solidBgVar: 'var(--srs-again-solid-bg)',
-    solidFgVar: 'var(--srs-again-solid-fg)',
-    textClass: 'text-[var(--srs-again)]',
+    colorVar: 'var(--conf-1)',
+    softVar: 'var(--conf-1-soft)',
+    borderVar: 'var(--conf-1-border)',
+    solidBgVar: 'var(--conf-1-solid-bg)',
+    solidFgVar: 'var(--conf-1-solid-fg)',
+    textClass: 'text-[var(--conf-1)]',
   },
-  hard: {
-    label: 'Schwer',
+  '2': {
+    label: '2 · Kaum',
+    shortLabel: 'Kaum',
     shortcutKey: '2',
-    colorVar: 'var(--srs-hard)',
-    softVar: 'var(--srs-hard-soft)',
-    borderVar: 'var(--srs-hard-border)',
-    solidBgVar: 'var(--srs-hard-solid-bg)',
-    solidFgVar: 'var(--srs-hard-solid-fg)',
-    textClass: 'text-[var(--srs-hard)]',
+    colorVar: 'var(--conf-2)',
+    softVar: 'var(--conf-2-soft)',
+    borderVar: 'var(--conf-2-border)',
+    solidBgVar: 'var(--conf-2-solid-bg)',
+    solidFgVar: 'var(--conf-2-solid-fg)',
+    textClass: 'text-[var(--conf-2)]',
   },
-  good: {
-    label: 'Gut',
+  '3': {
+    label: '3 · Mühsam',
+    shortLabel: 'Mühsam',
     shortcutKey: '3',
-    colorVar: 'var(--srs-good)',
-    softVar: 'var(--srs-good-soft)',
-    borderVar: 'var(--srs-good-border)',
-    solidBgVar: 'var(--srs-good-solid-bg)',
-    solidFgVar: 'var(--srs-good-solid-fg)',
-    textClass: 'text-[var(--srs-good)]',
+    colorVar: 'var(--conf-3)',
+    softVar: 'var(--conf-3-soft)',
+    borderVar: 'var(--conf-3-border)',
+    solidBgVar: 'var(--conf-3-solid-bg)',
+    solidFgVar: 'var(--conf-3-solid-fg)',
+    textClass: 'text-[var(--conf-3)]',
   },
-  easy: {
-    label: 'Leicht',
+  '4': {
+    label: '4 · Gut',
+    shortLabel: 'Gut',
     shortcutKey: '4',
-    colorVar: 'var(--srs-easy)',
-    softVar: 'var(--srs-easy-soft)',
-    borderVar: 'var(--srs-easy-border)',
-    solidBgVar: 'var(--srs-easy-solid-bg)',
-    solidFgVar: 'var(--srs-easy-solid-fg)',
-    textClass: 'text-[var(--srs-easy)]',
+    colorVar: 'var(--conf-4)',
+    softVar: 'var(--conf-4-soft)',
+    borderVar: 'var(--conf-4-border)',
+    solidBgVar: 'var(--conf-4-solid-bg)',
+    solidFgVar: 'var(--conf-4-solid-fg)',
+    textClass: 'text-[var(--conf-4)]',
+  },
+  '5': {
+    label: '5 · Sicher',
+    shortLabel: 'Sicher',
+    shortcutKey: '5',
+    colorVar: 'var(--conf-5)',
+    softVar: 'var(--conf-5-soft)',
+    borderVar: 'var(--conf-5-border)',
+    solidBgVar: 'var(--conf-5-solid-bg)',
+    solidFgVar: 'var(--conf-5-solid-fg)',
+    textClass: 'text-[var(--conf-5)]',
   },
 };
 
@@ -876,6 +900,10 @@ export default function App() {
 
   // Flashcard Study Runner state (Layer 0 -> Layer 1 Meaning -> Scroll-Up 3 Forms & Sentence -> Layer 2 Anatomie)
   const [currentIndex, setCurrentIndex] = useState<number>(0);
+  const [loopStatesByDeck, setLoopStatesByDeck] = useState<
+    Record<string, DeckLoopState>
+  >({});
+  const loopUndoStackRef = useRef<Record<string, DeckLoopState[]>>({});
   const [studyTrailsByDeck, setStudyTrailsByDeck] = useState<
     Record<string, StudyDeckTrail>
   >(() => {
@@ -1000,16 +1028,16 @@ export default function App() {
         predicate: () => true,
       },
       {
-        id: 'due',
-        title: 'Daily Due Queue',
-        shortTitle: 'Due Today',
-        subtitle: 'Scheduled SRS cards ready now',
+        id: 'low-confidence',
+        title: 'Low Confidence (1–2)',
+        shortTitle: 'Fokus 1–2',
+        subtitle: 'Karten mit Unsicherheit (1–2) zum gezielten Wiederholen',
         categoryGroup: 'smart',
-        levelTag: 'SRS Queue',
+        levelTag: 'Fokus 1–2',
         icon: Clock,
         iconBg: 'bg-[var(--intent-warning-soft)] text-[var(--intent-warning)]',
         intent: 'warning',
-        predicate: (_c, srs, now) => isCardDueToday(srs, now),
+        predicate: (_c, srs) => isCardLowConfidence(srs),
       },
       {
         id: 'verb',
@@ -1123,7 +1151,7 @@ export default function App() {
     []
   );
 
-  // Enrich each deck with live SRS stats & progress percentage
+  // Enrich each deck with live 1-5 confidence metrics
   const enrichedDecks = useMemo(() => {
     const now = new Date();
     return deckDefinitions.map((def) => {
@@ -1147,38 +1175,30 @@ export default function App() {
 
       let mastered = 0;
       let learning = 0;
-      let due = 0;
-      let easeSum = 0;
+      let lowConfidence = 0;
 
       for (const c of matchingCards) {
         const st = srsMap[c.id] || createDefaultSrsState(c.id);
-        if (st.mastered) mastered += 1;
+        if (st.mastered || st.confidence >= 4) mastered += 1;
         else if (st.reviewCount > 0) learning += 1;
-        if (isCardDueToday(st, now)) due += 1;
-        easeSum += st.easeFactor || 2.5;
+        if (isCardLowConfidence(st)) lowConfidence += 1;
       }
 
       const total = matchingCards.length;
       const masteredPct = total > 0 ? (mastered / total) * 100 : 0;
       const learningPct = total > 0 ? (learning / total) * 100 : 0;
-      const studiedTotalPct =
-        total > 0
-          ? Math.min(100, Math.round(((mastered + learning) / total) * 100))
-          : 0;
-      const dueProgressPct =
+      const confidencePct = computeConfidenceMasteryPct(
+        matchingCards.map((c) => c.id),
+        srsMap
+      );
+      const lowConfProgressPct =
         total === 0
           ? stats.totalReviewsToday > 0
             ? 100
             : 0
-          : Math.round(
-              (stats.totalReviewsToday /
-                Math.max(1, stats.totalReviewsToday + total)) *
-                100
-            );
+          : confidencePct;
       const progressPct =
-        def.id === 'due' ? dueProgressPct : studiedTotalPct;
-
-      const avgEase = total > 0 ? (easeSum / total).toFixed(2) : '2.50';
+        def.id === 'low-confidence' ? lowConfProgressPct : confidencePct;
 
       return {
         ...def,
@@ -1186,23 +1206,21 @@ export default function App() {
         total,
         mastered,
         learning,
-        due,
-        masteredPct: def.id === 'due' ? dueProgressPct : masteredPct,
-        learningPct: def.id === 'due' ? 0 : learningPct,
+        lowConfidence,
+        masteredPct: def.id === 'low-confidence' ? lowConfProgressPct : masteredPct,
+        learningPct: def.id === 'low-confidence' ? 0 : learningPct,
         progressPct,
-        avgEase,
       };
     });
   }, [deckDefinitions, cards, srsMap, stats.totalReviewsToday, allCardsOrder]);
 
   // Global summary metrics
   const summaryMetrics = useMemo(() => {
-    const now = new Date();
     let masteredCount = 0;
-    let dueCount = 0;
+    let lowConfidenceCount = 0;
     let reviewedCount = 0;
     let totalLifetimeReviews = 0;
-    let totalEase = 0;
+    let totalConfidence = 0;
     let masteredVerbs = 0;
     let masteredNouns = 0;
     let masteredB1 = 0;
@@ -1216,16 +1234,16 @@ export default function App() {
       if (card.category === 'noun') totalNouns += 1;
       if (card.cefr === 'B1') totalB1 += 1;
 
-      if (state.mastered) {
+      if (state.mastered || state.confidence >= 4) {
         masteredCount += 1;
         if (card.category === 'verb') masteredVerbs += 1;
         if (card.category === 'noun') masteredNouns += 1;
         if (card.cefr === 'B1') masteredB1 += 1;
       }
-      if (isCardDueToday(state, now)) dueCount += 1;
+      if (isCardLowConfidence(state)) lowConfidenceCount += 1;
       if (state.reviewCount > 0) {
         reviewedCount += 1;
-        totalEase += state.easeFactor || 2.5;
+        totalConfidence += state.confidence || 0;
       }
       totalLifetimeReviews += state.reviewCount || 0;
     }
@@ -1233,17 +1251,22 @@ export default function App() {
     const masteryPct = Math.round(
       (masteredCount / Math.max(1, cards.length)) * 100
     );
-    const avgEase =
-      reviewedCount > 0 ? (totalEase / reviewedCount).toFixed(2) : '2.50';
+    const avgConfidencePct = computeConfidenceMasteryPct(
+      cards.map((c) => c.id),
+      srsMap
+    );
+    const avgConfidenceScore =
+      reviewedCount > 0 ? (totalConfidence / reviewedCount).toFixed(1) : '0.0';
 
     return {
       totalCards: cards.length,
       masteredCount,
       masteryPct,
-      dueCount,
+      lowConfidenceCount,
       reviewedCount,
       totalLifetimeReviews,
-      avgEase,
+      avgConfidencePct,
+      avgConfidenceScore,
       masteredVerbs,
       totalVerbs,
       masteredNouns,
@@ -1349,7 +1372,6 @@ export default function App() {
 
   // Unified Enriched Decks for the mobile-first "All Decks" view (Built-in + Custom Decks + Overrides)
   const enrichedUnifiedDecks: EnrichedUnifiedDeck[] = useMemo(() => {
-    const now = new Date();
     const defaultConfigMap: Record<
       DeckId,
       {
@@ -1361,7 +1383,7 @@ export default function App() {
       }
     > = {
       all: { iconId: 'Layers', tint: 'sage' },
-      due: { iconId: 'Clock', tint: 'terracotta' },
+      'low-confidence': { iconId: 'Clock', tint: 'terracotta' },
       verb: { iconId: 'GitBranch', tint: 'sage', archetypeFilter: 'verb' },
       noun: { iconId: 'Shapes', tint: 'blue', archetypeFilter: 'noun' },
       adj: { iconId: 'SlidersHorizontal', tint: 'sage', archetypeFilter: 'adj' },
@@ -1440,7 +1462,7 @@ export default function App() {
           total: d.total,
           mastered: d.mastered,
           learning: d.learning,
-          due: d.due,
+          lowConfidence: d.lowConfidence,
           masteredPct: d.masteredPct,
           learningPct: d.learningPct,
           progressPct: d.progressPct,
@@ -1452,13 +1474,13 @@ export default function App() {
       const matchingCards = cards.filter((c) => cardSet.has(c.id));
       let mastered = 0;
       let learning = 0;
-      let due = 0;
+      let lowConfidence = 0;
       let lastStudiedAt = 0;
       for (const c of matchingCards) {
         const st = srsMap[c.id] || createDefaultSrsState(c.id);
-        if (st.mastered) mastered += 1;
+        if (st.mastered || st.confidence >= 4) mastered += 1;
         else if (st.reviewCount > 0) learning += 1;
-        if (isCardDueToday(st, now)) due += 1;
+        if (isCardLowConfidence(st)) lowConfidence += 1;
         if (st.lastReviewedAt) {
           const ts = Date.parse(st.lastReviewedAt);
           if (!Number.isNaN(ts) && ts > lastStudiedAt) {
@@ -1469,10 +1491,10 @@ export default function App() {
       const total = matchingCards.length;
       const masteredPct = total > 0 ? (mastered / total) * 100 : 0;
       const learningPct = total > 0 ? (learning / total) * 100 : 0;
-      const progressPct =
-        total > 0
-          ? Math.min(100, Math.round(((mastered + learning) / total) * 100))
-          : 0;
+      const progressPct = computeConfidenceMasteryPct(
+        matchingCards.map((c) => c.id),
+        srsMap
+      );
 
       return {
         id: cd.id,
@@ -1493,7 +1515,7 @@ export default function App() {
         total,
         mastered,
         learning,
-        due,
+        lowConfidence,
         masteredPct,
         learningPct,
         progressPct,
@@ -1517,6 +1539,20 @@ export default function App() {
   }, [customStudyQueue, enrichedDecks, selectedDeckId]);
 
   const studyDeck = activeDeckObj.cards;
+
+  const activeLoopState: DeckLoopState = useMemo(() => {
+    const existing = loopStatesByDeck[activeDeckObj.id];
+    if (existing) return existing;
+    return createInitialDeckLoopState(
+      activeDeckObj.id,
+      studyDeck.map((c) => c.id),
+      srsMap,
+      CONFIDENCE_LOOP_CONFIG
+    );
+  }, [loopStatesByDeck, activeDeckObj.id, studyDeck, srsMap]);
+
+  const isActiveDeckDone =
+    studyDeck.length > 0 && activeLoopState.phase === 'done';
 
   // Rehydrate custom/A2 study queue after async DB/Supabase sync if needed
   useEffect(() => {
@@ -1546,7 +1582,7 @@ export default function App() {
     }
   }, [initialStudySession, customStudyQueue, enrichedUnifiedDecks]);
 
-  // Restore exact saved card index for the resumed deck on initial load before first paint
+  // Restore exact starting loop card for the resumed deck on initial load before first paint
   useLayoutEffect(() => {
     if (hasRestoredStudyIndexRef.current) return;
     if (studyDeck.length === 0) {
@@ -1554,10 +1590,14 @@ export default function App() {
       return;
     }
     if (activeDeckObj.id === 'all') {
-      hasRestoredStudyIndexRef.current = true;
       clearStudyDeckTrail('all');
-      if (currentIndex !== 0) {
-        setCurrentIndex(0);
+    }
+    const loopCardId = getCurrentLoopCardId(activeLoopState);
+    if (loopCardId) {
+      const loopIdx = studyDeck.findIndex((c) => c.id === loopCardId);
+      hasRestoredStudyIndexRef.current = true;
+      if (loopIdx >= 0 && loopIdx !== currentIndex) {
+        setCurrentIndex(loopIdx);
       }
       return;
     }
@@ -1568,7 +1608,7 @@ export default function App() {
     if (restoredIdx !== currentIndex) {
       setCurrentIndex(restoredIdx);
     }
-  }, [activeDeckObj.id, studyDeck, currentIndex]);
+  }, [activeDeckObj.id, studyDeck, currentIndex, activeLoopState]);
 
   useEffect(() => {
     if (currentIndex >= studyDeck.length && studyDeck.length > 0) {
@@ -1612,7 +1652,7 @@ export default function App() {
       studyTrailsByDeck[activeDeckObj.id],
       studyDeck,
       currentCard?.id,
-      activeDeckObj.id === 'due'
+      activeDeckObj.id === 'low-confidence'
     );
   }, [studyTrailsByDeck, activeDeckObj.id, studyDeck, currentCard?.id]);
 
@@ -1819,14 +1859,16 @@ export default function App() {
       clearCardMotionTimers();
 
       const hapticMap: Record<RatingKey, number | number[]> = {
-        again: [20, 40, 20],
-        hard: 15,
-        good: 18,
-        easy: [12, 30, 18],
+        '1': [20, 40, 20],
+        '2': [16, 20],
+        '3': 15,
+        '4': 18,
+        '5': [12, 30, 18],
       };
       triggerHapticFeedback(hapticMap[rating]);
 
       const now = new Date();
+      const targetDeckId = activeDeckObj.id;
       const durationMs = Math.max(
         0,
         Math.round(performance.now() - cardShownAtRef.current)
@@ -1835,49 +1877,69 @@ export default function App() {
         cardId: currentCard.id,
         rating,
         srsMap,
+        deckId: targetDeckId,
         now,
         durationMs,
       });
 
-      const targetDeckId = activeDeckObj.id;
-      const isDueDeck = targetDeckId === 'due';
+      const isLowConfidenceDeck = targetDeckId === 'low-confidence';
 
       let nextIdx = 0;
       let nextCardId: string | undefined;
       let nextTrail: StudyDeckTrail;
+      let nextLoopStateForDeck = activeLoopState;
 
-      if (isDueDeck) {
-        const nextDueCards = cards.filter((c) => {
+      if (isLowConfidenceDeck) {
+        const nextLowConfidenceCards = cards.filter((c) => {
           const st =
             result.updatedMap[c.id] || createDefaultSrsState(c.id);
-          return isCardDueToday(st, now);
+          return isCardLowConfidence(st);
         });
-        const nextDueSet = new Set(nextDueCards.map((c) => c.id));
-        let candidateCardId: string | undefined;
-        if (studyDeck.length > 0 && nextDueCards.length > 0) {
+        const nextLoop = applyLoopRating(
+          activeLoopState,
+          currentCard.id,
+          rating,
+          CONFIDENCE_LOOP_CONFIG
+        );
+        const lowSet = new Set(nextLowConfidenceCards.map((c) => c.id));
+        const loopCandidate = getCurrentLoopCardId(nextLoop);
+        let candidateCardId =
+          loopCandidate && lowSet.has(loopCandidate) ? loopCandidate : undefined;
+        if (!candidateCardId && nextLowConfidenceCards.length > 0) {
           for (let offset = 1; offset <= studyDeck.length; offset++) {
             const candidate =
               studyDeck[(currentIndex + offset) % studyDeck.length];
-            if (candidate && nextDueSet.has(candidate.id)) {
+            if (candidate && lowSet.has(candidate.id)) {
               candidateCardId = candidate.id;
               break;
             }
+          }
+          if (!candidateCardId) {
+            candidateCardId = nextLowConfidenceCards[0].id;
           }
         }
         nextIdx = candidateCardId
           ? Math.max(
               0,
-              nextDueCards.findIndex((c) => c.id === candidateCardId)
+              nextLowConfidenceCards.findIndex((c) => c.id === candidateCardId)
             )
           : 0;
-        nextCardId = nextDueCards[nextIdx]?.id;
+        nextCardId = nextLowConfidenceCards[nextIdx]?.id;
+        nextLoopStateForDeck = createInitialDeckLoopState(
+          targetDeckId,
+          nextLowConfidenceCards.map((c) => c.id),
+          result.updatedMap,
+          CONFIDENCE_LOOP_CONFIG
+        );
         nextTrail = recordTrailRating(activeTrail, rating, nextCardId, {
           isDueDeck: true,
-          validNextDeckCardIds: nextDueCards.map((c) => c.id),
+          validNextDeckCardIds: nextLowConfidenceCards.map((c) => c.id),
           ratedAtIso: now.toISOString(),
         });
       } else {
-        if (activeTrail.cursor < activeTrail.entries.length - 1) {
+        const isAtFrontier =
+          activeTrail.cursor >= activeTrail.entries.length - 1;
+        if (!isAtFrontier) {
           const existingNextId =
             activeTrail.entries[activeTrail.cursor + 1]?.cardId;
           const foundIdx = studyDeck.findIndex(
@@ -1889,13 +1951,24 @@ export default function App() {
               : studyDeck.length <= 1
               ? 0
               : (currentIndex + 1) % studyDeck.length;
+          nextCardId = studyDeck[nextIdx]?.id;
         } else {
-          nextIdx =
-            studyDeck.length <= 1
-              ? 0
-              : (currentIndex + 1) % studyDeck.length;
+          nextLoopStateForDeck = applyLoopRating(
+            activeLoopState,
+            currentCard.id,
+            rating,
+            CONFIDENCE_LOOP_CONFIG
+          );
+          const loopTargetId = getCurrentLoopCardId(nextLoopStateForDeck);
+          if (loopTargetId) {
+            const foundIdx = studyDeck.findIndex((c) => c.id === loopTargetId);
+            nextIdx = foundIdx >= 0 ? foundIdx : 0;
+            nextCardId = studyDeck[nextIdx]?.id;
+          } else {
+            nextIdx = 0;
+            nextCardId = undefined;
+          }
         }
-        nextCardId = studyDeck[nextIdx]?.id;
         nextTrail = recordTrailRating(activeTrail, rating, nextCardId, {
           ratedAtIso: now.toISOString(),
         });
@@ -1922,8 +1995,18 @@ export default function App() {
       setDetailCard(null);
       setExitingRating(rating);
       setCardMotion('is-exiting-next');
+      const prevLoopSnapshot = activeLoopState;
       cardMotionTimersRef.current.exitTimer = window.setTimeout(() => {
         resetFlipInstantaneously();
+        const prevStack = loopUndoStackRef.current[targetDeckId] || [];
+        loopUndoStackRef.current[targetDeckId] = [
+          ...prevStack.slice(-29),
+          prevLoopSnapshot,
+        ];
+        setLoopStatesByDeck((prev) => ({
+          ...prev,
+          [targetDeckId]: nextLoopStateForDeck,
+        }));
         saveStudyDeckTrail(targetDeckId, nextTrail);
         setStudyTrailsByDeck((prev) => ({
           ...prev,
@@ -1950,6 +2033,7 @@ export default function App() {
       studyDeck,
       currentIndex,
       activeDeckObj.id,
+      activeLoopState,
       activeTrail,
       clearRateFirstHint,
       clearCardMotionTimers,
@@ -1973,12 +2057,27 @@ export default function App() {
           : 'is-entering-next';
       triggerHapticFeedback(6);
       let restoredCardIdx = 0;
-      if (nextDeckId === 'all') {
-        reshuffleAllCards();
-        restoredCardIdx = 0;
+      const nextDeckCards =
+        nextIdx >= 0 ? enrichedDecks[nextIdx].cards : cards;
+      const existingOrReopenedLoop =
+        loopStatesByDeck[nextDeckId] ??
+        createInitialDeckLoopState(
+          nextDeckId,
+          nextDeckCards.map((c) => c.id),
+          srsMap,
+          CONFIDENCE_LOOP_CONFIG
+        );
+      setLoopStatesByDeck((prev) => ({
+        ...prev,
+        [nextDeckId]: existingOrReopenedLoop,
+      }));
+      const targetLoopCardId = getCurrentLoopCardId(existingOrReopenedLoop);
+      if (targetLoopCardId) {
+        const idxInDeck = nextDeckCards.findIndex(
+          (c) => c.id === targetLoopCardId
+        );
+        restoredCardIdx = idxInDeck >= 0 ? idxInDeck : 0;
       } else {
-        const nextDeckCards =
-          nextIdx >= 0 ? enrichedDecks[nextIdx].cards : [];
         const savedPositions = loadStudyDeckPositions();
         restoredCardIdx = resolveSavedDeckIndex(
           nextDeckCards,
@@ -2000,7 +2099,9 @@ export default function App() {
       selectedDeckId,
       customStudyQueue,
       enrichedDecks,
-      reshuffleAllCards,
+      cards,
+      loopStatesByDeck,
+      srsMap,
       clearRateFirstHint,
       clearRatingFeedback,
       clearCardMotionTimers,
@@ -2019,10 +2120,31 @@ export default function App() {
       undone.undoneEntry.cardId,
       studyDeck
     );
-    saveStudyDeckTrail(activeDeckObj.id, undoResult.trail);
+    const targetDeckId = activeDeckObj.id;
+    const undoStack = loopUndoStackRef.current[targetDeckId] || [];
+    if (undoStack.length > 0) {
+      const restoredLoop = undoStack[undoStack.length - 1];
+      loopUndoStackRef.current[targetDeckId] = undoStack.slice(0, -1);
+      setLoopStatesByDeck((prev) => ({
+        ...prev,
+        [targetDeckId]: restoredLoop,
+      }));
+    } else {
+      const rebuiltLoop = createInitialDeckLoopState(
+        targetDeckId,
+        studyDeck.map((c) => c.id),
+        undone.updatedMap,
+        CONFIDENCE_LOOP_CONFIG
+      );
+      setLoopStatesByDeck((prev) => ({
+        ...prev,
+        [targetDeckId]: rebuiltLoop,
+      }));
+    }
+    saveStudyDeckTrail(targetDeckId, undoResult.trail);
     setStudyTrailsByDeck((prev) => ({
       ...prev,
-      [activeDeckObj.id]: undoResult.trail,
+      [targetDeckId]: undoResult.trail,
     }));
     setSrsMap(undone.updatedMap);
     setStats(undone.updatedStats);
@@ -2482,19 +2604,23 @@ export default function App() {
         setDetailCard((prev) => (prev ? null : currentCard));
       } else if (!detailCard && e.key === '1') {
         e.preventDefault();
-        if (isFlipped) handleRateCard('again');
+        if (isFlipped) handleRateCard('1');
         else handleFlipCard();
       } else if (!detailCard && e.key === '2') {
         e.preventDefault();
-        if (isFlipped) handleRateCard('hard');
+        if (isFlipped) handleRateCard('2');
         else handleFlipCard();
       } else if (!detailCard && e.key === '3') {
         e.preventDefault();
-        if (isFlipped) handleRateCard('good');
+        if (isFlipped) handleRateCard('3');
         else handleFlipCard();
       } else if (!detailCard && e.key === '4') {
         e.preventDefault();
-        if (isFlipped) handleRateCard('easy');
+        if (isFlipped) handleRateCard('4');
+        else handleFlipCard();
+      } else if (!detailCard && e.key === '5') {
+        e.preventDefault();
+        if (isFlipped) handleRateCard('5');
         else handleFlipCard();
       } else if (e.key.toLowerCase() === 'a') {
         e.preventDefault();
@@ -2536,24 +2662,14 @@ export default function App() {
     customCardsOverride?: VocabCard[]
   ) => {
     userChangedDeckRef.current = true;
-    const savedPositions = loadStudyDeckPositions();
     const builtInMatch = enrichedDecks.find((d) => d.id === deckId);
     let targetCardsForResume: VocabCard[] = [];
     let resumedIndex = 0;
 
-    if (deckId === 'all') {
-      reshuffleAllCards(cards);
-      setCustomStudyQueue(null);
-      setSelectedDeckId('all');
-      resumedIndex = 0;
-    } else if (builtInMatch && !customCardsOverride) {
+    if (builtInMatch && !customCardsOverride) {
       setCustomStudyQueue(null);
       setSelectedDeckId(builtInMatch.id);
       targetCardsForResume = builtInMatch.cards;
-      resumedIndex = resolveSavedDeckIndex(
-        targetCardsForResume,
-        savedPositions[deckId]
-      );
     } else {
       const unifiedMatch = enrichedUnifiedDecks.find((d) => d.id === deckId);
       const targetCards =
@@ -2569,10 +2685,26 @@ export default function App() {
         cards: targetCards,
       });
       targetCardsForResume = targetCards;
-      resumedIndex = resolveSavedDeckIndex(
-        targetCardsForResume,
-        savedPositions[deckId]
-      );
+    }
+
+    const existingLoop = loopStatesByDeck[deckId];
+    const nextLoop =
+      existingLoop && existingLoop.phase !== 'done'
+        ? existingLoop
+        : createInitialDeckLoopState(
+            deckId,
+            targetCardsForResume.map((c) => c.id),
+            srsMap,
+            CONFIDENCE_LOOP_CONFIG
+          );
+    setLoopStatesByDeck((prev) => ({
+      ...prev,
+      [deckId]: nextLoop,
+    }));
+    const loopCardId = getCurrentLoopCardId(nextLoop);
+    if (loopCardId) {
+      const idx = targetCardsForResume.findIndex((c) => c.id === loopCardId);
+      resumedIndex = idx >= 0 ? idx : 0;
     }
 
     clearRateFirstHint();
@@ -2599,13 +2731,31 @@ export default function App() {
       if (deckId) {
         saveStudyDeckPosition(deckId, 0);
         clearStudyDeckTrail(deckId);
+        delete loopUndoStackRef.current[deckId];
+        const freshLoop = createInitialDeckLoopState(
+          deckId,
+          cardIds,
+          updatedMap,
+          CONFIDENCE_LOOP_CONFIG
+        );
+        setLoopStatesByDeck((prev) => ({
+          ...prev,
+          [deckId]: freshLoop,
+        }));
         if (deckId === 'all') {
           reshuffleAllCards();
         }
         if (activeDeckObj.id === deckId) {
           clearRateFirstHint();
           clearRatingFeedback();
-          setCurrentIndex(0);
+          const firstId = getCurrentLoopCardId(freshLoop);
+          const nextIdx = firstId
+            ? Math.max(
+                0,
+                studyDeck.findIndex((c) => c.id === firstId)
+              )
+            : 0;
+          setCurrentIndex(nextIdx);
           setIsFlipped(false);
           setIsBackExpanded(false);
         }
@@ -2632,6 +2782,7 @@ export default function App() {
     [
       srsMap,
       activeDeckObj.id,
+      studyDeck,
       reshuffleAllCards,
       clearRateFirstHint,
       clearRatingFeedback,
@@ -2643,6 +2794,8 @@ export default function App() {
     clearStudyDeckTrail();
     clearRateFirstHint();
     clearRatingFeedback();
+    loopUndoStackRef.current = {};
+    setLoopStatesByDeck({});
     setStudyTrailsByDeck({});
     reshuffleAllCards();
     setSrsMap(fresh);
@@ -3467,7 +3620,7 @@ export default function App() {
                     ...enrichedDecks.map((d) => ({
                       id: d.id,
                       label:
-                        d.id === 'due' && d.total > 0
+                        d.id === 'low-confidence' && d.total > 0
                           ? `${d.shortTitle} (${d.total})`
                           : d.shortTitle,
                     })),
@@ -3485,20 +3638,39 @@ export default function App() {
                   className="flex-1 min-w-0 pr-1"
                 />
 
-                {/* Distraction-Free Zen Focus Trigger */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHapticFeedback(10);
-                    setIsZenMode(true);
-                  }}
-                  title="Enter Distraction-Free Zen Session Mode [Z]"
-                  aria-label="Enter Zen Focus Mode"
-                  className="min-h-[40px] min-w-[40px] md:min-h-[44px] px-3 md:px-3.5 rounded-[var(--radius-pill)] text-xs md:text-[13px] font-semibold text-[var(--fg-secondary)] hover:text-[var(--fg-primary)] hover:bg-black/[0.04] dark:hover:bg-white/[0.06] inline-flex items-center justify-center gap-1.5 shrink-0 cursor-pointer transition-colors theme-focus"
-                >
-                  <Maximize2 className="w-4 h-4 text-[var(--accent-secondary)]" />
-                  <span className="hidden sm:inline">Zen</span>
-                </button>
+                {/* Fresh start deck button & Distraction-Free Zen Focus Trigger */}
+                <div className="flex items-center gap-1 shrink-0">
+                  {studyDeck.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleResetDeckSrs(
+                          studyDeck.map((c) => c.id),
+                          activeDeckObj.id
+                        )
+                      }
+                      title="Fresh start (Deck zurücksetzen)"
+                      aria-label="Fresh start deck"
+                      className="min-h-[40px] min-w-[40px] md:min-h-[44px] px-2.5 rounded-[var(--radius-pill)] text-xs font-semibold text-[var(--fg-secondary)] hover:text-[var(--fg-primary)] hover:bg-black/[0.04] dark:hover:bg-white/[0.06] inline-flex items-center justify-center gap-1.5 shrink-0 cursor-pointer transition-colors theme-focus"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span className="hidden md:inline">Fresh start</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHapticFeedback(10);
+                      setIsZenMode(true);
+                    }}
+                    title="Enter Distraction-Free Zen Session Mode [Z]"
+                    aria-label="Enter Zen Focus Mode"
+                    className="min-h-[40px] min-w-[40px] md:min-h-[44px] px-3 md:px-3.5 rounded-[var(--radius-pill)] text-xs md:text-[13px] font-semibold text-[var(--fg-secondary)] hover:text-[var(--fg-primary)] hover:bg-black/[0.04] dark:hover:bg-white/[0.06] inline-flex items-center justify-center gap-1.5 shrink-0 cursor-pointer transition-colors theme-focus"
+                  >
+                    <Maximize2 className="w-4 h-4 text-[var(--accent-secondary)]" />
+                    <span className="hidden sm:inline">Zen</span>
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="flex items-center justify-between gap-2 pb-1.5 border-b border-[var(--border-subtle)]">
@@ -3526,8 +3698,8 @@ export default function App() {
               </div>
             )}
 
-            {/* Row 2: Prev / Fluid Session Progress Bar / Next HUD */}
-            {studyDeck.length > 0 && (
+            {/* Row 2: Prev / Confidence Loop & Final Sweep Progress Bar / Next HUD */}
+            {studyDeck.length > 0 && !isActiveDeckDone && (
               <div className="flex items-center gap-2">
                 <button
                   type="button"
@@ -3545,14 +3717,25 @@ export default function App() {
                 </button>
 
                 <div className="flex-1 space-y-1 md:space-y-1.5">
-                  <div className="flex items-center justify-between text-xs md:text-[13px] font-sans tabular-nums">
-                    <span className="font-semibold text-[var(--fg-primary)]">
-                      {currentIndex + 1}{' '}
-                      <span className="text-[var(--fg-muted)] font-normal">
-                        / {studyDeck.length}
-                      </span>
+                  <div className="flex items-center justify-between text-xs md:text-[13px] font-sans tabular-nums gap-2">
+                    <span className="font-semibold text-[var(--fg-primary)] truncate">
+                      {activeLoopState.phase === 'sweep' ? (
+                        <>
+                          Final Sweep{' '}
+                          <span className="text-[var(--fg-muted)] font-normal">
+                            ({activeLoopState.sweepQueue.length} übrig)
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          {activeLoopState.clearedIds.length}{' '}
+                          <span className="text-[var(--fg-muted)] font-normal">
+                            / {studyDeck.length} klar · {activeLoopState.activePool.length} aktiv
+                          </span>
+                        </>
+                      )}
                     </span>
-                    <div className="flex items-center gap-1.5 text-[var(--fg-secondary)]">
+                    <div className="flex items-center gap-1.5 text-[var(--fg-secondary)] shrink-0">
                       {recentRatingEcho ? (
                         <span
                           data-testid="rating-echo-hud"
@@ -3579,12 +3762,7 @@ export default function App() {
                         </span>
                       ) : (
                         <>
-                          <span>
-                            {formatIntervalBadge(
-                              currentCardSrs.intervalMinutes,
-                              currentCardSrs.reviewCount
-                            )}
-                          </span>
+                          <span>{formatConfidenceBadge(currentCardSrs)}</span>
                           {stats.streakDays > 0 && (
                             <>
                               <span aria-hidden="true">·</span>
@@ -3599,15 +3777,25 @@ export default function App() {
                     </div>
                   </div>
                   <ProgressBar
-                    value={((currentIndex + 1) / studyDeck.length) * 100}
-                    intent="primary"
+                    value={
+                      activeLoopState.phase === 'sweep'
+                        ? (activeLoopState.sweepPassedIds.length /
+                            Math.max(1, studyDeck.length)) *
+                          100
+                        : (activeLoopState.clearedIds.length /
+                            Math.max(1, studyDeck.length)) *
+                          100
+                    }
+                    intent={
+                      activeLoopState.phase === 'sweep' ? 'success' : 'primary'
+                    }
                     accentColor={
                       recentRatingEcho
                         ? RATING_META[recentRatingEcho].colorVar
                         : undefined
                     }
                     size="sm"
-                    label="Deck study progress"
+                    label="Deck mastery loop progress"
                   />
                 </div>
 
@@ -3618,12 +3806,12 @@ export default function App() {
                   aria-label={
                     canGoNext
                       ? 'Next card'
-                      : 'Next card (rate difficulty first)'
+                      : 'Next card (rate confidence first)'
                   }
                   title={
                     canGoNext
                       ? 'Next card (→)'
-                      : 'Rate difficulty first to advance (→)'
+                      : 'Rate confidence first to advance (→)'
                   }
                   className={`w-10 h-10 md:w-11 md:h-11 rounded-full flex items-center justify-center transition-colors shrink-0 cursor-pointer ${
                     canGoNext
@@ -3636,7 +3824,7 @@ export default function App() {
               </div>
             )}
 
-            {/* Empty Due Queue Celebration State */}
+            {/* Empty Low Confidence Queue OR Deck Done Celebration State */}
             {studyDeck.length === 0 ? (
               <Card.Root className="p-6 sm:p-10 text-center space-y-4 my-2 surface-paper">
                 <div className="w-12 h-12 rounded-2xl bg-[var(--intent-success-soft)] text-[var(--intent-success)] flex items-center justify-center mx-auto">
@@ -3644,10 +3832,10 @@ export default function App() {
                 </div>
                 <div className="space-y-1.5">
                   <h2 className="font-display text-xl font-bold text-[var(--fg-primary)]">
-                    Due Queue Complete
+                    Keine Karten mit Fokus 1–2
                   </h2>
                   <p className="text-xs sm:text-sm text-[var(--fg-secondary)] max-w-sm mx-auto">
-                    Every scheduled card in this queue has been reviewed. Continue with all {cards.length} cards across all 6 grammar archetypes.
+                    Momentan hat keine Karte eine niedrige Confidence (1–2). Starte einfach ein Deck oder alle {cards.length} Karten.
                   </p>
                 </div>
                 <div className="pt-2 flex items-center justify-center gap-3">
@@ -3661,6 +3849,52 @@ export default function App() {
                   {isZenSessionActive && (
                     <Button
                       intent="secondary"
+                      size="md"
+                      onClick={() => setIsZenMode(false)}
+                    >
+                      Exit Zen
+                    </Button>
+                  )}
+                </div>
+              </Card.Root>
+            ) : isActiveDeckDone ? (
+              <Card.Root className="p-6 sm:p-10 text-center space-y-4 my-2 surface-paper">
+                <div className="w-12 h-12 rounded-2xl bg-[var(--intent-success-soft)] text-[var(--intent-success)] flex items-center justify-center mx-auto">
+                  <Trophy className="w-6 h-6" />
+                </div>
+                <div className="space-y-1.5">
+                  <h2 className="font-display text-xl font-bold text-[var(--fg-primary)]">
+                    Deck geschafft!
+                  </h2>
+                  <p className="text-xs sm:text-sm text-[var(--fg-secondary)] max-w-md mx-auto">
+                    Alle {studyDeck.length} Karten in „{activeDeckObj.shortTitle}“ haben Loop und Final Sweep bestanden ({activeLoopState.virtualClock} Bewertungen in dieser Session).
+                  </p>
+                </div>
+                <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
+                  <Button
+                    intent="primary"
+                    size="md"
+                    onClick={() =>
+                      handleResetDeckSrs(
+                        studyDeck.map((c) => c.id),
+                        activeDeckObj.id
+                      )
+                    }
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                    <span>Fresh start</span>
+                  </Button>
+                  <Button
+                    intent="secondary"
+                    size="md"
+                    onClick={() => navigateToView('decks', 'forward')}
+                  >
+                    <Layers className="w-4 h-4" />
+                    <span>Alle Decks</span>
+                  </Button>
+                  {isZenSessionActive && (
+                    <Button
+                      intent="tertiary"
                       size="md"
                       onClick={() => setIsZenMode(false)}
                     >
@@ -4304,30 +4538,35 @@ export default function App() {
                   ) : (
                     <div
                       role="group"
-                      aria-label="Rate flashcard recall"
-                      className="grid grid-cols-4 gap-2 md:gap-3"
+                      aria-label="Rate flashcard confidence (1 to 5)"
+                      className="grid grid-cols-5 gap-1.5 sm:gap-2 md:gap-2.5"
                     >
                       {(
                         [
                           {
-                            key: 'again' as const,
+                            key: '1' as const,
                             hoverClass:
-                              'hover:border-[var(--srs-again-border)] hover:bg-[var(--srs-again-soft)]',
+                              'hover:border-[var(--conf-1-border)] hover:bg-[var(--conf-1-soft)]',
                           },
                           {
-                            key: 'hard' as const,
+                            key: '2' as const,
                             hoverClass:
-                              'hover:border-[var(--srs-hard-border)] hover:bg-[var(--srs-hard-soft)]',
+                              'hover:border-[var(--conf-2-border)] hover:bg-[var(--conf-2-soft)]',
                           },
                           {
-                            key: 'good' as const,
+                            key: '3' as const,
                             hoverClass:
-                              'hover:border-[var(--srs-good-border)] hover:bg-[var(--srs-good-soft)]',
+                              'hover:border-[var(--conf-3-border)] hover:bg-[var(--conf-3-soft)]',
                           },
                           {
-                            key: 'easy' as const,
+                            key: '4' as const,
                             hoverClass:
-                              'hover:border-[var(--srs-easy-border)] hover:bg-[var(--srs-easy-soft)]',
+                              'hover:border-[var(--conf-4-border)] hover:bg-[var(--conf-4-soft)]',
+                          },
+                          {
+                            key: '5' as const,
+                            hoverClass:
+                              'hover:border-[var(--conf-5-border)] hover:bg-[var(--conf-5-soft)]',
                           },
                         ] as const
                       ).map(({ key, hoverClass }) => {
@@ -4344,6 +4583,7 @@ export default function App() {
                             key={key}
                             type="button"
                             aria-pressed={isSelected}
+                            aria-label={`${meta.shortcutKey} ${meta.shortLabel}`}
                             onClick={() => handleRateCard(key)}
                             style={
                               isEmphasized
@@ -4358,7 +4598,7 @@ export default function App() {
                                   }
                                 : undefined
                             }
-                            className={`relative min-h-[48px] md:min-h-[52px] py-2.5 px-2 md:px-3 rounded-[var(--radius-control)] surface-paper border active:scale-95 transition-all flex items-center justify-center cursor-pointer theme-focus ${
+                            className={`relative min-h-[52px] md:min-h-[56px] py-2 px-1 sm:px-2 md:px-3 rounded-[var(--radius-control)] surface-paper border active:scale-95 transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer theme-focus min-w-0 ${
                               isEmphasized ? '' : hoverClass
                             } ${isFlashing ? 'scale-[0.96]' : ''} ${
                               isDimmedSibling
@@ -4367,16 +4607,13 @@ export default function App() {
                             }`}
                           >
                             <span
-                              aria-hidden="true"
                               style={
                                 isEmphasized
                                   ? { color: meta.solidFgVar }
                                   : undefined
                               }
-                              className={`hidden sm:inline absolute top-1 md:top-1.5 right-1.5 md:right-2 text-[10px] md:text-[11px] font-sans tabular-nums pointer-events-none ${
-                                isEmphasized
-                                  ? 'opacity-70'
-                                  : 'text-[var(--fg-muted)] opacity-45'
+                              className={`text-sm sm:text-base md:text-lg font-display font-bold leading-none tabular-nums ${
+                                isEmphasized ? '' : meta.textClass
                               }`}
                             >
                               {meta.shortcutKey}
@@ -4387,11 +4624,13 @@ export default function App() {
                                   ? { color: meta.solidFgVar }
                                   : undefined
                               }
-                              className={`text-sm sm:text-[15px] md:text-base font-bold leading-tight ${
-                                isEmphasized ? '' : meta.textClass
+                              className={`text-[10px] sm:text-xs font-semibold leading-tight truncate max-w-full ${
+                                isEmphasized
+                                  ? 'opacity-90'
+                                  : 'text-[var(--fg-secondary)]'
                               }`}
                             >
-                              {meta.label}
+                              {meta.shortLabel}
                             </span>
                           </button>
                         );
@@ -4459,12 +4698,12 @@ export default function App() {
               <Card.Root className="p-4 space-y-2 surface-paper">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold text-[var(--fg-secondary)]">
-                    Due Today
+                    Fokus (1–2)
                   </span>
                   <Clock className="w-4 h-4 text-[var(--accent-terracotta)]" />
                 </div>
                 <div className="font-display text-2xl font-bold tabular-nums">
-                  {summaryMetrics.dueCount}
+                  {summaryMetrics.lowConfidenceCount}
                 </div>
               </Card.Root>
 
@@ -4483,12 +4722,15 @@ export default function App() {
               <Card.Root className="p-4 space-y-2 surface-paper">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold text-[var(--fg-secondary)]">
-                    Avg Ease
+                    Vertrauen
                   </span>
                   <Target className="w-4 h-4 text-[var(--accent-secondary)]" />
                 </div>
                 <div className="font-display text-2xl font-bold tabular-nums">
-                  {summaryMetrics.avgEase}
+                  {summaryMetrics.avgConfidencePct}%
+                  <span className="ml-1.5 text-xs font-sans font-normal text-[var(--fg-muted)]">
+                    Ø {summaryMetrics.avgConfidenceScore}/5
+                  </span>
                 </div>
               </Card.Root>
             </section>
@@ -4810,9 +5052,31 @@ export default function App() {
                           userChangedDeckRef.current = true;
                           setCustomStudyQueue(null);
                           setSelectedDeckId('all');
-                          const idx = cards.findIndex((c) => c.id === card.id);
+                          const allDeck = enrichedDecks.find((d) => d.id === 'all');
+                          const deckCards = allDeck?.cards || cards;
+                          const orderedIds = [
+                            card.id,
+                            ...deckCards
+                              .map((c) => c.id)
+                              .filter((id) => id !== card.id),
+                          ];
+                          const focusedLoop = createInitialDeckLoopState(
+                            'all',
+                            orderedIds,
+                            {
+                              ...srsMap,
+                              [card.id]: createDefaultSrsState(card.id),
+                            },
+                            CONFIDENCE_LOOP_CONFIG
+                          );
+                          setLoopStatesByDeck((prev) => ({
+                            ...prev,
+                            all: focusedLoop,
+                          }));
+                          const idx = deckCards.findIndex((c) => c.id === card.id);
                           setCurrentIndex(idx >= 0 ? idx : 0);
                           setIsFlipped(false);
+                          setIsBackExpanded(false);
                           navigateToView('study', 'forward');
                         }}
                         aria-label={`Study ${card.lemma} in Flashcard Studio`}

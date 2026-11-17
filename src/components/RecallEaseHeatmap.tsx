@@ -20,6 +20,7 @@ import {
   ColorMode,
   ThemeId,
   createDefaultSrsState,
+  isCardNew,
 } from '../utils/srsEngine';
 import { Button, Card } from './HeroPrimitives';
 import { SlidingPillSwitcher } from './SlidingPillSwitcher';
@@ -32,9 +33,9 @@ interface RecallEaseHeatmapProps {
   onSelectArchetypeDeck: (category: CardCategory) => void;
 }
 
-type HeatmapMode = 'ease' | 'mastery';
+type HeatmapMode = 'confidence' | 'mastery';
 
-type EaseTier = 'empty' | 'new' | 'hard' | 'building' | 'steady' | 'strong';
+type ConfidenceTier = 'empty' | 'new' | 'low' | 'building' | 'steady' | 'strong';
 
 interface HeatmapCellData {
   category: CardCategory;
@@ -43,15 +44,16 @@ interface HeatmapCellData {
   categoryShort: string;
   categoryMobileShort: string;
   cefr: CefrLevel | 'ALL';
-  avgEase: number;
+  confidencePct: number;
+  avgConfidence: number;
   cardCount: number;
   reviewedCount: number;
   masteredCount: number;
-  lapsedCount: number;
+  lowConfidenceCount: number;
   practicedPct: number;
   masteredPct: number;
   hardestCard: VocabCard | null;
-  hardestEase: number | null;
+  hardestConfidence: number | null;
   starterCard: VocabCard | null;
 }
 
@@ -115,7 +117,10 @@ const ARCHETYPE_ROWS: {
 
 const CEFR_COLS: (CefrLevel | 'ALL')[] = ['A1', 'A2', 'B1', 'ALL'];
 
-function getEaseTier(cell: HeatmapCellData, mode: HeatmapMode): EaseTier {
+function getConfidenceTier(
+  cell: HeatmapCellData,
+  mode: HeatmapMode
+): ConfidenceTier {
   if (cell.cardCount === 0) return 'empty';
   if (cell.reviewedCount === 0) return 'new';
 
@@ -123,17 +128,17 @@ function getEaseTier(cell: HeatmapCellData, mode: HeatmapMode): EaseTier {
     if (cell.masteredPct >= 75) return 'strong';
     if (cell.masteredPct >= 40) return 'steady';
     if (cell.masteredPct >= 15 || cell.practicedPct >= 35) return 'building';
-    return 'hard';
+    return 'low';
   }
 
-  if (cell.avgEase < 2.05) return 'hard';
-  if (cell.avgEase < 2.35) return 'building';
-  if (cell.avgEase < 2.6) return 'steady';
+  if (cell.confidencePct < 40) return 'low';
+  if (cell.confidencePct < 60) return 'building';
+  if (cell.confidencePct < 80) return 'steady';
   return 'strong';
 }
 
 const TIER_STYLES: Record<
-  EaseTier,
+  ConfidenceTier,
   {
     bgStyle: string;
     borderStyle: string;
@@ -159,44 +164,40 @@ const TIER_STYLES: Record<
     diagnosticText: 'Noch ungeübt · Bereit zum Start',
     diagnosticColor: 'text-[var(--fg-secondary)]',
   },
-  hard: {
+  low: {
     bgStyle: 'bg-[var(--heat-1)]',
-    borderStyle: 'border border-[var(--srs-again-border)]',
-    accentColor: 'var(--srs-again)',
-    dotBg: 'bg-[var(--srs-again)]',
-    diagnosticText: 'Fokus empfohlen',
-    diagnosticColor: 'text-[var(--srs-again)]',
+    borderStyle: 'border border-[var(--conf-1-border)]',
+    accentColor: 'var(--conf-1)',
+    dotBg: 'bg-[var(--conf-1)]',
+    diagnosticText: 'Fokus empfohlen (1–2)',
+    diagnosticColor: 'text-[var(--conf-1)]',
   },
   building: {
     bgStyle: 'bg-[var(--heat-2)]',
-    borderStyle: 'border border-[var(--srs-hard-border)]',
-    accentColor: 'var(--srs-hard)',
-    dotBg: 'bg-[var(--srs-hard)]',
+    borderStyle: 'border border-[var(--conf-3-border)]',
+    accentColor: 'var(--conf-3)',
+    dotBg: 'bg-[var(--conf-3)]',
     diagnosticText: 'Im Aufbau',
-    diagnosticColor: 'text-[var(--srs-hard)]',
+    diagnosticColor: 'text-[var(--conf-3)]',
   },
   steady: {
     bgStyle: 'bg-[var(--heat-3)]',
-    borderStyle: 'border border-[var(--srs-good-border)]',
-    accentColor: 'var(--srs-good)',
-    dotBg: 'bg-[var(--srs-good)]',
+    borderStyle: 'border border-[var(--conf-4-border)]',
+    accentColor: 'var(--conf-4)',
+    dotBg: 'bg-[var(--conf-4)]',
     diagnosticText: 'Stabil verankert',
-    diagnosticColor: 'text-[var(--srs-good)]',
+    diagnosticColor: 'text-[var(--conf-4)]',
   },
   strong: {
     bgStyle: 'bg-[var(--heat-4)]',
-    borderStyle: 'border border-[var(--srs-easy-border)]',
-    accentColor: 'var(--srs-easy)',
-    dotBg: 'bg-[var(--srs-easy)]',
-    diagnosticText: 'Sicher beherrscht',
-    diagnosticColor: 'text-[var(--srs-easy)]',
+    borderStyle: 'border border-[var(--conf-5-border)]',
+    accentColor: 'var(--conf-5)',
+    dotBg: 'bg-[var(--conf-5)]',
+    diagnosticText: 'Sicher beherrscht (4–5)',
+    diagnosticColor: 'text-[var(--conf-5)]',
   },
 };
 
-/**
- * Crisp D3 arc donut chart showing Mastered / In-Progress / Unseen split
- * inside the diagnostic inspector.
- */
 const CellBreakdownDonut: React.FC<{
   total: number;
   reviewed: number;
@@ -209,8 +210,8 @@ const CellBreakdownDonut: React.FC<{
   const arcs = useMemo(() => {
     if (total === 0) return [];
     const segments = [
-      { key: 'mastered', value: mastered, color: 'var(--srs-easy)' },
-      { key: 'progress', value: inProgress, color: 'var(--srs-good)' },
+      { key: 'mastered', value: mastered, color: 'var(--conf-5)' },
+      { key: 'progress', value: inProgress, color: 'var(--conf-4)' },
       { key: 'unseen', value: unseen, color: 'var(--border-strong)' },
     ].filter((s) => s.value > 0);
 
@@ -271,7 +272,7 @@ export const RecallEaseHeatmap: React.FC<RecallEaseHeatmapProps> = ({
   srsMap,
   onSelectArchetypeDeck,
 }) => {
-  const [mode, setMode] = useState<HeatmapMode>('ease');
+  const [mode, setMode] = useState<HeatmapMode>('confidence');
   const [selectedKey, setSelectedKey] = useState<{
     category: CardCategory;
     cefr: CefrLevel | 'ALL';
@@ -287,34 +288,41 @@ export const RecallEaseHeatmap: React.FC<RecallEaseHeatmapProps> = ({
             c.category === row.id && (col === 'ALL' ? true : c.cefr === col)
         );
 
-        let reviewedEaseSum = 0;
+        let totalConfidenceSum = 0;
+        let reviewedConfidenceSum = 0;
         let reviewedCount = 0;
         let masteredCount = 0;
-        let lapsedCount = 0;
+        let lowConfidenceCount = 0;
         let hardestCard: VocabCard | null = null;
-        let hardestEase: number | null = null;
+        let hardestConfidence: number | null = null;
 
         for (const c of matching) {
           const st = srsMap[c.id] || createDefaultSrsState(c.id);
-          const ef = st.easeFactor || 2.5;
-          if (st.mastered) masteredCount += 1;
-          if (st.reviewCount > 0) {
+          const conf = st.confidence || 0;
+          totalConfidenceSum += conf;
+          if (conf >= 4) masteredCount += 1;
+
+          if (!isCardNew(st) && conf > 0) {
             reviewedCount += 1;
-            reviewedEaseSum += ef;
-            if (st.lastRating === 'again' || st.lastRating === 'hard') {
-              lapsedCount += 1;
+            reviewedConfidenceSum += conf;
+            if (conf <= 2) {
+              lowConfidenceCount += 1;
             }
-            if (hardestEase === null || ef < hardestEase) {
-              hardestEase = ef;
+            if (hardestConfidence === null || conf < hardestConfidence) {
+              hardestConfidence = conf;
               hardestCard = c;
             }
           }
         }
 
-        const avgEase =
+        const confidencePct =
+          matching.length > 0
+            ? Math.round((totalConfidenceSum / (5 * matching.length)) * 100)
+            : 0;
+        const avgConfidence =
           reviewedCount > 0
-            ? Number((reviewedEaseSum / reviewedCount).toFixed(2))
-            : 2.5;
+            ? Number((reviewedConfidenceSum / reviewedCount).toFixed(1))
+            : 0;
 
         const practicedPct =
           matching.length > 0
@@ -332,15 +340,16 @@ export const RecallEaseHeatmap: React.FC<RecallEaseHeatmapProps> = ({
           categoryShort: row.short,
           categoryMobileShort: row.mobileShort,
           cefr: col,
-          avgEase,
+          confidencePct,
+          avgConfidence,
           cardCount: matching.length,
           reviewedCount,
           masteredCount,
-          lapsedCount,
+          lowConfidenceCount,
           practicedPct,
           masteredPct,
           hardestCard,
-          hardestEase,
+          hardestConfidence,
           starterCard: matching[0] || null,
         });
       }
@@ -350,7 +359,9 @@ export const RecallEaseHeatmap: React.FC<RecallEaseHeatmapProps> = ({
       (c) => c.cefr === 'ALL' && c.reviewedCount > 0
     );
     const sortedReviewed = [...reviewedSummaries].sort(
-      (a, b) => a.avgEase - b.avgEase || b.lapsedCount - a.lapsedCount
+      (a, b) =>
+        a.confidencePct - b.confidencePct ||
+        b.lowConfidenceCount - a.lowConfidenceCount
     );
 
     const firstNonEmpty =
@@ -374,7 +385,7 @@ export const RecallEaseHeatmap: React.FC<RecallEaseHeatmapProps> = ({
     return hardestReviewedCell || firstActiveCell;
   }, [selectedKey, matrixData, hardestReviewedCell, firstActiveCell]);
 
-  const activeTier = activeCell ? getEaseTier(activeCell, mode) : 'new';
+  const activeTier = activeCell ? getConfidenceTier(activeCell, mode) : 'new';
   const activeTierMeta = TIER_STYLES[activeTier];
   const activeRowMeta = activeCell
     ? ARCHETYPE_ROWS.find((r) => r.id === activeCell.category)
@@ -402,18 +413,17 @@ export const RecallEaseHeatmap: React.FC<RecallEaseHeatmapProps> = ({
               Grammatik-Heatmap
             </h2>
             <p className="text-xs text-[var(--fg-secondary)] leading-snug">
-              {mode === 'ease'
-                ? 'SM-2 Abruf-Leichtigkeit je Bereich & CEFR-Stufe'
-                : 'Beherrschungsgrad je Bereich & CEFR-Stufe'}
+              {mode === 'confidence'
+                ? 'Vertrauen (1–5) je Bereich & CEFR-Stufe'
+                : 'Anteil sicherer Karten (4–5) je Bereich & CEFR-Stufe'}
             </p>
           </div>
         </div>
 
-        {/* Sleek 2-Option Sliding Segmented Toggle */}
         <SlidingPillSwitcher
           options={[
-            { id: 'ease', label: 'Leichtigkeit' },
-            { id: 'mastery', label: 'Fortschritt' },
+            { id: 'confidence', label: 'Vertrauen %' },
+            { id: 'mastery', label: 'Stufe 4–5' },
           ]}
           value={mode}
           onChange={setMode}
@@ -429,7 +439,6 @@ export const RecallEaseHeatmap: React.FC<RecallEaseHeatmapProps> = ({
         aria-label="Grammatik-Heatmap nach Kategorie und CEFR-Stufe"
         className="space-y-1.5"
       >
-        {/* Column Headers */}
         <div
           role="row"
           className="grid grid-cols-[minmax(74px,0.92fr)_repeat(3,minmax(0,1fr))_minmax(0,1fr)] sm:grid-cols-[minmax(156px,1.28fr)_repeat(3,minmax(0,1fr))_minmax(0,1.04fr)] gap-1.5 sm:gap-2 items-center pb-0.5"
@@ -465,7 +474,6 @@ export const RecallEaseHeatmap: React.FC<RecallEaseHeatmapProps> = ({
           ))}
         </div>
 
-        {/* 6 Archetype Rows */}
         {ARCHETYPE_ROWS.map((row) => {
           const RowIcon = row.icon;
           const isRowActive = activeCell?.category === row.id;
@@ -476,7 +484,6 @@ export const RecallEaseHeatmap: React.FC<RecallEaseHeatmapProps> = ({
               role="row"
               className="grid grid-cols-[minmax(74px,0.92fr)_repeat(3,minmax(0,1fr))_minmax(0,1fr)] sm:grid-cols-[minmax(156px,1.28fr)_repeat(3,minmax(0,1fr))_minmax(0,1.04fr)] gap-1.5 sm:gap-2 items-center"
             >
-              {/* Clean Row Label (Aligned flush with left spine, no boxy left-edge highlight) */}
               <button
                 type="button"
                 onClick={() =>
@@ -510,12 +517,11 @@ export const RecallEaseHeatmap: React.FC<RecallEaseHeatmapProps> = ({
                 </span>
               </button>
 
-              {/* CEFR + Gesamt Cells */}
               {CEFR_COLS.map((col) => {
                 const cell = cellLookup.get(`${row.id}:${col}`);
                 if (!cell) return null;
 
-                const tier = getEaseTier(cell, mode);
+                const tier = getConfidenceTier(cell, mode);
                 const meta = TIER_STYLES[tier];
                 const isSelected =
                   activeCell?.category === cell.category &&
@@ -524,8 +530,8 @@ export const RecallEaseHeatmap: React.FC<RecallEaseHeatmapProps> = ({
                 const isSummary = col === 'ALL';
 
                 const fillPct =
-                  mode === 'ease'
-                    ? cell.practicedPct
+                  mode === 'confidence'
+                    ? cell.confidencePct
                     : cell.masteredPct > 0
                     ? cell.masteredPct
                     : Math.round(cell.practicedPct * 0.35);
@@ -547,7 +553,7 @@ export const RecallEaseHeatmap: React.FC<RecallEaseHeatmapProps> = ({
                           ? 'Keine Karten'
                           : cell.reviewedCount === 0
                           ? `${cell.cardCount} neue Karten`
-                          : `Ease ${cell.avgEase.toFixed(2)}, ${cell.reviewedCount} von ${cell.cardCount} geübt`
+                          : `Vertrauen ${cell.confidencePct}%, ${cell.reviewedCount} von ${cell.cardCount} geübt`
                       }`}
                       onClick={() =>
                         setSelectedKey({
@@ -586,7 +592,7 @@ export const RecallEaseHeatmap: React.FC<RecallEaseHeatmapProps> = ({
                             Neu
                           </span>
                         </div>
-                      ) : mode === 'ease' ? (
+                      ) : mode === 'confidence' ? (
                         <div className="flex flex-col items-center justify-center leading-none w-full">
                           <div className="flex items-center justify-center gap-1">
                             <span
@@ -594,7 +600,7 @@ export const RecallEaseHeatmap: React.FC<RecallEaseHeatmapProps> = ({
                               aria-hidden="true"
                             />
                             <span className="font-sans text-[12px] sm:text-[13.5px] font-semibold tabular-nums text-[var(--fg-primary)]">
-                              {cell.avgEase.toFixed(2)}
+                              {cell.confidencePct}%
                             </span>
                           </div>
                           <span className="mt-1 text-[9.5px] font-medium tabular-nums text-[var(--fg-secondary)]">
@@ -605,7 +611,6 @@ export const RecallEaseHeatmap: React.FC<RecallEaseHeatmapProps> = ({
                               {cell.reviewedCount}/{cell.cardCount} geübt
                             </span>
                           </span>
-                          {/* Inset corner-safe micro-progress bar */}
                           <span
                             aria-hidden="true"
                             className="mt-1 w-7 sm:w-10 h-[2.5px] rounded-full bg-black/10 dark:bg-white/15 overflow-hidden"
@@ -640,7 +645,6 @@ export const RecallEaseHeatmap: React.FC<RecallEaseHeatmapProps> = ({
                                 : `${cell.masteredCount}/${cell.cardCount} sicher`}
                             </span>
                           </span>
-                          {/* Inset corner-safe micro-progress bar */}
                           <span
                             aria-hidden="true"
                             className="mt-1 w-7 sm:w-10 h-[2.5px] rounded-full bg-black/10 dark:bg-white/15 overflow-hidden"
@@ -664,7 +668,7 @@ export const RecallEaseHeatmap: React.FC<RecallEaseHeatmapProps> = ({
         })}
       </div>
 
-      {/* Compact 5-Step Theme-Native Scale Legend */}
+      {/* Compact 5-Step Scale Legend */}
       <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5 text-[11px] text-[var(--fg-secondary)]">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
           <span className="inline-flex items-center gap-1.5">
@@ -672,20 +676,20 @@ export const RecallEaseHeatmap: React.FC<RecallEaseHeatmapProps> = ({
             <span>Neu</span>
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-[3px] bg-[var(--heat-1)] border border-[var(--srs-again)] inline-block" />
-            <span>{mode === 'ease' ? 'Fokus (<2.05)' : 'Start'}</span>
+            <span className="w-2.5 h-2.5 rounded-[3px] bg-[var(--heat-1)] border border-[var(--conf-1)] inline-block" />
+            <span>{mode === 'confidence' ? 'Fokus (<40%)' : 'Start'}</span>
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-[3px] bg-[var(--heat-2)] border border-[var(--srs-hard)] inline-block" />
-            <span>{mode === 'ease' ? 'Aufbau' : 'Wachsend'}</span>
+            <span className="w-2.5 h-2.5 rounded-[3px] bg-[var(--heat-2)] border border-[var(--conf-3)] inline-block" />
+            <span>{mode === 'confidence' ? 'Aufbau (40–59%)' : 'Wachsend'}</span>
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-[3px] bg-[var(--heat-3)] border border-[var(--srs-good)] inline-block" />
-            <span>{mode === 'ease' ? 'Stabil (2.35+)' : 'Solide'}</span>
+            <span className="w-2.5 h-2.5 rounded-[3px] bg-[var(--heat-3)] border border-[var(--conf-4)] inline-block" />
+            <span>{mode === 'confidence' ? 'Stabil (60–79%)' : 'Solide'}</span>
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-[3px] bg-[var(--heat-4)] border border-[var(--srs-easy)] inline-block" />
-            <span>{mode === 'ease' ? 'Sicher (2.60+)' : 'Gemeistert'}</span>
+            <span className="w-2.5 h-2.5 rounded-[3px] bg-[var(--heat-4)] border border-[var(--conf-5)] inline-block" />
+            <span>{mode === 'confidence' ? 'Sicher (80%+)' : 'Gemeistert'}</span>
           </span>
         </div>
 
@@ -694,7 +698,7 @@ export const RecallEaseHeatmap: React.FC<RecallEaseHeatmapProps> = ({
         </span>
       </div>
 
-      {/* Diagnostic Inspector Card with D3 Donut Breakdown */}
+      {/* Diagnostic Inspector Card */}
       {activeCell && (
         <div className="p-3.5 sm:p-4 radius-card surface-2 border flex flex-col md:flex-row md:items-center justify-between gap-3.5">
           <div className="flex items-center gap-3.5 min-w-0">
@@ -736,16 +740,16 @@ export const RecallEaseHeatmap: React.FC<RecallEaseHeatmapProps> = ({
                   </strong>
                 </span>
                 <span>
-                  Sicher{' '}
+                  Sicher (4–5){' '}
                   <strong className="font-semibold text-[var(--fg-primary)]">
                     {activeCell.masteredCount}
                   </strong>
                 </span>
                 <span>
-                  Ø Ease{' '}
+                  Vertrauen{' '}
                   <strong className="font-semibold text-[var(--fg-primary)]">
                     {activeCell.reviewedCount > 0
-                      ? activeCell.avgEase.toFixed(2)
+                      ? `${activeCell.confidencePct}% (Ø ${activeCell.avgConfidence.toFixed(1)}/5)`
                       : '—'}
                   </strong>
                 </span>
@@ -756,7 +760,7 @@ export const RecallEaseHeatmap: React.FC<RecallEaseHeatmapProps> = ({
                       {activeCell.hardestCard.lemma}
                     </strong>{' '}
                     <span className="text-[11px] text-[var(--fg-muted)]">
-                      ({(activeCell.hardestEase || 2.5).toFixed(2)})
+                      (Stufe {activeCell.hardestConfidence || 1}/5)
                     </span>
                   </span>
                 ) : activeCell.starterCard ? (
