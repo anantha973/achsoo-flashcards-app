@@ -95,6 +95,14 @@
     --srs-easy: #2E6650;
     --srs-easy-soft: rgb(46 102 80 / 0.07);
     --srs-easy-border: rgb(46 102 80 / 0.45);
+    --srs-again-solid-bg: #B23A32;
+    --srs-again-solid-fg: #FFFEFC;
+    --srs-hard-solid-bg: #9C5518;
+    --srs-hard-solid-fg: #FFFEFC;
+    --srs-good-solid-bg: #147188;
+    --srs-good-solid-fg: #FFFEFC;
+    --srs-easy-solid-bg: #2E6650;
+    --srs-easy-solid-fg: #FFFEFC;
 
     /* Segmented Sliding Pill Switcher */
     --seg-track: #F3EFEA;
@@ -205,6 +213,14 @@
     --srs-easy: #74B094;
     --srs-easy-soft: rgb(116 176 148 / 0.10);
     --srs-easy-border: rgb(116 176 148 / 0.48);
+    --srs-again-solid-bg: #B84239;
+    --srs-again-solid-fg: #FFFEFC;
+    --srs-hard-solid-bg: #A65C1C;
+    --srs-hard-solid-fg: #FFFEFC;
+    --srs-good-solid-bg: #187A91;
+    --srs-good-solid-fg: #FFFEFC;
+    --srs-easy-solid-bg: #327057;
+    --srs-easy-solid-fg: #FFFEFC;
 
     /* Segmented Sliding Pill Switcher */
     --seg-track: #1C1815;
@@ -327,6 +343,14 @@
     --srs-easy: #059669;
     --srs-easy-soft: rgb(5 150 105 / 0.06);
     --srs-easy-border: rgb(5 150 105 / 0.45);
+    --srs-again-solid-bg: #E11D48;
+    --srs-again-solid-fg: #FFFFFF;
+    --srs-hard-solid-bg: #C26108;
+    --srs-hard-solid-fg: #FFFFFF;
+    --srs-good-solid-bg: #2563EB;
+    --srs-good-solid-fg: #FFFFFF;
+    --srs-easy-solid-bg: #059669;
+    --srs-easy-solid-fg: #FFFFFF;
 
     /* Segmented Sliding Pill Switcher */
     --seg-track: #F1F5F9;
@@ -437,6 +461,14 @@
     --srs-easy: #34D399;
     --srs-easy-soft: rgb(52 211 153 / 0.08);
     --srs-easy-border: rgb(52 211 153 / 0.45);
+    --srs-again-solid-bg: #E11D48;
+    --srs-again-solid-fg: #FFFFFF;
+    --srs-hard-solid-bg: #B45309;
+    --srs-hard-solid-fg: #FFFFFF;
+    --srs-good-solid-bg: #2563EB;
+    --srs-good-solid-fg: #FFFFFF;
+    --srs-easy-solid-bg: #047857;
+    --srs-easy-solid-fg: #FFFFFF;
 
     /* Segmented Sliding Pill Switcher */
     --seg-track: #18181E;
@@ -559,6 +591,14 @@
     --srs-easy: #059669;
     --srs-easy-soft: rgb(5 150 105 / 0.06);
     --srs-easy-border: rgb(5 150 105 / 0.45);
+    --srs-again-solid-bg: #DC2626;
+    --srs-again-solid-fg: #FFFFFF;
+    --srs-hard-solid-bg: #B45309;
+    --srs-hard-solid-fg: #FFFFFF;
+    --srs-good-solid-bg: #18181B;
+    --srs-good-solid-fg: #FAFAFA;
+    --srs-easy-solid-bg: #047857;
+    --srs-easy-solid-fg: #FFFFFF;
 
     /* Segmented Sliding Pill Switcher */
     --seg-track: #F4F4F5;
@@ -668,6 +708,14 @@
     --srs-easy: #34D399;
     --srs-easy-soft: rgb(52 211 153 / 0.08);
     --srs-easy-border: rgb(52 211 153 / 0.45);
+    --srs-again-solid-bg: #DC2626;
+    --srs-again-solid-fg: #FFFFFF;
+    --srs-hard-solid-bg: #B45309;
+    --srs-hard-solid-fg: #FFFFFF;
+    --srs-good-solid-bg: #FAFAFA;
+    --srs-good-solid-fg: #09090B;
+    --srs-easy-solid-bg: #047857;
+    --srs-easy-solid-fg: #FFFFFF;
 
     /* Segmented Sliding Pill Switcher */
     --seg-track: #18181B;
@@ -1032,6 +1080,70 @@
 
 .card-deck-motion.is-entering-prev {
   animation: cardEnterFromLeft 0.32s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.card-deck-motion.is-blocked-next {
+  animation: cardBlockedNudge 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes cardBlockedNudge {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  25% {
+    transform: translate3d(-12px, 0, 0);
+  }
+  55% {
+    transform: translate3d(7px, 0, 0);
+  }
+  80% {
+    transform: translate3d(-4px, 0, 0);
+  }
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.flip-card-face.card-rated-wash-again {
+  border-color: var(--srs-again) !important;
+  box-shadow: inset 0 0 0 1px var(--srs-again-border), inset 0 36px 72px -28px var(--srs-again-soft), var(--shadow-card);
+}
+
+.flip-card-face.card-rated-wash-hard {
+  border-color: var(--srs-hard) !important;
+  box-shadow: inset 0 0 0 1px var(--srs-hard-border), inset 0 36px 72px -28px var(--srs-hard-soft), var(--shadow-card);
+}
+
+.flip-card-face.card-rated-wash-good {
+  border-color: var(--srs-good) !important;
+  box-shadow: inset 0 0 0 1px var(--srs-good-border), inset 0 36px 72px -28px var(--srs-good-soft), var(--shadow-card);
+}
+
+.flip-card-face.card-rated-wash-easy {
+  border-color: var(--srs-easy) !important;
+  box-shadow: inset 0 0 0 1px var(--srs-easy-border), inset 0 36px 72px -28px var(--srs-easy-soft), var(--shadow-card);
+}
+
+@keyframes rateFirstEnter {
+  0% {
+    opacity: 0;
+    transform: translate3d(-50%, 6px, 0) scale(0.97);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(-50%, 0, 0) scale(1);
+  }
+}
+
+.rate-first-toast {
+  animation: rateFirstEnter 180ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  will-change: transform, opacity;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rate-first-toast {
+    animation: none;
+  }
 }
 
 @keyframes cardEnterFromRight {

@@ -112,6 +112,7 @@ export const Card = {
 interface ProgressBarProps {
   value: number;
   intent?: SemanticIntent;
+  accentColor?: string;
   size?: 'sm' | 'md';
   label?: string;
   className?: string;
@@ -129,6 +130,7 @@ const progressIntentBar: Record<SemanticIntent, string> = {
 export const ProgressBar: React.FC<ProgressBarProps> = ({
   value,
   intent = 'primary',
+  accentColor,
   size = 'sm',
   label = 'Progress',
   className = '',
@@ -145,8 +147,13 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
       className={`w-full ${heightClass} radius-pill bg-[var(--surface-3)] overflow-hidden ${className}`}
     >
       <div
-        className={`h-full radius-pill transition-[width,background-color] duration-200 ${progressIntentBar[intent]}`}
-        style={{ width: `${clamped}%` }}
+        className={`h-full radius-pill transition-[width,background-color] duration-300 ${
+          accentColor ? '' : progressIntentBar[intent]
+        }`}
+        style={{
+          width: `${clamped}%`,
+          ...(accentColor ? { backgroundColor: accentColor } : {}),
+        }}
       />
     </div>
   );

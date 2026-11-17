@@ -251,6 +251,17 @@ export function formatNounLemma(lemma: string, gender?: NounGender): string {
   return cleaned;
 }
 
+export function sanitizeFrontLemma(text: string): string {
+  return dedupeGermanArticles(text)
+    .replace(
+      /\s*\((?:[^)]*(?:\+\s*(?:Akk|Dat|Gen)|Partizip|Aktion:|Dativ|Akkusativ|Genitiv|hat\s+|ist\s+)[^)]*)\)/gi,
+      ''
+    )
+    .replace(/\s*\((?:Dat|Akk|Gen)\)\s*/gi, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
 export function validateAndNormalizeContentCards(
   cards: VocabCard[]
 ): VocabCard[] {
@@ -278,10 +289,11 @@ export function validateAndNormalizeContentCards(
 
     seenIds.add(rawId);
 
+    const cleanedBaseLemma = sanitizeFrontLemma(card.lemma);
     const normalizedLemma =
       card.category === 'noun' && card.nounDetails
-        ? formatNounLemma(card.lemma, card.nounDetails.gender)
-        : dedupeGermanArticles(card.lemma);
+        ? formatNounLemma(cleanedBaseLemma, card.nounDetails.gender)
+        : cleanedBaseLemma;
 
     const normalizedNounDetails = card.nounDetails
       ? {

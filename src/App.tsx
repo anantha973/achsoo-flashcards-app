@@ -73,19 +73,29 @@ import {
   DeckMetaOverride,
   DeckTintId,
   LastStudySessionState,
+  StudyDeckTrail,
   archiveDummyDecksInWorkspace,
+  canStepTrailPrev,
+  clearStudyDeckTrail,
+  clearTrailRatingForUndo,
   ensureBuiltInA2Workspace,
   ensureInitialTestFolderSeed,
   hasMissingBuiltInA2Workspace,
   loadLastStudySession,
   loadStudyDeckPositions,
+  loadStudyDeckTrails,
   needsRemoteArchiveDummyMigration,
+  recordTrailRating,
   resolveSavedDeckIndex,
   saveCustomDecks,
   saveDeckOverrides,
   saveFolders,
   saveLastStudySession,
   saveStudyDeckPosition,
+  saveStudyDeckTrail,
+  stepTrailNext,
+  stepTrailPrev,
+  syncTrailWithDeck,
 } from './utils/decksManager';
 import { syncWorkspaceToSupabase } from './utils/supabaseSync';
 import {
@@ -301,6 +311,61 @@ const THEME_ENTITIES: ThemeEntityOption[] = [
     },
   },
 ];
+
+const RATING_META: Record<
+  RatingKey,
+  {
+    label: string;
+    shortcutKey: '1' | '2' | '3' | '4';
+    colorVar: string;
+    softVar: string;
+    borderVar: string;
+    solidBgVar: string;
+    solidFgVar: string;
+    textClass: string;
+  }
+> = {
+  again: {
+    label: 'Nochmal',
+    shortcutKey: '1',
+    colorVar: 'var(--srs-again)',
+    softVar: 'var(--srs-again-soft)',
+    borderVar: 'var(--srs-again-border)',
+    solidBgVar: 'var(--srs-again-solid-bg)',
+    solidFgVar: 'var(--srs-again-solid-fg)',
+    textClass: 'text-[var(--srs-again)]',
+  },
+  hard: {
+    label: 'Schwer',
+    shortcutKey: '2',
+    colorVar: 'var(--srs-hard)',
+    softVar: 'var(--srs-hard-soft)',
+    borderVar: 'var(--srs-hard-border)',
+    solidBgVar: 'var(--srs-hard-solid-bg)',
+    solidFgVar: 'var(--srs-hard-solid-fg)',
+    textClass: 'text-[var(--srs-hard)]',
+  },
+  good: {
+    label: 'Gut',
+    shortcutKey: '3',
+    colorVar: 'var(--srs-good)',
+    softVar: 'var(--srs-good-soft)',
+    borderVar: 'var(--srs-good-border)',
+    solidBgVar: 'var(--srs-good-solid-bg)',
+    solidFgVar: 'var(--srs-good-solid-fg)',
+    textClass: 'text-[var(--srs-good)]',
+  },
+  easy: {
+    label: 'Leicht',
+    shortcutKey: '4',
+    colorVar: 'var(--srs-easy)',
+    softVar: 'var(--srs-easy-soft)',
+    borderVar: 'var(--srs-easy-border)',
+    solidBgVar: 'var(--srs-easy-solid-bg)',
+    solidFgVar: 'var(--srs-easy-solid-fg)',
+    textClass: 'text-[var(--srs-easy)]',
+  },
+};
 
 export default function App() {
   // Two-Dimensional Theme Engine: themeId ('nordic' | 'hero' | 'coss') × colorMode ('light' | 'dark')
@@ -792,6 +857,9 @@ export default function App() {
 
   // Flashcard Study Runner state (Layer 0 -> Layer 1 Meaning -> Scroll-Up 3 Forms & Sentence -> Layer 2 Anatomie)
   const [currentIndex, setCurrentIndex] = useState<number>(0);
+  const [studyTrailsByDeck, setStudyTrailsByDeck] = useState<
+    Record<string, StudyDeckTrail>
+  >(() => loadStudyDeckTrails());
   const [isFlipped, setIsFlipped] = useState<boolean>(false);
   const [isBackExpanded, setIsBackExpanded] = useState<boolean>(false);
   const [cardMotion, setCardMotion] = useState<
@@ -800,7 +868,15 @@ export default function App() {
     | 'is-entering-next'
     | 'is-exiting-prev'
     | 'is-entering-prev'
+    | 'is-blocked-next'
   >('idle');
+  const [rateFirstHint, setRateFirstHint] = useState<boolean>(false);
+  const rateFirstTimerRef = useRef<number | null>(null);
+  const [exitingRating, setExitingRating] = useState<RatingKey | null>(null);
+  const [flashingRating, setFlashingRating] = useState<RatingKey | null>(null);
+  const flashingRatingTimerRef = useRef<number | null>(null);
+  const [recentRatingEcho, setRecentRatingEcho] = useState<RatingKey | null>(null);
+  const recentRatingEchoTimerRef = useRef<number | null>(null);
   const [suppressFlipTransition, setSuppressFlipTransition] =
     useState<boolean>(false);
   const cardMotionTimersRef = useRef<{
@@ -1462,6 +1538,25 @@ export default function App() {
     return srsMap[currentCard.id] || createDefaultSrsState(currentCard.id);
   }, [currentCard, srsMap]);
 
+  const activeTrail: StudyDeckTrail = useMemo(() => {
+    return syncTrailWithDeck(
+      studyTrailsByDeck[activeDeckObj.id],
+      studyDeck,
+      currentCard?.id,
+      activeDeckObj.id === 'due'
+    );
+  }, [studyTrailsByDeck, activeDeckObj.id, studyDeck, currentCard?.id]);
+
+  const currentVisitRating: RatingKey | undefined =
+    activeTrail.entries[activeTrail.cursor]?.rating;
+
+  const canGoPrev = useMemo(
+    () => canStepTrailPrev(activeTrail, studyDeck),
+    [activeTrail, studyDeck]
+  );
+
+  const canGoNext = Boolean(currentVisitRating);
+
   const cardShownAtRef = useRef<number>(performance.now());
   const isRatingTransitionRef = useRef<boolean>(false);
 
@@ -1495,9 +1590,63 @@ export default function App() {
     t.idleTimer = null;
     t.raf1 = null;
     t.raf2 = null;
+    setExitingRating(null);
   }, []);
 
-  useEffect(() => clearCardMotionTimers, [clearCardMotionTimers]);
+  const clearRateFirstHint = useCallback(() => {
+    if (rateFirstTimerRef.current !== null) {
+      window.clearTimeout(rateFirstTimerRef.current);
+      rateFirstTimerRef.current = null;
+    }
+    setRateFirstHint(false);
+  }, []);
+
+  const clearRatingFeedback = useCallback(() => {
+    if (flashingRatingTimerRef.current !== null) {
+      window.clearTimeout(flashingRatingTimerRef.current);
+      flashingRatingTimerRef.current = null;
+    }
+    if (recentRatingEchoTimerRef.current !== null) {
+      window.clearTimeout(recentRatingEchoTimerRef.current);
+      recentRatingEchoTimerRef.current = null;
+    }
+    setFlashingRating(null);
+    setRecentRatingEcho(null);
+    setExitingRating(null);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      clearCardMotionTimers();
+      if (rateFirstTimerRef.current !== null) {
+        window.clearTimeout(rateFirstTimerRef.current);
+      }
+      if (flashingRatingTimerRef.current !== null) {
+        window.clearTimeout(flashingRatingTimerRef.current);
+      }
+      if (recentRatingEchoTimerRef.current !== null) {
+        window.clearTimeout(recentRatingEchoTimerRef.current);
+      }
+    };
+  }, [clearCardMotionTimers]);
+
+  const triggerBlockedNextFeedback = useCallback(() => {
+    clearCardMotionTimers();
+    triggerHapticFeedback([12, 28, 12]);
+    setCardMotion('is-blocked-next');
+    cardMotionTimersRef.current.idleTimer = window.setTimeout(() => {
+      setCardMotion('idle');
+    }, 340);
+
+    setRateFirstHint(true);
+    if (rateFirstTimerRef.current !== null) {
+      window.clearTimeout(rateFirstTimerRef.current);
+    }
+    rateFirstTimerRef.current = window.setTimeout(() => {
+      setRateFirstHint(false);
+      rateFirstTimerRef.current = null;
+    }, 2400);
+  }, [clearCardMotionTimers]);
 
   const resetFlipInstantaneously = useCallback(() => {
     setSuppressFlipTransition(true);
@@ -1511,38 +1660,81 @@ export default function App() {
   }, []);
 
   const handlePrevCard = useCallback(() => {
-    if (studyDeck.length === 0) return;
+    if (studyDeck.length === 0 || isRatingTransitionRef.current) return;
+    const prevStep = stepTrailPrev(activeTrail, studyDeck);
+    if (!prevStep) {
+      triggerHapticFeedback(6);
+      return;
+    }
+    clearRateFirstHint();
     clearCardMotionTimers();
+    isRatingTransitionRef.current = true;
     triggerHapticFeedback(8);
     setDetailCard(null);
     setCardMotion('is-exiting-prev');
+    const targetDeckId = activeDeckObj.id;
     cardMotionTimersRef.current.exitTimer = window.setTimeout(() => {
       resetFlipInstantaneously();
-      setCurrentIndex((prev) => (prev - 1 + studyDeck.length) % studyDeck.length);
+      saveStudyDeckTrail(targetDeckId, prevStep.trail);
+      setStudyTrailsByDeck((prev) => ({
+        ...prev,
+        [targetDeckId]: prevStep.trail,
+      }));
+      setCurrentIndex(prevStep.prevDeckIndex);
+      isRatingTransitionRef.current = false;
       setCardMotion('is-entering-prev');
       cardMotionTimersRef.current.idleTimer = window.setTimeout(
         () => setCardMotion('idle'),
         320
       );
     }, 180);
-  }, [studyDeck.length, clearCardMotionTimers, resetFlipInstantaneously]);
+  }, [
+    studyDeck,
+    activeTrail,
+    activeDeckObj.id,
+    clearRateFirstHint,
+    clearCardMotionTimers,
+    resetFlipInstantaneously,
+  ]);
 
   const handleNextCard = useCallback(() => {
-    if (studyDeck.length === 0) return;
+    if (studyDeck.length === 0 || isRatingTransitionRef.current) return;
+    const nextStep = stepTrailNext(activeTrail, studyDeck);
+    if (nextStep.blocked) {
+      triggerBlockedNextFeedback();
+      return;
+    }
+    clearRateFirstHint();
     clearCardMotionTimers();
+    isRatingTransitionRef.current = true;
     triggerHapticFeedback(8);
     setDetailCard(null);
     setCardMotion('is-exiting-next');
+    const targetDeckId = activeDeckObj.id;
     cardMotionTimersRef.current.exitTimer = window.setTimeout(() => {
       resetFlipInstantaneously();
-      setCurrentIndex((prev) => (prev + 1) % studyDeck.length);
+      saveStudyDeckTrail(targetDeckId, nextStep.trail);
+      setStudyTrailsByDeck((prev) => ({
+        ...prev,
+        [targetDeckId]: nextStep.trail,
+      }));
+      setCurrentIndex(nextStep.nextDeckIndex);
+      isRatingTransitionRef.current = false;
       setCardMotion('is-entering-next');
       cardMotionTimersRef.current.idleTimer = window.setTimeout(
         () => setCardMotion('idle'),
         320
       );
     }, 180);
-  }, [studyDeck.length, clearCardMotionTimers, resetFlipInstantaneously]);
+  }, [
+    studyDeck,
+    activeTrail,
+    activeDeckObj.id,
+    triggerBlockedNextFeedback,
+    clearRateFirstHint,
+    clearCardMotionTimers,
+    resetFlipInstantaneously,
+  ]);
 
   const handleFlipCard = useCallback(() => {
     triggerHapticFeedback(12);
@@ -1554,6 +1746,7 @@ export default function App() {
     (rating: RatingKey) => {
       if (!currentCard || isRatingTransitionRef.current) return;
       isRatingTransitionRef.current = true;
+      clearRateFirstHint();
       clearCardMotionTimers();
 
       const hapticMap: Record<RatingKey, number | number[]> = {
@@ -1564,6 +1757,7 @@ export default function App() {
       };
       triggerHapticFeedback(hapticMap[rating]);
 
+      const now = new Date();
       const durationMs = Math.max(
         0,
         Math.round(performance.now() - cardShownAtRef.current)
@@ -1572,24 +1766,107 @@ export default function App() {
         cardId: currentCard.id,
         rating,
         srsMap,
-        now: new Date(),
+        now,
         durationMs,
       });
 
-      setSrsMap(result.updatedMap);
-      setStats(result.updatedStats);
-      setSessionReviewedCount((prev) => prev + 1);
+      const targetDeckId = activeDeckObj.id;
+      const isDueDeck = targetDeckId === 'due';
+
+      let nextIdx = 0;
+      let nextCardId: string | undefined;
+      let nextTrail: StudyDeckTrail;
+
+      if (isDueDeck) {
+        const nextDueCards = cards.filter((c) => {
+          const st =
+            result.updatedMap[c.id] || createDefaultSrsState(c.id);
+          return isCardDueToday(st, now);
+        });
+        const nextDueSet = new Set(nextDueCards.map((c) => c.id));
+        let candidateCardId: string | undefined;
+        if (studyDeck.length > 0 && nextDueCards.length > 0) {
+          for (let offset = 1; offset <= studyDeck.length; offset++) {
+            const candidate =
+              studyDeck[(currentIndex + offset) % studyDeck.length];
+            if (candidate && nextDueSet.has(candidate.id)) {
+              candidateCardId = candidate.id;
+              break;
+            }
+          }
+        }
+        nextIdx = candidateCardId
+          ? Math.max(
+              0,
+              nextDueCards.findIndex((c) => c.id === candidateCardId)
+            )
+          : 0;
+        nextCardId = nextDueCards[nextIdx]?.id;
+        nextTrail = recordTrailRating(activeTrail, rating, nextCardId, {
+          isDueDeck: true,
+          validNextDeckCardIds: nextDueCards.map((c) => c.id),
+          ratedAtIso: now.toISOString(),
+        });
+      } else {
+        if (activeTrail.cursor < activeTrail.entries.length - 1) {
+          const existingNextId =
+            activeTrail.entries[activeTrail.cursor + 1]?.cardId;
+          const foundIdx = studyDeck.findIndex(
+            (c) => c.id === existingNextId
+          );
+          nextIdx =
+            foundIdx >= 0
+              ? foundIdx
+              : studyDeck.length <= 1
+              ? 0
+              : (currentIndex + 1) % studyDeck.length;
+        } else {
+          nextIdx =
+            studyDeck.length <= 1
+              ? 0
+              : (currentIndex + 1) % studyDeck.length;
+        }
+        nextCardId = studyDeck[nextIdx]?.id;
+        nextTrail = recordTrailRating(activeTrail, rating, nextCardId, {
+          ratedAtIso: now.toISOString(),
+        });
+      }
+
+      if (flashingRatingTimerRef.current !== null) {
+        window.clearTimeout(flashingRatingTimerRef.current);
+      }
+      setFlashingRating(rating);
+      flashingRatingTimerRef.current = window.setTimeout(() => {
+        setFlashingRating(null);
+        flashingRatingTimerRef.current = null;
+      }, 220);
+
+      if (recentRatingEchoTimerRef.current !== null) {
+        window.clearTimeout(recentRatingEchoTimerRef.current);
+      }
+      setRecentRatingEcho(rating);
+      recentRatingEchoTimerRef.current = window.setTimeout(() => {
+        setRecentRatingEcho(null);
+        recentRatingEchoTimerRef.current = null;
+      }, 1150);
 
       setDetailCard(null);
+      setExitingRating(rating);
       setCardMotion('is-exiting-next');
       cardMotionTimersRef.current.exitTimer = window.setTimeout(() => {
         resetFlipInstantaneously();
-        setCurrentIndex((prev) => {
-          if (studyDeck.length <= 1) return 0;
-          return (prev + 1) % studyDeck.length;
-        });
+        saveStudyDeckTrail(targetDeckId, nextTrail);
+        setStudyTrailsByDeck((prev) => ({
+          ...prev,
+          [targetDeckId]: nextTrail,
+        }));
+        setSrsMap(result.updatedMap);
+        setStats(result.updatedStats);
+        setSessionReviewedCount((prev) => prev + 1);
+        setCurrentIndex(nextIdx);
         cardShownAtRef.current = performance.now();
         isRatingTransitionRef.current = false;
+        setExitingRating(null);
         setCardMotion('is-entering-next');
         cardMotionTimersRef.current.idleTimer = window.setTimeout(
           () => setCardMotion('idle'),
@@ -1597,14 +1874,28 @@ export default function App() {
         );
       }, 180);
     },
-    [currentCard, srsMap, studyDeck.length, clearCardMotionTimers, resetFlipInstantaneously]
+    [
+      currentCard,
+      srsMap,
+      cards,
+      studyDeck,
+      currentIndex,
+      activeDeckObj.id,
+      activeTrail,
+      clearRateFirstHint,
+      clearCardMotionTimers,
+      resetFlipInstantaneously,
+    ]
   );
 
   const handleSelectStudyDeck = useCallback(
     (nextDeckId: DeckId) => {
       if (nextDeckId === selectedDeckId && !customStudyQueue) return;
       userChangedDeckRef.current = true;
+      clearRateFirstHint();
+      clearRatingFeedback();
       clearCardMotionTimers();
+      isRatingTransitionRef.current = false;
       const prevIdx = enrichedDecks.findIndex((d) => d.id === selectedDeckId);
       const nextIdx = enrichedDecks.findIndex((d) => d.id === nextDeckId);
       const dirClass =
@@ -1630,25 +1921,48 @@ export default function App() {
         320
       );
     },
-    [selectedDeckId, customStudyQueue, enrichedDecks, clearCardMotionTimers, resetFlipInstantaneously]
+    [
+      selectedDeckId,
+      customStudyQueue,
+      enrichedDecks,
+      clearRateFirstHint,
+      clearRatingFeedback,
+      clearCardMotionTimers,
+      resetFlipInstantaneously,
+    ]
   );
 
   const handleUndoLastRating = useCallback(() => {
     const undone = undoLastReview(cards, srsMap);
     if (!undone.undoneEntry) return;
     triggerHapticFeedback(14);
+    clearRateFirstHint();
+    clearRatingFeedback();
+    const undoResult = clearTrailRatingForUndo(
+      activeTrail,
+      undone.undoneEntry.cardId,
+      studyDeck
+    );
+    saveStudyDeckTrail(activeDeckObj.id, undoResult.trail);
+    setStudyTrailsByDeck((prev) => ({
+      ...prev,
+      [activeDeckObj.id]: undoResult.trail,
+    }));
     setSrsMap(undone.updatedMap);
     setStats(undone.updatedStats);
     setSessionReviewedCount((prev) => Math.max(0, prev - 1));
-    const restoredIdx = studyDeck.findIndex(
-      (c) => c.id === undone.undoneEntry?.cardId
-    );
-    if (restoredIdx >= 0) {
-      setCurrentIndex(restoredIdx);
-    }
+    setCurrentIndex(undoResult.deckIndex);
     setIsFlipped(false);
     setIsBackExpanded(false);
-  }, [cards, srsMap, studyDeck]);
+  }, [
+    cards,
+    srsMap,
+    studyDeck,
+    activeTrail,
+    activeDeckObj.id,
+    clearRateFirstHint,
+    clearRatingFeedback,
+  ]);
 
   // Flashcard Touch Gesture Handlers (Tap = Flip, Long Press = Audio, Swipe L/R = Next/Prev or Rate, Swipe U/D = Forms/Anatomie/Flip)
   const clearLongPressAudio = useCallback(() => {
@@ -1702,8 +2016,16 @@ export default function App() {
       }
 
       if (st.axis === 'horizontal') {
+        const dampedDx =
+          dx < 0
+            ? canGoNext
+              ? Math.max(-150, dx)
+              : Math.max(-56, dx * 0.35)
+            : canGoPrev
+            ? Math.min(150, dx)
+            : Math.min(44, dx * 0.28);
         setCardDrag({
-          dx: Math.max(-150, Math.min(150, dx)),
+          dx: dampedDx,
           dy: Math.max(-18, Math.min(18, dy * 0.14)),
           active: true,
         });
@@ -1715,7 +2037,7 @@ export default function App() {
         });
       }
     },
-    [clearLongPressAudio]
+    [clearLongPressAudio, canGoNext, canGoPrev]
   );
 
   const handleCardTouchEnd = useCallback(
@@ -1735,13 +2057,13 @@ export default function App() {
 
       if (st.axis === 'horizontal') {
         if (Math.abs(dx) >= 64 || (Math.abs(dx) >= 38 && vx >= 0.42)) {
-          if (isFlipped) {
-            handleRateCard(dx < 0 ? 'again' : 'good');
-          } else if (dx < 0) {
+          if (dx < 0) {
             handleNextCard();
           } else {
             handlePrevCard();
           }
+        } else if (dx < -24 && !canGoNext) {
+          triggerBlockedNextFeedback();
         }
       } else if (st.axis === 'vertical') {
         if (Math.abs(dy) >= 34 || (Math.abs(dy) >= 22 && vy >= 0.28)) {
@@ -1785,7 +2107,8 @@ export default function App() {
       isFlipped,
       isBackExpanded,
       currentCard,
-      handleRateCard,
+      canGoNext,
+      triggerBlockedNextFeedback,
       handleNextCard,
       handlePrevCard,
       handleFlipCard,
@@ -2164,6 +2487,8 @@ export default function App() {
       targetCardsForResume,
       savedPositions[deckId]
     );
+    clearRateFirstHint();
+    clearRatingFeedback();
     setCurrentIndex(resumedIndex);
     setIsFlipped(false);
     setIsBackExpanded(false);
@@ -2183,12 +2508,31 @@ export default function App() {
       );
       setSrsMap(updatedMap);
       setStats(updatedStats);
+      const resetSet = new Set(cardIds);
+      setStudyTrailsByDeck((prev) => {
+        const next: Record<string, StudyDeckTrail> = {};
+        for (const [dId, trail] of Object.entries(prev)) {
+          const cleanedEntries = trail.entries.map((entry) => {
+            if (!resetSet.has(entry.cardId)) return entry;
+            const { rating: _r, ratedAt: _ra, ...rest } = entry;
+            return rest;
+          });
+          const cleanedTrail = { ...trail, entries: cleanedEntries };
+          saveStudyDeckTrail(dId, cleanedTrail);
+          next[dId] = cleanedTrail;
+        }
+        return next;
+      });
     },
     [srsMap]
   );
 
   const handleResetProgress = () => {
     const fresh = resetAllSrsProgress(cards);
+    clearStudyDeckTrail();
+    clearRateFirstHint();
+    clearRatingFeedback();
+    setStudyTrailsByDeck({});
     setSrsMap(fresh);
     setStats(loadStudyStats());
     setCurrentIndex(0);
@@ -2495,15 +2839,22 @@ export default function App() {
       card.verbDetails?.separablePrefix &&
       card.verbDetails?.verbStem
     ) {
-      return (
-        <>
-          <span className="text-terracotta">
-            {card.verbDetails.separablePrefix}
-          </span>
-          <span className="text-terracotta font-normal mx-0.5">|</span>
-          <span>{card.verbDetails.verbStem}</span>
-        </>
-      );
+      const pref = card.verbDetails.separablePrefix;
+      const stem = card.verbDetails.verbStem;
+      const combined = `${pref}${stem}`;
+      const cleanLemma = card.lemma.trim();
+      if (cleanLemma === combined || cleanLemma.endsWith(combined)) {
+        const leading = cleanLemma.slice(0, cleanLemma.length - combined.length);
+        return (
+          <>
+            {leading && <span>{leading}</span>}
+            <span className="text-terracotta">{pref}</span>
+            <span className="text-terracotta font-normal mx-0.5">|</span>
+            <span>{stem}</span>
+          </>
+        );
+      }
+      return cleanLemma;
     }
     return card.lemma;
   };
@@ -3069,9 +3420,14 @@ export default function App() {
                 <button
                   type="button"
                   onClick={handlePrevCard}
+                  disabled={!canGoPrev}
                   aria-label="Previous card"
-                  title="Previous card (←)"
-                  className="w-9 h-9 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-[var(--fg-secondary)] hover:text-[var(--fg-primary)] hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors shrink-0 cursor-pointer"
+                  title={canGoPrev ? 'Previous card (←)' : 'Start of session'}
+                  className={`w-9 h-9 sm:w-8 sm:h-8 rounded-full flex items-center justify-center transition-colors shrink-0 ${
+                    canGoPrev
+                      ? 'text-[var(--fg-secondary)] hover:text-[var(--fg-primary)] hover:bg-black/[0.04] dark:hover:bg-white/[0.06] cursor-pointer'
+                      : 'text-[var(--fg-muted)] opacity-35 cursor-not-allowed'
+                  }`}
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
@@ -3085,19 +3441,47 @@ export default function App() {
                       </span>
                     </span>
                     <div className="flex items-center gap-1.5 text-[var(--fg-secondary)]">
-                      <span>
-                        {formatIntervalBadge(
-                          currentCardSrs.intervalMinutes,
-                          currentCardSrs.reviewCount
-                        )}
-                      </span>
-                      {stats.streakDays > 0 && (
-                        <>
-                          <span aria-hidden="true">·</span>
-                          <span className="inline-flex items-center gap-0.5 text-[var(--intent-warning)] font-semibold">
-                            <Flame className="w-3 h-3 fill-current" />
-                            <span>{stats.streakDays}d</span>
+                      {recentRatingEcho ? (
+                        <span
+                          data-testid="rating-echo-hud"
+                          role="status"
+                          aria-live="polite"
+                          className="inline-flex items-center gap-1.5 tracking-tight"
+                        >
+                          <span
+                            aria-hidden="true"
+                            className="w-1.5 h-1.5 rounded-full shrink-0"
+                            style={{
+                              backgroundColor:
+                                RATING_META[recentRatingEcho].colorVar,
+                            }}
+                          />
+                          <span
+                            className="font-semibold"
+                            style={{
+                              color: RATING_META[recentRatingEcho].colorVar,
+                            }}
+                          >
+                            {RATING_META[recentRatingEcho].label}
                           </span>
+                        </span>
+                      ) : (
+                        <>
+                          <span>
+                            {formatIntervalBadge(
+                              currentCardSrs.intervalMinutes,
+                              currentCardSrs.reviewCount
+                            )}
+                          </span>
+                          {stats.streakDays > 0 && (
+                            <>
+                              <span aria-hidden="true">·</span>
+                              <span className="inline-flex items-center gap-0.5 text-[var(--intent-warning)] font-semibold">
+                                <Flame className="w-3 h-3 fill-current" />
+                                <span>{stats.streakDays}d</span>
+                              </span>
+                            </>
+                          )}
                         </>
                       )}
                     </div>
@@ -3105,6 +3489,11 @@ export default function App() {
                   <ProgressBar
                     value={((currentIndex + 1) / studyDeck.length) * 100}
                     intent="primary"
+                    accentColor={
+                      recentRatingEcho
+                        ? RATING_META[recentRatingEcho].colorVar
+                        : undefined
+                    }
                     size="sm"
                     label="Deck study progress"
                   />
@@ -3113,9 +3502,22 @@ export default function App() {
                 <button
                   type="button"
                   onClick={handleNextCard}
-                  aria-label="Next card"
-                  title="Next card (→)"
-                  className="w-9 h-9 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-[var(--fg-secondary)] hover:text-[var(--fg-primary)] hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors shrink-0 cursor-pointer"
+                  aria-disabled={!canGoNext}
+                  aria-label={
+                    canGoNext
+                      ? 'Next card'
+                      : 'Next card (rate difficulty first)'
+                  }
+                  title={
+                    canGoNext
+                      ? 'Next card (→)'
+                      : 'Rate difficulty first to advance (→)'
+                  }
+                  className={`w-9 h-9 sm:w-8 sm:h-8 rounded-full flex items-center justify-center transition-colors shrink-0 cursor-pointer ${
+                    canGoNext
+                      ? 'text-[var(--fg-secondary)] hover:text-[var(--fg-primary)] hover:bg-black/[0.04] dark:hover:bg-white/[0.06]'
+                      : 'text-[var(--fg-muted)] opacity-40 hover:opacity-70'
+                  }`}
                 >
                   <ChevronRight className="w-4 h-4" />
                 </button>
@@ -3164,94 +3566,192 @@ export default function App() {
               currentCard && (
                 <>
                   {/* ==================== 3D FLASHCARD STAGE (FLUID CLAMP(), TOUCH SWIPE & 40/60 SPLIT BACKSIDE) ==================== */}
-                  <div
-                    className={`perspective-stage w-full flex-1 flex flex-col card-deck-motion touch-none overscroll-contain ${
-                      cardMotion !== 'idle' ? cardMotion : ''
-                    }`}
-                  >
-                    <div
-                      role="button"
-                      tabIndex={0}
-                      aria-label={`Flashcard ${currentCard.lemma}. Tap to flip, swipe left or right to navigate or rate.`}
-                      style={
-                        !isExiting && (cardDrag.active || cardDrag.dx !== 0 || cardDrag.dy !== 0)
-                          ? {
-                              transform: `translate3d(${cardDrag.dx}px, ${cardDrag.dy}px, 0) rotate(${cardDrag.dx * 0.035}deg)`,
-                              transition: cardDrag.active
-                                ? 'none'
-                                : 'transform 220ms cubic-bezier(0.22, 1, 0.36, 1)',
-                            }
-                          : undefined
-                      }
-                      onTouchStart={!isExiting ? handleCardTouchStart : undefined}
-                      onTouchMove={!isExiting ? handleCardTouchMove : undefined}
-                      onTouchEnd={!isExiting ? handleCardTouchEnd : undefined}
-                      onTouchCancel={!isExiting ? handleCardTouchCancel : undefined}
-                      onClick={() => {
-                        if (cardTouchRef.current?.suppressClick) return;
-                        handleFlipCard();
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          handleFlipCard();
-                        }
-                      }}
-                      className={`flip-card-inner cursor-pointer select-none rounded-[var(--radius-card)] theme-focus ${
-                        isFlipped ? 'is-flipped' : ''
-                      } ${suppressFlipTransition ? 'no-flip-transition' : ''}`}
-                    >
-                      {/* Live Edge Gesture Stamp (Visible ONLY while actively swiping horizontally) */}
-                      {!isExiting && cardDrag.active && Math.abs(cardDrag.dx) > 18 && (
-                        <div
+                  <div className="relative w-full flex-1 flex flex-col">
+                    {rateFirstHint && (
+                      <div
+                        role="status"
+                        aria-live="polite"
+                        className="rate-first-toast pointer-events-none absolute bottom-11 left-1/2 z-40 px-3.5 py-2 rounded-[var(--radius-control)] surface-overlay border border-[var(--intent-warning-border)] text-xs font-medium shadow-overlay inline-flex items-center gap-2 whitespace-nowrap max-w-[calc(100%-24px)]"
+                        style={{
+                          backgroundImage:
+                            'linear-gradient(135deg, var(--intent-warning-soft) 0%, transparent 72%)',
+                        }}
+                      >
+                        <span
                           aria-hidden="true"
-                          style={{
-                            opacity: Math.min(1, (Math.abs(cardDrag.dx) - 16) / 48),
-                          }}
-                          className={`absolute top-4 z-30 pointer-events-none px-3 py-1 rounded-[var(--radius-pill)] text-xs font-semibold shadow-ring ${
-                            cardDrag.dx < 0
-                              ? isFlipped
-                                ? 'right-4 bg-[var(--srs-again-soft)] text-[var(--srs-again)] border border-[var(--srs-again-border)]'
-                                : 'right-4 surface-2 text-[var(--fg-primary)] border'
-                              : isFlipped
-                              ? 'left-4 bg-[var(--srs-good-soft)] text-[var(--srs-good)] border border-[var(--srs-good-border)]'
-                              : 'left-4 surface-2 text-[var(--fg-primary)] border'
+                          className="w-2 h-2 rounded-full bg-[var(--intent-warning)] shrink-0"
+                        />
+                        <span className="font-semibold text-[var(--intent-warning)]">
+                          Rate difficulty first
+                        </span>
+                        <span
+                          aria-hidden="true"
+                          className="text-[var(--fg-muted)] opacity-45 hidden sm:inline"
+                        >
+                          ·
+                        </span>
+                        <span className="text-[var(--fg-secondary)] hidden sm:inline">
+                          to continue
+                        </span>
+                      </div>
+                    )}
+
+                    <div
+                      className={`perspective-stage relative w-full flex-1 flex flex-col card-deck-motion touch-none overscroll-contain ${
+                        cardMotion !== 'idle' ? cardMotion : ''
+                      }`}
+                    >
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Flashcard ${currentCard.lemma}. Tap to flip, swipe left to go next after rating, swipe right to go back.`}
+                        style={
+                          !isExiting &&
+                          (cardDrag.active ||
+                            cardDrag.dx !== 0 ||
+                            cardDrag.dy !== 0)
+                            ? {
+                                transform: `translate3d(${cardDrag.dx}px, ${cardDrag.dy}px, 0) rotate(${cardDrag.dx * 0.035}deg)`,
+                                transition: cardDrag.active
+                                  ? 'none'
+                                  : 'transform 220ms cubic-bezier(0.22, 1, 0.36, 1)',
+                              }
+                            : undefined
+                        }
+                        onTouchStart={!isExiting ? handleCardTouchStart : undefined}
+                        onTouchMove={!isExiting ? handleCardTouchMove : undefined}
+                        onTouchEnd={!isExiting ? handleCardTouchEnd : undefined}
+                        onTouchCancel={!isExiting ? handleCardTouchCancel : undefined}
+                        onClick={() => {
+                          if (cardTouchRef.current?.suppressClick) return;
+                          handleFlipCard();
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleFlipCard();
+                          }
+                        }}
+                        className={`flip-card-inner cursor-pointer select-none rounded-[var(--radius-card)] theme-focus ${
+                          isFlipped ? 'is-flipped' : ''
+                        } ${suppressFlipTransition ? 'no-flip-transition' : ''}`}
+                      >
+                        {/* Live Edge Gesture Stamp (Visible ONLY while actively swiping horizontally) */}
+                        {!isExiting &&
+                          cardDrag.active &&
+                          Math.abs(cardDrag.dx) > 16 && (
+                            <div
+                              aria-hidden="true"
+                              style={{
+                                opacity: Math.min(
+                                  1,
+                                  (Math.abs(cardDrag.dx) - 14) / 42
+                                ),
+                              }}
+                              className={`absolute top-4 z-30 pointer-events-none px-3 py-1 rounded-[var(--radius-control)] text-xs font-semibold shadow-ring inline-flex items-center gap-1.5 ${
+                                cardDrag.dx < 0
+                                  ? canGoNext
+                                    ? 'right-4 surface-2 text-[var(--fg-primary)] border'
+                                    : 'right-4 surface-1 text-[var(--intent-warning)] border border-[var(--intent-warning-border)]'
+                                  : canGoPrev
+                                  ? 'left-4 surface-2 text-[var(--fg-primary)] border'
+                                  : 'left-4 surface-2 text-[var(--fg-muted)] border'
+                              }`}
+                            >
+                              {cardDrag.dx < 0 ? (
+                                canGoNext ? (
+                                  'Next →'
+                                ) : (
+                                  <>
+                                    <span
+                                      aria-hidden="true"
+                                      className="w-1.5 h-1.5 rounded-full bg-[var(--intent-warning)] shrink-0"
+                                    />
+                                    <span>Rate first</span>
+                                  </>
+                                )
+                              ) : canGoPrev ? (
+                                '← Prev'
+                              ) : (
+                                'First card'
+                              )}
+                            </div>
+                          )}
+
+                        {/* ==================== LAYER 0: CARD FRONT (THE GERMAN WORD ONLY) ==================== */}
+                        <div
+                          className={`relative flip-card-face flip-card-front rounded-[var(--radius-card)] surface-paper border fluid-card-pad flex flex-col justify-between ${
+                            exitingRating
+                              ? `card-rated-wash-${exitingRating}`
+                              : ''
                           }`}
                         >
-                          {isFlipped
-                            ? cardDrag.dx < 0
-                              ? 'Nochmal'
-                              : 'Gut ✓'
-                            : cardDrag.dx < 0
-                            ? 'Next →'
-                            : '← Prev'}
-                        </div>
-                      )}
-
-                      {/* ==================== LAYER 0: CARD FRONT (THE GERMAN WORD ONLY) ==================== */}
-                      <div className="flip-card-face flip-card-front rounded-[var(--radius-card)] surface-paper border fluid-card-pad flex flex-col justify-between">
-                        {/* Top Row: 44x44px Mobile Audio Button */}
-                        <div className="flex items-center justify-end">
-                          <button
-                            type="button"
-                            onClick={(e) =>
-                              handlePlayAudio(
-                                currentCard.spokenText,
-                                'front-lemma',
-                                e
-                              )
-                            }
-                            aria-label="Play German pronunciation"
-                            title="Listen [A]"
-                            className={`w-11 h-11 sm:w-10 sm:h-10 -mr-1 rounded-full flex items-center justify-center transition-all shrink-0 cursor-pointer active:scale-90 theme-focus ${
-                              speakingId === 'front-lemma'
-                                ? 'bg-[var(--intent-primary-soft)] text-[var(--intent-primary)] scale-105'
-                                : 'text-[var(--fg-secondary)] hover:text-[var(--fg-primary)] hover:bg-black/[0.04] dark:hover:bg-white/[0.06]'
-                            }`}
-                          >
-                            <Volume2 className="w-5 h-5" />
-                          </button>
-                        </div>
+                          {currentVisitRating && (
+                            <div
+                              aria-hidden="true"
+                              className="pointer-events-none absolute inset-x-0 top-0 h-[2px] opacity-80"
+                              style={{
+                                backgroundImage: `linear-gradient(90deg, transparent 6%, ${RATING_META[currentVisitRating].colorVar} 26%, ${RATING_META[currentVisitRating].colorVar} 74%, transparent 94%)`,
+                              }}
+                            />
+                          )}
+                          {/* Top Row: Harmonious Unboxed Previous Rating (when going back) + 44x44px Mobile Audio Button */}
+                          <div className="flex items-center justify-between gap-2">
+                            {currentVisitRating ? (
+                              <span
+                                data-testid="card-previous-rating"
+                                className="inline-flex items-center gap-1.5 text-xs tracking-tight min-w-0"
+                              >
+                                <span
+                                  aria-hidden="true"
+                                  className="w-1.5 h-1.5 rounded-full shrink-0"
+                                  style={{
+                                    backgroundColor:
+                                      RATING_META[currentVisitRating].colorVar,
+                                  }}
+                                />
+                                <span className="text-[var(--fg-muted)] font-medium">
+                                  Rated
+                                </span>
+                                <span
+                                  aria-hidden="true"
+                                  className="text-[var(--fg-muted)] opacity-45"
+                                >
+                                  ·
+                                </span>
+                                <span
+                                  className="font-semibold truncate"
+                                  style={{
+                                    color:
+                                      RATING_META[currentVisitRating].colorVar,
+                                  }}
+                                >
+                                  {RATING_META[currentVisitRating].label}
+                                </span>
+                              </span>
+                            ) : (
+                              <span aria-hidden="true" />
+                            )}
+                            <button
+                              type="button"
+                              onClick={(e) =>
+                                handlePlayAudio(
+                                  currentCard.spokenText,
+                                  'front-lemma',
+                                  e
+                                )
+                              }
+                              aria-label="Play German pronunciation"
+                              title="Listen [A]"
+                              className={`w-11 h-11 sm:w-10 sm:h-10 -mr-1 rounded-full flex items-center justify-center transition-all shrink-0 cursor-pointer active:scale-90 theme-focus ${
+                                speakingId === 'front-lemma'
+                                  ? 'bg-[var(--intent-primary-soft)] text-[var(--intent-primary)] scale-105'
+                                  : 'text-[var(--fg-secondary)] hover:text-[var(--fg-primary)] hover:bg-black/[0.04] dark:hover:bg-white/[0.06]'
+                              }`}
+                            >
+                              <Volume2 className="w-5 h-5" />
+                            </button>
+                          </div>
 
                         {/* Center: Pure German Word Prompt (Length-Aware Fluid clamp() Font Scaling) */}
                         <div className="my-auto text-center py-6 sm:py-8 px-1">
@@ -3304,8 +3804,21 @@ export default function App() {
                             }
                           }
                         }}
-                        className="flip-card-face flip-card-back rounded-[var(--radius-card)] surface-paper border fluid-card-pad flex flex-col"
+                        className={`relative flip-card-face flip-card-back rounded-[var(--radius-card)] surface-paper border fluid-card-pad flex flex-col ${
+                          exitingRating
+                            ? `card-rated-wash-${exitingRating}`
+                            : ''
+                        }`}
                       >
+                        {currentVisitRating && (
+                          <div
+                            aria-hidden="true"
+                            className="pointer-events-none absolute inset-x-0 top-0 h-[2px] opacity-80"
+                            style={{
+                              backgroundImage: `linear-gradient(90deg, transparent 6%, ${RATING_META[currentVisitRating].colorVar} 26%, ${RATING_META[currentVisitRating].colorVar} 74%, transparent 94%)`,
+                            }}
+                          />
+                        )}
                         {(() => {
                           const threeForms = getBacksideThreeForms(currentCard);
 
@@ -3335,6 +3848,42 @@ export default function App() {
                                     >
                                       <span>Anatomie</span>
                                     </button>
+
+                                    {currentVisitRating && (
+                                      <span className="inline-flex items-center gap-1.5 text-xs tracking-tight min-w-0">
+                                        <span
+                                          aria-hidden="true"
+                                          className="w-1.5 h-1.5 rounded-full shrink-0"
+                                          style={{
+                                            backgroundColor:
+                                              RATING_META[currentVisitRating]
+                                                .colorVar,
+                                          }}
+                                        />
+                                        <span className="text-[var(--fg-muted)] font-medium">
+                                          Rated
+                                        </span>
+                                        <span
+                                          aria-hidden="true"
+                                          className="text-[var(--fg-muted)] opacity-45"
+                                        >
+                                          ·
+                                        </span>
+                                        <span
+                                          className="font-semibold truncate"
+                                          style={{
+                                            color:
+                                              RATING_META[currentVisitRating]
+                                                .colorVar,
+                                          }}
+                                        >
+                                          {
+                                            RATING_META[currentVisitRating]
+                                              .label
+                                          }
+                                        </span>
+                                      </span>
+                                    )}
 
                                     <button
                                       type="button"
@@ -3593,6 +4142,7 @@ export default function App() {
                       </div>
                     </div>
                   </div>
+                </div>
 
                   {/* ==================== TWO-STAGE BOTTOM ACTION DOCK: "REVEAL ANSWER" (FRONT) -> 4 RATING BUTTONS (BACK) ==================== */}
                   {!isFlipped ? (
@@ -3600,11 +4150,48 @@ export default function App() {
                       type="button"
                       onClick={handleFlipCard}
                       aria-label="Reveal flashcard answer"
-                      className="min-h-[50px] w-full py-2.5 px-4 rounded-[var(--radius-control)] surface-paper border border-[var(--border-strong)] hover:border-[var(--intent-primary-border)] hover:bg-[var(--intent-primary-soft)] active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer theme-focus"
+                      style={
+                        recentRatingEcho
+                          ? {
+                              borderColor:
+                                RATING_META[recentRatingEcho].borderVar,
+                              backgroundImage: `linear-gradient(135deg, ${RATING_META[recentRatingEcho].softVar} 0%, transparent 68%)`,
+                            }
+                          : undefined
+                      }
+                      className="min-h-[50px] w-full py-2.5 px-4 rounded-[var(--radius-control)] surface-paper border border-[var(--border-strong)] hover:border-[var(--intent-primary-border)] hover:bg-[var(--intent-primary-soft)] active:scale-[0.98] transition-all duration-300 grid grid-cols-[1fr_auto_1fr] items-center gap-2 cursor-pointer theme-focus"
                     >
-                      <RotateCw className="w-4 h-4 text-[var(--intent-primary)]" />
-                      <span className="text-[15px] font-bold text-[var(--fg-primary)] leading-tight">
-                        Reveal Answer
+                      <span aria-hidden="true" />
+                      <span className="inline-flex items-center justify-center gap-2">
+                        <RotateCw className="w-4 h-4 text-[var(--intent-primary)]" />
+                        <span className="text-[15px] font-bold text-[var(--fg-primary)] leading-tight">
+                          Reveal Answer
+                        </span>
+                      </span>
+                      <span className="justify-self-end min-w-0">
+                        {recentRatingEcho && (
+                          <span
+                            data-testid="rating-echo-dock"
+                            className="hidden min-[360px]:inline-flex items-center gap-1.5 text-xs tracking-tight"
+                          >
+                            <span
+                              aria-hidden="true"
+                              className="w-1.5 h-1.5 rounded-full shrink-0"
+                              style={{
+                                backgroundColor:
+                                  RATING_META[recentRatingEcho].colorVar,
+                              }}
+                            />
+                            <span
+                              className="font-semibold truncate"
+                              style={{
+                                color: RATING_META[recentRatingEcho].colorVar,
+                              }}
+                            >
+                              {RATING_META[recentRatingEcho].label}
+                            </span>
+                          </span>
+                        )}
                       </span>
                     </button>
                   ) : (
@@ -3613,45 +4200,95 @@ export default function App() {
                       aria-label="Rate flashcard recall"
                       className="grid grid-cols-4 gap-2"
                     >
-                      <button
-                        type="button"
-                        onClick={() => handleRateCard('again')}
-                        className="min-h-[50px] py-2.5 px-2 rounded-[var(--radius-control)] surface-paper border hover:border-[var(--srs-again-border)] hover:bg-[var(--srs-again-soft)] active:scale-95 transition-all flex items-center justify-center cursor-pointer theme-focus"
-                      >
-                        <span className="text-sm sm:text-[15px] font-bold text-[var(--srs-again)] leading-tight">
-                          Nochmal
-                        </span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleRateCard('hard')}
-                        className="min-h-[50px] py-2.5 px-2 rounded-[var(--radius-control)] surface-paper border hover:border-[var(--srs-hard-border)] hover:bg-[var(--srs-hard-soft)] active:scale-95 transition-all flex items-center justify-center cursor-pointer theme-focus"
-                      >
-                        <span className="text-sm sm:text-[15px] font-bold text-[var(--srs-hard)] leading-tight">
-                          Schwer
-                        </span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleRateCard('good')}
-                        className="min-h-[50px] py-2.5 px-2 rounded-[var(--radius-control)] surface-paper border hover:border-[var(--srs-good-border)] hover:bg-[var(--srs-good-soft)] active:scale-95 transition-all flex items-center justify-center cursor-pointer theme-focus"
-                      >
-                        <span className="text-sm sm:text-[15px] font-bold text-[var(--srs-good)] leading-tight">
-                          Gut
-                        </span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleRateCard('easy')}
-                        className="min-h-[50px] py-2.5 px-2 rounded-[var(--radius-control)] surface-paper border hover:border-[var(--srs-easy-border)] hover:bg-[var(--srs-easy-soft)] active:scale-95 transition-all flex items-center justify-center cursor-pointer theme-focus"
-                      >
-                        <span className="text-sm sm:text-[15px] font-bold text-[var(--srs-easy)] leading-tight">
-                          Leicht
-                        </span>
-                      </button>
+                      {(
+                        [
+                          {
+                            key: 'again' as const,
+                            hoverClass:
+                              'hover:border-[var(--srs-again-border)] hover:bg-[var(--srs-again-soft)]',
+                          },
+                          {
+                            key: 'hard' as const,
+                            hoverClass:
+                              'hover:border-[var(--srs-hard-border)] hover:bg-[var(--srs-hard-soft)]',
+                          },
+                          {
+                            key: 'good' as const,
+                            hoverClass:
+                              'hover:border-[var(--srs-good-border)] hover:bg-[var(--srs-good-soft)]',
+                          },
+                          {
+                            key: 'easy' as const,
+                            hoverClass:
+                              'hover:border-[var(--srs-easy-border)] hover:bg-[var(--srs-easy-soft)]',
+                          },
+                        ] as const
+                      ).map(({ key, hoverClass }) => {
+                        const meta = RATING_META[key];
+                        const isSelected = currentVisitRating === key;
+                        const isFlashing = flashingRating === key;
+                        const isEmphasized = isSelected || isFlashing;
+                        const isDimmedSibling =
+                          (Boolean(flashingRating) ||
+                            Boolean(currentVisitRating)) &&
+                          !isEmphasized;
+                        return (
+                          <button
+                            key={key}
+                            type="button"
+                            aria-pressed={isSelected}
+                            onClick={() => handleRateCard(key)}
+                            style={
+                              isEmphasized
+                                ? {
+                                    backgroundColor: meta.solidBgVar,
+                                    borderColor: meta.solidBgVar,
+                                    color: meta.solidFgVar,
+                                    boxShadow: `inset 0 1px 0 rgb(255 255 255 / 0.16), 0 4px 12px -2px ${meta.borderVar}`,
+                                    ...(isFlashing
+                                      ? { transitionDuration: '75ms' }
+                                      : {}),
+                                  }
+                                : undefined
+                            }
+                            className={`relative min-h-[50px] py-2.5 px-2 rounded-[var(--radius-control)] surface-paper border active:scale-95 transition-all flex items-center justify-center cursor-pointer theme-focus ${
+                              isEmphasized ? '' : hoverClass
+                            } ${isFlashing ? 'scale-[0.96]' : ''} ${
+                              isDimmedSibling
+                                ? 'opacity-55 hover:opacity-100'
+                                : ''
+                            }`}
+                          >
+                            <span
+                              aria-hidden="true"
+                              style={
+                                isEmphasized
+                                  ? { color: meta.solidFgVar }
+                                  : undefined
+                              }
+                              className={`hidden sm:inline absolute top-1 right-1.5 text-[10px] font-sans tabular-nums pointer-events-none ${
+                                isEmphasized
+                                  ? 'opacity-70'
+                                  : 'text-[var(--fg-muted)] opacity-45'
+                              }`}
+                            >
+                              {meta.shortcutKey}
+                            </span>
+                            <span
+                              style={
+                                isEmphasized
+                                  ? { color: meta.solidFgVar }
+                                  : undefined
+                              }
+                              className={`text-sm sm:text-[15px] font-bold leading-tight ${
+                                isEmphasized ? '' : meta.textClass
+                              }`}
+                            >
+                              {meta.label}
+                            </span>
+                          </button>
+                        );
+                      })}
                     </div>
                   )}
                 </>

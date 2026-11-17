@@ -38,7 +38,7 @@ import {
   Utensils,
   Wine,
 } from 'lucide-react';
-import { CardCategory, CefrLevel } from '../data/vocabData';
+import { CardCategory, CefrLevel, RatingKey } from '../data/vocabData';
 import { DEFAULT_A2_CUSTOM_DECKS } from '../data/defaultDecks';
 import { syncWorkspaceToSupabase } from './supabaseSync';
 
@@ -986,4 +986,338 @@ export function resolveSavedDeckIndex(
   }
   return 0;
 }
+
+const STUDY_DECK_TRAILS_KEY = 'achsoo_study_trails_v1';
+const MAX_STUDY_TRAIL_ENTRIES = 250;
+
+export interface StudyVisitEntry {
+  cardId: string;
+  rating?: RatingKey;
+  ratedAt?: string;
+}
+
+export interface StudyDeckTrail {
+  entries: StudyVisitEntry[];
+  cursor: number;
+}
+
+function clampTrail(trail: StudyDeckTrail): StudyDeckTrail {
+  if (trail.entries.length === 0) {
+    return { entries: [], cursor: 0 };
+  }
+  let entries = trail.entries;
+  let cursor = Math.max(0, Math.min(entries.length - 1, Math.floor(trail.cursor)));
+  if (entries.length > MAX_STUDY_TRAIL_ENTRIES) {
+    const overflow = entries.length - MAX_STUDY_TRAIL_ENTRIES;
+    entries = entries.slice(overflow);
+    cursor = Math.max(0, cursor - overflow);
+  }
+  return { entries, cursor };
+}
+
+export function loadStudyDeckTrails(): Record<string, StudyDeckTrail> {
+  try {
+    const raw =
+      typeof localStorage !== 'undefined'
+        ? localStorage.getItem(STUDY_DECK_TRAILS_KEY)
+        : null;
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, StudyDeckTrail>;
+    if (!parsed || typeof parsed !== 'object') return {};
+    const normalized: Record<string, StudyDeckTrail> = {};
+    for (const [deckId, trail] of Object.entries(parsed)) {
+      if (
+        trail &&
+        Array.isArray(trail.entries) &&
+        typeof trail.cursor === 'number'
+      ) {
+        normalized[deckId] = clampTrail({
+          entries: trail.entries.filter(
+            (e): e is StudyVisitEntry =>
+              Boolean(e) && typeof e.cardId === 'string'
+          ),
+          cursor: trail.cursor,
+        });
+      }
+    }
+    return normalized;
+  } catch {
+    return {};
+  }
+}
+
+export function saveStudyDeckTrail(
+  deckId: string,
+  trail: StudyDeckTrail
+): void {
+  if (!deckId) return;
+  try {
+    if (typeof localStorage === 'undefined') return;
+    const current = loadStudyDeckTrails();
+    current[deckId] = clampTrail(trail);
+    localStorage.setItem(STUDY_DECK_TRAILS_KEY, JSON.stringify(current));
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+export function clearStudyDeckTrail(deckId?: string): void {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    if (!deckId) {
+      localStorage.removeItem(STUDY_DECK_TRAILS_KEY);
+      return;
+    }
+    const current = loadStudyDeckTrails();
+    if (deckId in current) {
+      delete current[deckId];
+      localStorage.setItem(STUDY_DECK_TRAILS_KEY, JSON.stringify(current));
+    }
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+export function syncTrailWithDeck(
+  trail: StudyDeckTrail | undefined,
+  cards: { id: string }[],
+  currentCardId?: string,
+  pruneMissingCards = false
+): StudyDeckTrail {
+  if (cards.length === 0) {
+    return { entries: [], cursor: 0 };
+  }
+
+  const validIds = new Set(cards.map((c) => c.id));
+  const targetId =
+    currentCardId && validIds.has(currentCardId) ? currentCardId : cards[0].id;
+
+  if (!trail || trail.entries.length === 0) {
+    return { entries: [{ cardId: targetId }], cursor: 0 };
+  }
+
+  let nextEntries = trail.entries;
+  let nextCursor = Math.max(
+    0,
+    Math.min(nextEntries.length - 1, Math.floor(trail.cursor))
+  );
+
+  if (pruneMissingCards) {
+    const filtered: StudyVisitEntry[] = [];
+    let adjustedCursor = 0;
+    nextEntries.forEach((entry, idx) => {
+      if (validIds.has(entry.cardId)) {
+        filtered.push(entry);
+        if (idx <= nextCursor) {
+          adjustedCursor = filtered.length - 1;
+        }
+      }
+    });
+    nextEntries = filtered;
+    nextCursor = Math.max(0, adjustedCursor);
+  } else {
+    // Even in regular decks, remove entries whose cardId no longer exists in the deck
+    const hasStale = nextEntries.some((e) => !validIds.has(e.cardId));
+    if (hasStale) {
+      const filtered: StudyVisitEntry[] = [];
+      let adjustedCursor = 0;
+      nextEntries.forEach((entry, idx) => {
+        if (validIds.has(entry.cardId)) {
+          filtered.push(entry);
+          if (idx <= nextCursor) {
+            adjustedCursor = filtered.length - 1;
+          }
+        }
+      });
+      nextEntries = filtered;
+      nextCursor = Math.max(0, adjustedCursor);
+    }
+  }
+
+  if (nextEntries.length === 0) {
+    return { entries: [{ cardId: targetId }], cursor: 0 };
+  }
+
+  if (nextEntries[nextCursor]?.cardId === targetId) {
+    return clampTrail({ entries: nextEntries, cursor: nextCursor });
+  }
+
+  // If the target card is already the trailing unrated card, point cursor to it;
+  // otherwise append a fresh unrated visit for the target card.
+  const lastIdx = nextEntries.length - 1;
+  if (nextEntries[lastIdx]?.cardId === targetId && !nextEntries[lastIdx]?.rating) {
+    return clampTrail({ entries: nextEntries, cursor: lastIdx });
+  }
+
+  return clampTrail({
+    entries: [...nextEntries, { cardId: targetId }],
+    cursor: nextEntries.length,
+  });
+}
+
+export function recordTrailRating(
+  trail: StudyDeckTrail,
+  rating: RatingKey,
+  nextCardId: string | undefined,
+  options?: {
+    isDueDeck?: boolean;
+    validNextDeckCardIds?: string[];
+    ratedAtIso?: string;
+  }
+): StudyDeckTrail {
+  const ratedAt = options?.ratedAtIso || new Date().toISOString();
+  const entries = trail.entries.map((e) => ({ ...e }));
+
+  if (entries.length === 0) {
+    return nextCardId
+      ? { entries: [{ cardId: nextCardId }], cursor: 0 }
+      : { entries: [], cursor: 0 };
+  }
+
+  const safeCursor = Math.max(0, Math.min(entries.length - 1, trail.cursor));
+  entries[safeCursor] = {
+    ...entries[safeCursor],
+    rating,
+    ratedAt,
+  };
+
+  if (options?.isDueDeck) {
+    const validSet = new Set(options.validNextDeckCardIds || []);
+    const pruned = entries.filter((e) => validSet.has(e.cardId));
+    if (!nextCardId) {
+      return clampTrail({
+        entries: pruned,
+        cursor: Math.max(0, pruned.length - 1),
+      });
+    }
+    const last = pruned[pruned.length - 1];
+    if (last && last.cardId === nextCardId && !last.rating) {
+      return clampTrail({ entries: pruned, cursor: pruned.length - 1 });
+    }
+    pruned.push({ cardId: nextCardId });
+    return clampTrail({ entries: pruned, cursor: pruned.length - 1 });
+  }
+
+  if (safeCursor < entries.length - 1) {
+    return clampTrail({
+      entries,
+      cursor: safeCursor + 1,
+    });
+  }
+
+  if (nextCardId) {
+    entries.push({ cardId: nextCardId });
+  }
+
+  return clampTrail({
+    entries,
+    cursor: Math.max(0, entries.length - 1),
+  });
+}
+
+export function canStepTrailPrev(
+  trail: StudyDeckTrail,
+  cards: { id: string }[]
+): boolean {
+  if (trail.cursor <= 0 || trail.entries.length <= 1) return false;
+  const validIds = new Set(cards.map((c) => c.id));
+  for (let i = trail.cursor - 1; i >= 0; i--) {
+    if (validIds.has(trail.entries[i].cardId)) return true;
+  }
+  return false;
+}
+
+export function stepTrailPrev(
+  trail: StudyDeckTrail,
+  cards: { id: string }[]
+): { trail: StudyDeckTrail; prevDeckIndex: number } | null {
+  if (trail.cursor <= 0 || trail.entries.length === 0) return null;
+  for (let i = trail.cursor - 1; i >= 0; i--) {
+    const deckIdx = cards.findIndex((c) => c.id === trail.entries[i].cardId);
+    if (deckIdx >= 0) {
+      return {
+        trail: { ...trail, cursor: i },
+        prevDeckIndex: deckIdx,
+      };
+    }
+  }
+  return null;
+}
+
+export function stepTrailNext(
+  trail: StudyDeckTrail,
+  cards: { id: string }[]
+):
+  | { blocked: true }
+  | { blocked: false; trail: StudyDeckTrail; nextDeckIndex: number } {
+  if (cards.length === 0 || trail.entries.length === 0) {
+    return { blocked: true };
+  }
+  const safeCursor = Math.max(
+    0,
+    Math.min(trail.entries.length - 1, trail.cursor)
+  );
+  const currentEntry = trail.entries[safeCursor];
+  if (!currentEntry?.rating) {
+    return { blocked: true };
+  }
+
+  if (safeCursor < trail.entries.length - 1) {
+    for (let i = safeCursor + 1; i < trail.entries.length; i++) {
+      const deckIdx = cards.findIndex((c) => c.id === trail.entries[i].cardId);
+      if (deckIdx >= 0) {
+        return {
+          blocked: false,
+          trail: { ...trail, cursor: i },
+          nextDeckIndex: deckIdx,
+        };
+      }
+    }
+  }
+
+  const curDeckIdx = cards.findIndex((c) => c.id === currentEntry.cardId);
+  const nextDeckIndex =
+    cards.length <= 1 ? 0 : ((curDeckIdx >= 0 ? curDeckIdx : 0) + 1) % cards.length;
+  const nextCard = cards[nextDeckIndex];
+  const nextEntries = [...trail.entries, { cardId: nextCard.id }];
+
+  return {
+    blocked: false,
+    trail: clampTrail({
+      entries: nextEntries,
+      cursor: nextEntries.length - 1,
+    }),
+    nextDeckIndex,
+  };
+}
+
+export function clearTrailRatingForUndo(
+  trail: StudyDeckTrail,
+  undoneCardId: string,
+  cards: { id: string }[]
+): { trail: StudyDeckTrail; deckIndex: number } {
+  const entries = trail.entries.map((e) => ({ ...e }));
+  for (let i = entries.length - 1; i >= 0; i--) {
+    if (entries[i].cardId === undoneCardId && entries[i].rating) {
+      const { rating: _r, ratedAt: _ra, ...rest } = entries[i];
+      entries[i] = rest;
+      // If the trailing entry after the undone card is an unrated frontier card, drop it
+      const trimmed =
+        i === entries.length - 2 && !entries[entries.length - 1]?.rating
+          ? entries.slice(0, i + 1)
+          : entries;
+      const deckIdx = cards.findIndex((c) => c.id === undoneCardId);
+      return {
+        trail: clampTrail({ entries: trimmed, cursor: i }),
+        deckIndex: deckIdx >= 0 ? deckIdx : 0,
+      };
+    }
+  }
+  const fallbackIdx = cards.findIndex((c) => c.id === undoneCardId);
+  return {
+    trail,
+    deckIndex: fallbackIdx >= 0 ? fallbackIdx : 0,
+  };
+}
+
 

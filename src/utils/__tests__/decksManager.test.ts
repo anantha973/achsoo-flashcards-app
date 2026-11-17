@@ -7,9 +7,15 @@ import {
   CustomDeckRecord,
   DeckFolder,
   archiveDummyDecksInWorkspace,
+  canStepTrailPrev,
+  clearTrailRatingForUndo,
   ensureBuiltInA2Workspace,
   hasMissingBuiltInA2Workspace,
+  recordTrailRating,
   resolveSavedDeckIndex,
+  stepTrailNext,
+  stepTrailPrev,
+  syncTrailWithDeck,
 } from '../decksManager';
 
 describe('decksManager multi-device A2 Netzwerk workspace sync', () => {
@@ -135,11 +141,124 @@ describe('study session resume & noun article normalization', () => {
     );
 
     const dupPattern = /\b(der|die|das)\s+\1\b/i;
+    const grammarLeakPattern =
+      /[()+]|\b(?:Akk|Dat|Gen|Akkusativ|Dativ|Genitiv|Partizip|Aktion)\b/i;
     for (const card of INITIAL_CARDS) {
       expect(dupPattern.test(card.lemma)).toBe(false);
       expect(dupPattern.test(card.spokenText)).toBe(false);
       expect(dupPattern.test(card.exampleDe)).toBe(false);
+      expect(grammarLeakPattern.test(card.lemma)).toBe(false);
+      if (card.verbDetails?.separablePrefix && card.verbDetails?.verbStem) {
+        expect(
+          card.lemma.endsWith(
+            `${card.verbDetails.separablePrefix}${card.verbDetails.verbStem}`
+          )
+        ).toBe(true);
+      }
     }
   });
 });
+
+describe('study trail rating gate, backward rating visibility & spaced repetition reset', () => {
+  const deck = [{ id: 'c1' }, { id: 'c2' }, { id: 'c3' }];
+
+  it('blocks advancing to the next card when current card is unrated, and unlocks after rating', () => {
+    const initial = syncTrailWithDeck(undefined, deck, 'c1');
+    expect(canStepTrailPrev(initial, deck)).toBe(false);
+    expect(stepTrailNext(initial, deck)).toEqual({ blocked: true });
+
+    // Rate c1 as 'hard' -> advances to c2 (unrated)
+    const afterC1 = recordTrailRating(initial, 'hard', 'c2');
+    expect(afterC1.entries[0].rating).toBe('hard');
+    expect(afterC1.cursor).toBe(1);
+    expect(afterC1.entries[1]).toEqual({ cardId: 'c2' });
+    expect(afterC1.entries[1].rating).toBeUndefined();
+
+    // Cannot advance past c2 while c2 is unrated
+    expect(stepTrailNext(afterC1, deck)).toEqual({ blocked: true });
+  });
+
+  it('shows previously given ratings when swiping back and allows moving forward over rated cards', () => {
+    let trail = syncTrailWithDeck(undefined, deck, 'c1');
+    trail = recordTrailRating(trail, 'again', 'c2');
+    trail = recordTrailRating(trail, 'good', 'c3');
+
+    // Currently at c3 (unrated)
+    expect(trail.entries[trail.cursor].cardId).toBe('c3');
+    expect(trail.entries[trail.cursor].rating).toBeUndefined();
+    expect(stepTrailNext(trail, deck)).toEqual({ blocked: true });
+
+    // Swipe back to c2 -> sees 'good'
+    const backToC2 = stepTrailPrev(trail, deck);
+    expect(backToC2).not.toBeNull();
+    expect(backToC2!.prevDeckIndex).toBe(1);
+    expect(backToC2!.trail.entries[backToC2!.trail.cursor].rating).toBe('good');
+
+    // Swipe back to c1 -> sees 'again'
+    const backToC1 = stepTrailPrev(backToC2!.trail, deck);
+    expect(backToC1).not.toBeNull();
+    expect(backToC1!.prevDeckIndex).toBe(0);
+    expect(backToC1!.trail.entries[backToC1!.trail.cursor].rating).toBe('again');
+
+    // Swipe forward from c1 -> allowed because c1 was already rated
+    const fwdToC2 = stepTrailNext(backToC1!.trail, deck);
+    expect(fwdToC2.blocked).toBe(false);
+    if (!fwdToC2.blocked) {
+      expect(fwdToC2.nextDeckIndex).toBe(1);
+      // Forward from c2 -> allowed to c3
+      const fwdToC3 = stepTrailNext(fwdToC2.trail, deck);
+      expect(fwdToC3.blocked).toBe(false);
+      if (!fwdToC3.blocked) {
+        expect(fwdToC3.nextDeckIndex).toBe(2);
+        // Now at c3 (still unrated) -> blocked again
+        expect(stepTrailNext(fwdToC3.trail, deck)).toEqual({ blocked: true });
+      }
+    }
+  });
+
+  it('clears rating when a card appears again in the deck (wrap-around or spaced repetition re-entry)', () => {
+    let trail = syncTrailWithDeck(undefined, deck, 'c1');
+    trail = recordTrailRating(trail, 'easy', 'c2');
+    trail = recordTrailRating(trail, 'hard', 'c3');
+    // Finish last card c3 -> wraps around to c1 again
+    trail = recordTrailRating(trail, 'good', 'c1');
+
+    // New appearance of c1 at cursor 3 has NO rating
+    expect(trail.cursor).toBe(3);
+    expect(trail.entries[trail.cursor].cardId).toBe('c1');
+    expect(trail.entries[trail.cursor].rating).toBeUndefined();
+    expect(stepTrailNext(trail, deck)).toEqual({ blocked: true });
+
+    // Swiping back from second-pass c1 still shows c3's previous rating ('good')
+    const backToC3 = stepTrailPrev(trail, deck);
+    expect(backToC3!.trail.entries[backToC3!.trail.cursor].cardId).toBe('c3');
+    expect(backToC3!.trail.entries[backToC3!.trail.cursor].rating).toBe('good');
+
+    // Due Today queue: rated card leaves validNextDeckCardIds and re-enters later unrated
+    let dueTrail = syncTrailWithDeck(undefined, [{ id: 'c1' }, { id: 'c2' }], 'c1', true);
+    dueTrail = recordTrailRating(dueTrail, 'again', 'c2', {
+      isDueDeck: true,
+      validNextDeckCardIds: ['c2'],
+    });
+    expect(dueTrail.entries).toEqual([{ cardId: 'c2' }]);
+
+    // Later c1 becomes due again and re-appears
+    dueTrail = recordTrailRating(dueTrail, 'good', 'c1', {
+      isDueDeck: true,
+      validNextDeckCardIds: ['c1'],
+    });
+    expect(dueTrail.entries).toEqual([{ cardId: 'c1' }]);
+    expect(dueTrail.entries[0].rating).toBeUndefined();
+  });
+
+  it('clears the undone card rating and restores cursor on undo', () => {
+    let trail = syncTrailWithDeck(undefined, deck, 'c1');
+    trail = recordTrailRating(trail, 'good', 'c2');
+    const undone = clearTrailRatingForUndo(trail, 'c1', deck);
+    expect(undone.deckIndex).toBe(0);
+    expect(undone.trail.cursor).toBe(0);
+    expect(undone.trail.entries).toEqual([{ cardId: 'c1' }]);
+  });
+});
+
 

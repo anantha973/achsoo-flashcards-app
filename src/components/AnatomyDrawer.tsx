@@ -307,15 +307,22 @@ export const AnatomyDrawer: React.FC<AnatomyDrawerProps> = ({
       card.verbDetails?.separablePrefix &&
       card.verbDetails?.verbStem
     ) {
-      return (
-        <>
-          <span className="text-terracotta">
-            {card.verbDetails.separablePrefix}
-          </span>
-          <span className="text-terracotta font-normal mx-0.5">|</span>
-          <span>{card.verbDetails.verbStem}</span>
-        </>
-      );
+      const pref = card.verbDetails.separablePrefix;
+      const stem = card.verbDetails.verbStem;
+      const combined = `${pref}${stem}`;
+      const cleanLemma = card.lemma.trim();
+      if (cleanLemma === combined || cleanLemma.endsWith(combined)) {
+        const leading = cleanLemma.slice(0, cleanLemma.length - combined.length);
+        return (
+          <>
+            {leading && <span>{leading}</span>}
+            <span className="text-terracotta">{pref}</span>
+            <span className="text-terracotta font-normal mx-0.5">|</span>
+            <span>{stem}</span>
+          </>
+        );
+      }
+      return cleanLemma;
     }
     return card.lemma;
   };

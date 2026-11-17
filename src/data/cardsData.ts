@@ -3317,7 +3317,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
   },
   {
     "id": "a2-d01-025",
-    "lemma": "gegenüber (+ Dativ)",
+    "lemma": "gegenüber",
     "spokenText": "gegenüber",
     "cefr": "A2",
     "category": "preposition",
@@ -3359,7 +3359,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
   },
   {
     "id": "a2-d01-026",
-    "lemma": "entlang (+ Akkusativ / Dativ)",
+    "lemma": "entlang",
     "spokenText": "entlang",
     "cefr": "A2",
     "category": "preposition",
@@ -4492,8 +4492,8 @@ export const RAW_CARDS_DATA: VocabCard[] = [
   },
   {
     "id": "a2-d01-044",
-    "lemma": "genervt sein (von + Dat)",
-    "spokenText": "genervt sein (von + Dat), genervter, am genervtesten",
+    "lemma": "genervt sein",
+    "spokenText": "genervt sein",
     "cefr": "A2",
     "category": "adj",
     "grammarLabel": "Partizipiales Adjektiv",
@@ -4529,7 +4529,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
       "komparativ": "genervter",
       "superlativ": "am genervtesten",
       "opposite": "gelassen, entspannt, geduldig",
-      "rektion": "regelmäßige Steigerung",
+      "rektion": "von + Dat · regelmäßige Steigerung",
       "declensionExamples": {
         "weak": {
           "nom": "der genervte Schritt",
@@ -5022,8 +5022,8 @@ export const RAW_CARDS_DATA: VocabCard[] = [
   },
   {
     "id": "a2-d01-052",
-    "lemma": "gespannt sein (auf + Akk)",
-    "spokenText": "gespannt sein (auf + Akk), gespannter, am gespanntesten",
+    "lemma": "gespannt sein",
+    "spokenText": "gespannt sein",
     "cefr": "A2",
     "category": "adj",
     "grammarLabel": "Partizipiales Adjektiv",
@@ -5058,7 +5058,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
       "komparativ": "gespannter",
       "superlativ": "am gespanntesten",
       "opposite": "gleichgültig, desinteressiert",
-      "rektion": "regelmäßige Steigerung",
+      "rektion": "auf + Akk · regelmäßige Steigerung",
       "declensionExamples": {
         "weak": {
           "nom": "der gespannte Schritt",
@@ -5144,7 +5144,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
   },
   {
     "id": "a2-d01-054",
-    "lemma": "um ... herum (+ Akk)",
+    "lemma": "um ... herum",
     "spokenText": "um ... herum",
     "cefr": "A2",
     "category": "conn",
@@ -5187,7 +5187,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
   },
   {
     "id": "a2-d01-055",
-    "lemma": "einverstanden sein (mit + Dat)",
+    "lemma": "einverstanden sein",
     "spokenText": "einverstanden sein",
     "cefr": "A2",
     "category": "phrase",
@@ -5447,8 +5447,8 @@ export const RAW_CARDS_DATA: VocabCard[] = [
   },
   {
     "id": "a2-d01-059",
-    "lemma": "ähnlich (+ Dat)",
-    "spokenText": "ähnlich (+ Dat), ähnlicher, am ähnlichsten",
+    "lemma": "ähnlich",
+    "spokenText": "ähnlich",
     "cefr": "A2",
     "category": "adj",
     "grammarLabel": "Adjektiv mit Dativ",
@@ -5483,7 +5483,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
       "komparativ": "ähnlicher",
       "superlativ": "am ähnlichsten",
       "opposite": "verschieden, unterschiedlich, gegensätzlich",
-      "rektion": "regelmäßige Steigerung",
+      "rektion": "mit Dativ · regelmäßige Steigerung",
       "declensionExamples": {
         "weak": {
           "nom": "der ähnliche Schritt",
@@ -10697,7 +10697,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
   },
   {
     "id": "a2-d02-055",
-    "lemma": "sich konzentrieren (auf + Akk)",
+    "lemma": "sich konzentrieren",
     "spokenText": "sich konzentrieren",
     "cefr": "A2",
     "category": "verb",
@@ -10773,7 +10773,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
       "perfekt": "hat sich konzentriert",
       "auxiliary": "haben",
       "rektion": "sich auf + Akk konzentrieren",
-      "verbStem": "sich konzentrieren (auf + Akk)"
+      "verbStem": "sich konzentrieren"
     }
   },
   {
@@ -13367,7 +13367,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
   },
   {
     "id": "a2-d03-003",
-    "lemma": "es gibt (+ Akkusativ)",
+    "lemma": "es gibt",
     "spokenText": "es gibt",
     "cefr": "A2",
     "category": "phrase",
@@ -16037,7 +16037,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
   },
   {
     "id": "a2-d04-012",
-    "lemma": "sich erinnern an (+ Akk)",
+    "lemma": "sich erinnern an",
     "spokenText": "sich erinnern an",
     "cefr": "A2",
     "category": "verb",
@@ -16114,7 +16114,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
       "perfekt": "hat sich erinnert",
       "auxiliary": "haben",
       "rektion": "an + Akk",
-      "verbStem": "sich erinnern an (+ Akk)"
+      "verbStem": "sich erinnern an"
     }
   },
   {
@@ -16264,7 +16264,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
   },
   {
     "id": "a2-d04-015",
-    "lemma": "legen (Partizip II: gelegt)",
+    "lemma": "legen",
     "spokenText": "legen",
     "cefr": "A2",
     "category": "verb",
@@ -16342,12 +16342,12 @@ export const RAW_CARDS_DATA: VocabCard[] = [
       "perfekt": "hat gelegt",
       "auxiliary": "haben",
       "rektion": "auf / in + Akk",
-      "verbStem": "legen (Partizip II: gelegt)"
+      "verbStem": "legen"
     }
   },
   {
     "id": "a2-d04-016",
-    "lemma": "hängen (Aktion: hat gehängt)",
+    "lemma": "hängen",
     "spokenText": "hängen",
     "cefr": "A2",
     "category": "verb",
@@ -16424,12 +16424,12 @@ export const RAW_CARDS_DATA: VocabCard[] = [
       "perfekt": "hat gehängt",
       "auxiliary": "haben",
       "rektion": "an / über + Akk",
-      "verbStem": "hängen (Aktion: hat gehängt)"
+      "verbStem": "hängen"
     }
   },
   {
     "id": "a2-d04-017",
-    "lemma": "seit (+ Dativ)",
+    "lemma": "seit",
     "spokenText": "seit",
     "cefr": "A2",
     "category": "preposition",
@@ -17879,7 +17879,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
   },
   {
     "id": "a2-d04-040",
-    "lemma": "sich bewerben um (+ Akk)",
+    "lemma": "sich bewerben um",
     "spokenText": "sich bewerben um",
     "cefr": "A2",
     "category": "verb",
@@ -17957,7 +17957,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
       "perfekt": "hat sich beworben",
       "auxiliary": "haben",
       "rektion": "um + Akk · bei + Dat",
-      "verbStem": "sich bewerben um (+ Akk)"
+      "verbStem": "sich bewerben um"
     }
   },
   {
@@ -18796,7 +18796,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
   },
   {
     "id": "a2-d05-010",
-    "lemma": "leihen (Partizip II: geliehen)",
+    "lemma": "leihen",
     "spokenText": "leihen",
     "cefr": "A2",
     "category": "verb",
@@ -18874,7 +18874,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
       "perfekt": "hat geliehen",
       "auxiliary": "haben",
       "rektion": "jemandem (Dat) etwas leihen · sich (Dat) etwas leihen von (Dat)",
-      "verbStem": "leihen (Partizip II: geliehen)"
+      "verbStem": "leihen"
     }
   },
   {
@@ -19728,7 +19728,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
       "auxiliary": "haben",
       "rektion": "sich (Akk) vorstellen · sich (Dat) etwas vorstellen",
       "separablePrefix": "vor",
-      "verbStem": "h vorstellen"
+      "verbStem": "stellen"
     }
   },
   {
@@ -21168,7 +21168,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
   },
   {
     "id": "a2-d05-045",
-    "lemma": "leiten (Partizip II: geleitet)",
+    "lemma": "leiten",
     "spokenText": "leiten",
     "cefr": "A2",
     "category": "verb",
@@ -21246,12 +21246,12 @@ export const RAW_CARDS_DATA: VocabCard[] = [
       "perfekt": "hat geleitet",
       "auxiliary": "haben",
       "rektion": "ein Team / eine Abteilung leiten",
-      "verbStem": "leiten (Partizip II: geleitet)"
+      "verbStem": "leiten"
     }
   },
   {
     "id": "a2-d05-046",
-    "lemma": "zusammenfassen (fassen)",
+    "lemma": "zusammenfassen",
     "spokenText": "zusammenfassen",
     "cefr": "A2",
     "category": "verb",
@@ -21329,7 +21329,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
       "auxiliary": "haben",
       "rektion": "einen Text (Akk) zusammenfassen",
       "separablePrefix": "zusammen",
-      "verbStem": "fassen (fassen)"
+      "verbStem": "fassen"
     }
   },
   {
@@ -21575,7 +21575,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
   },
   {
     "id": "a2-d06-002",
-    "lemma": "sich wundern über (+ Akk)",
+    "lemma": "sich wundern über",
     "spokenText": "sich wundern über",
     "cefr": "A2",
     "category": "verb",
@@ -21652,7 +21652,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
       "perfekt": "hat sich gewundert",
       "auxiliary": "haben",
       "rektion": "sich über + Akk wundern",
-      "verbStem": "sich wundern über (+ Akk)"
+      "verbStem": "sich wundern über"
     }
   },
   {
@@ -22122,7 +22122,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
   },
   {
     "id": "a2-d06-010",
-    "lemma": "fehlen (+ Dativ)",
+    "lemma": "fehlen",
     "spokenText": "fehlen",
     "cefr": "A2",
     "category": "verb",
@@ -22199,7 +22199,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
       "perfekt": "hat gefehlt",
       "auxiliary": "haben",
       "rektion": "jemandem (Dat) fehlen",
-      "verbStem": "fehlen (+ Dativ)"
+      "verbStem": "fehlen"
     }
   },
   {
@@ -22714,7 +22714,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
   },
   {
     "id": "a2-d06-019",
-    "lemma": "achten auf (+ Akk)",
+    "lemma": "achten auf",
     "spokenText": "achten auf",
     "cefr": "A2",
     "category": "verb",
@@ -22791,7 +22791,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
       "perfekt": "hat geachtet",
       "auxiliary": "haben",
       "rektion": "auf + Akk achten",
-      "verbStem": "achten auf (+ Akk)"
+      "verbStem": "achten auf"
     }
   },
   {
@@ -22941,7 +22941,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
   },
   {
     "id": "a2-d06-022",
-    "lemma": "peinlich sein (+ Dativ)",
+    "lemma": "peinlich sein",
     "spokenText": "peinlich sein",
     "cefr": "A2",
     "category": "phrase",
@@ -23552,7 +23552,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
   },
   {
     "id": "a2-d06-031",
-    "lemma": "sich freuen (auf / über + Akk)",
+    "lemma": "sich freuen",
     "spokenText": "sich freuen",
     "cefr": "A2",
     "category": "verb",
@@ -23630,7 +23630,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
       "perfekt": "hat sich gefreut",
       "auxiliary": "haben",
       "rektion": "auf + Akk · über + Akk",
-      "verbStem": "sich freuen (auf / über + Akk)"
+      "verbStem": "sich freuen"
     }
   },
   {
@@ -23815,7 +23815,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
   },
   {
     "id": "a2-d06-035",
-    "lemma": "streiten (sich streiten mit + Dat)",
+    "lemma": "streiten",
     "spokenText": "streiten",
     "cefr": "A2",
     "category": "verb",
@@ -23893,7 +23893,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
       "perfekt": "hat gestritten",
       "auxiliary": "haben",
       "rektion": "mit + Dat streiten · über + Akk streiten",
-      "verbStem": "streiten (sich streiten mit + Dat)"
+      "verbStem": "streiten"
     }
   },
   {
@@ -24138,8 +24138,8 @@ export const RAW_CARDS_DATA: VocabCard[] = [
   },
   {
     "id": "a2-d06-030-dup",
-    "lemma": "befreundet sein mit (+ Dat)",
-    "spokenText": "befreundet sein mit (+ Dat), enger befreundet, am engsten befreundet",
+    "lemma": "befreundet sein mit",
+    "spokenText": "befreundet sein mit",
     "cefr": "A2",
     "category": "adj",
     "grammarLabel": "Partizipiales Adjektiv",
@@ -24174,7 +24174,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
       "komparativ": "enger befreundet",
       "superlativ": "am engsten befreundet",
       "opposite": "zerstritten, verfeindet",
-      "rektion": "regelmäßige Steigerung",
+      "rektion": "mit + Dat · regelmäßige Steigerung",
       "declensionExamples": {
         "weak": {
           "nom": "der befreundete Schritt",
@@ -24723,7 +24723,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
   },
   {
     "id": "a2-d06-049",
-    "lemma": "eine Lehre ziehen (aus + Dat)",
+    "lemma": "eine Lehre ziehen",
     "spokenText": "eine Lehre ziehen",
     "cefr": "A2",
     "category": "phrase",
@@ -25069,7 +25069,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
   },
   {
     "id": "a2-d06-055",
-    "lemma": "außer (+ Dat)",
+    "lemma": "außer",
     "spokenText": "außer",
     "cefr": "A2",
     "category": "conn",
@@ -25587,8 +25587,8 @@ export const RAW_CARDS_DATA: VocabCard[] = [
   },
   {
     "id": "a2-d07-005",
-    "lemma": "enttäuscht sein (von + Dat)",
-    "spokenText": "enttäuscht sein (von + Dat), enttäuschter, am enttäuschtesten",
+    "lemma": "enttäuscht sein",
+    "spokenText": "enttäuscht sein",
     "cefr": "A2",
     "category": "adj",
     "grammarLabel": "Partizipiales Adjektiv",
@@ -25623,7 +25623,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
       "komparativ": "enttäuschter",
       "superlativ": "am enttäuschtesten",
       "opposite": "begeistert, erfreut, zufrieden",
-      "rektion": "regelmäßige Steigerung",
+      "rektion": "von + Dat · regelmäßige Steigerung",
       "declensionExamples": {
         "weak": {
           "nom": "der enttäuschte Schritt",
@@ -25648,7 +25648,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
   },
   {
     "id": "a2-d07-006",
-    "lemma": "sich entscheiden (für + Akk)",
+    "lemma": "sich entscheiden",
     "spokenText": "sich entscheiden",
     "cefr": "A2",
     "category": "verb",
@@ -25725,7 +25725,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
       "perfekt": "hat sich entschieden",
       "auxiliary": "haben",
       "rektion": "sich für + Akk entscheiden · sich gegen + Akk entscheiden",
-      "verbStem": "sich entscheiden (für + Akk)"
+      "verbStem": "sich entscheiden"
     }
   },
   {
@@ -25850,7 +25850,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
   },
   {
     "id": "a2-d07-009",
-    "lemma": "gratulieren (+ Dat)",
+    "lemma": "gratulieren",
     "spokenText": "gratulieren",
     "cefr": "A2",
     "category": "verb",
@@ -25926,7 +25926,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
       "perfekt": "hat gratuliert",
       "auxiliary": "haben",
       "rektion": "jemandem (Dat) zu + Dat gratulieren",
-      "verbStem": "gratulieren (+ Dat)"
+      "verbStem": "gratulieren"
     }
   },
   {
@@ -26254,7 +26254,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
   },
   {
     "id": "a2-d07-015",
-    "lemma": "sich trennen (von + Dat)",
+    "lemma": "sich trennen",
     "spokenText": "sich trennen",
     "cefr": "A2",
     "category": "verb",
@@ -26332,7 +26332,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
       "perfekt": "hat sich getrennt",
       "auxiliary": "haben",
       "rektion": "sich von + Dat trennen · etwas (Akk) trennen",
-      "verbStem": "sich trennen (von + Dat)"
+      "verbStem": "sich trennen"
     }
   },
   {
@@ -26848,8 +26848,8 @@ export const RAW_CARDS_DATA: VocabCard[] = [
   },
   {
     "id": "a2-d07-023",
-    "lemma": "Konjunktiv II Formen (würde / wäre / hätte)",
-    "spokenText": "Konjunktiv II Formen",
+    "lemma": "würde / wäre / hätte",
+    "spokenText": "würde, wäre, hätte",
     "cefr": "A2",
     "category": "phrase",
     "grammarLabel": "Grammatische Kernformen · Konjunktiv II",
@@ -27426,7 +27426,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
       "auxiliary": "haben",
       "rektion": "sich von + Dat ausruhen",
       "separablePrefix": "aus",
-      "verbStem": "h ausruhen"
+      "verbStem": "ruhen"
     }
   },
   {
@@ -27552,7 +27552,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
   },
   {
     "id": "a2-d07-033",
-    "lemma": "zustimmen (+ Dat)",
+    "lemma": "zustimmen",
     "spokenText": "zustimmen",
     "cefr": "A2",
     "category": "verb",
@@ -27630,7 +27630,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
       "auxiliary": "haben",
       "rektion": "jemandem (Dat) / einem Plan (Dat) zustimmen",
       "separablePrefix": "zu",
-      "verbStem": "stimmen (+ Dat)"
+      "verbStem": "stimmen"
     }
   },
   {
@@ -28520,7 +28520,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
   },
   {
     "id": "a2-d07-048",
-    "lemma": "sich (Dat) etwas aussuchen",
+    "lemma": "sich etwas aussuchen",
     "spokenText": "sich etwas aussuchen",
     "cefr": "A2",
     "category": "verb",
@@ -28598,7 +28598,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
       "auxiliary": "haben",
       "rektion": "sich (Dat) etwas (Akk) aussuchen",
       "separablePrefix": "aus",
-      "verbStem": "h (Dat) etwas aussuchen"
+      "verbStem": "suchen"
     }
   },
   {
@@ -28768,7 +28768,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
   },
   {
     "id": "a2-d07-052",
-    "lemma": "sich einigen (auf + Akk)",
+    "lemma": "sich einigen",
     "spokenText": "sich einigen",
     "cefr": "A2",
     "category": "verb",
@@ -28845,7 +28845,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
       "perfekt": "hat sich geeinigt",
       "auxiliary": "haben",
       "rektion": "sich auf + Akk einigen",
-      "verbStem": "sich einigen (auf + Akk)"
+      "verbStem": "sich einigen"
     }
   },
   {
@@ -29294,7 +29294,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
       "praesens": "er/sie/es zieht",
       "praeteritum": "zog",
       "perfekt": "hat gezogen / ist gezogen",
-      "auxiliary": "haben / sein",
+      "auxiliary": "haben",
       "rektion": "an + Dat ziehen · in + Akk ziehen",
       "verbStem": "ziehen"
     }
@@ -29362,7 +29362,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
   },
   {
     "id": "a2-d07-060",
-    "lemma": "abhängen (von + Dat)",
+    "lemma": "abhängen",
     "spokenText": "abhängen",
     "cefr": "A2",
     "category": "verb",
@@ -29440,13 +29440,13 @@ export const RAW_CARDS_DATA: VocabCard[] = [
       "auxiliary": "haben",
       "rektion": "von + Dat abhängen",
       "separablePrefix": "ab",
-      "verbStem": "hängen (von + Dat)"
+      "verbStem": "hängen"
     }
   },
   {
     "id": "a2-d07-061",
-    "lemma": "beeindruckt sein (von + Dat)",
-    "spokenText": "beeindruckt sein (von + Dat), beeindruckter, am beeindrucktesten",
+    "lemma": "beeindruckt sein",
+    "spokenText": "beeindruckt sein",
     "cefr": "A2",
     "category": "adj",
     "grammarLabel": "Partizipiales Adjektiv",
@@ -29481,7 +29481,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
       "komparativ": "beeindruckter",
       "superlativ": "am beeindrucktesten",
       "opposite": "unbeeindruckt, gelangweilt",
-      "rektion": "regelmäßige Steigerung",
+      "rektion": "von + Dat · regelmäßige Steigerung",
       "declensionExamples": {
         "weak": {
           "nom": "der beeindruckte Schritt",
@@ -30192,7 +30192,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
       "praesens": "er/sie/es zieht aus",
       "praeteritum": "zog aus",
       "perfekt": "hat ausgezogen / ist ausgezogen",
-      "auxiliary": "haben (clothes) / sein (move)",
+      "auxiliary": "haben",
       "rektion": "die Schuhe / den Mantel (Akk) ausziehen · aus der Wohnung ausziehen",
       "separablePrefix": "aus",
       "verbStem": "ziehen"
@@ -30323,7 +30323,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
   },
   {
     "id": "a2-d07-075",
-    "lemma": "zuhören (+ Dat)",
+    "lemma": "zuhören",
     "spokenText": "zuhören",
     "cefr": "A2",
     "category": "verb",
@@ -30401,7 +30401,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
       "auxiliary": "haben",
       "rektion": "jemandem (Dat) zuhören",
       "separablePrefix": "zu",
-      "verbStem": "hören (+ Dat)"
+      "verbStem": "hören"
     }
   },
   {
@@ -31893,7 +31893,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
   },
   {
     "id": "a2-d07-099",
-    "lemma": "auffallen (+ Dat)",
+    "lemma": "auffallen",
     "spokenText": "auffallen",
     "cefr": "A2",
     "category": "verb",
@@ -31970,7 +31970,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
       "auxiliary": "sein",
       "rektion": "jemandem (Dat) auffallen",
       "separablePrefix": "auf",
-      "verbStem": "fallen (+ Dat)"
+      "verbStem": "fallen"
     }
   },
   {
@@ -33119,7 +33119,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
   },
   {
     "id": "a2-d08-006",
-    "lemma": "sich (Dat) etwas ansehen",
+    "lemma": "sich etwas ansehen",
     "spokenText": "sich etwas ansehen",
     "cefr": "A2",
     "category": "verb",
@@ -33198,7 +33198,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
       "auxiliary": "haben",
       "rektion": "sich (Dat) einen Film (Akk) ansehen · jemanden (Akk) ansehen",
       "separablePrefix": "an",
-      "verbStem": "ch (Dat) etwas ansehen"
+      "verbStem": "sehen"
     }
   },
   {
@@ -34545,7 +34545,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
   },
   {
     "id": "a2-d08-029",
-    "lemma": "aufpassen (auf + Akk)",
+    "lemma": "aufpassen",
     "spokenText": "aufpassen",
     "cefr": "A2",
     "category": "verb",
@@ -34623,7 +34623,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
       "auxiliary": "haben",
       "rektion": "auf + Akk aufpassen · Pass auf!",
       "separablePrefix": "auf",
-      "verbStem": "passen (auf + Akk)"
+      "verbStem": "passen"
     }
   },
   {
@@ -41552,10 +41552,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
     "exampleDe": "Beim Klettern muss man oft über schmale Kanten balancieren.",
     "exampleEn": "When climbing one often has to balance across narrow ledges.",
     "anatomy": {
-      "ipa": [
-        "balɑ̃ˈsiːʁən",
-        "balanˈsiːʁən"
-      ],
+      "ipa": "balɑ̃ˈsiːʁən · balanˈsiːʁən",
       "caseGovernanceNote": "Hilfsverb im Perfekt: 'sein' (ist balanciert). · Rektion: balancieren über + Akk / auf + Dat",
       "synonyms": [
         "handeln als balancieren",
@@ -45130,7 +45127,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
       "auxiliary": "haben",
       "rektion": "sich anmelden für + Akk / bei + Dat",
       "separablePrefix": "an",
-      "verbStem": "ch anmelden"
+      "verbStem": "melden"
     }
   },
   {
@@ -46716,8 +46713,8 @@ export const RAW_CARDS_DATA: VocabCard[] = [
   },
   {
     "id": "a2-d10-005",
-    "lemma": "überhaupt (nicht / kein)",
-    "spokenText": "überhaupt (nicht / kein), —, —",
+    "lemma": "überhaupt",
+    "spokenText": "überhaupt",
     "cefr": "A2",
     "category": "adj",
     "grammarLabel": "Fokuspartikel · Modalpartikel",
@@ -47174,8 +47171,8 @@ export const RAW_CARDS_DATA: VocabCard[] = [
   },
   {
     "id": "a2-d10-013",
-    "lemma": "wenn ... (dann)",
-    "spokenText": "wenn ...",
+    "lemma": "wenn ... dann",
+    "spokenText": "wenn ... dann",
     "cefr": "A2",
     "category": "conn",
     "grammarLabel": "Konnektoren-Paar · Konditional",
@@ -47219,8 +47216,8 @@ export const RAW_CARDS_DATA: VocabCard[] = [
   },
   {
     "id": "a2-d10-014",
-    "lemma": "nördlich / südlich (Himmelsrichtungen)",
-    "spokenText": "nördlich / südlich (Himmelsrichtungen), nördlich, südlich, im Norden von ...",
+    "lemma": "nördlich / südlich",
+    "spokenText": "nördlich, südlich",
     "cefr": "A2",
     "category": "adj",
     "grammarLabel": "Nomen · Adverb · Orientierung",
@@ -47792,7 +47789,7 @@ export const RAW_CARDS_DATA: VocabCard[] = [
   },
   {
     "id": "a2-d10-024",
-    "lemma": "an ... vorbei (+ Dativ)",
+    "lemma": "an ... vorbei",
     "spokenText": "an ... vorbei",
     "cefr": "A2",
     "category": "preposition",
