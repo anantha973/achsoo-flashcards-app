@@ -11,12 +11,20 @@ export default defineConfig(() => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
-        includeAssets: ['icon.svg', 'apple-touch-icon.png'],
+        includeAssets: [
+          'icon.svg',
+          'apple-touch-icon.png',
+          'pwa-192x192.png',
+          'pwa-512x512.png',
+          'pwa-maskable-512x512.png',
+          'assets/mascot/*.png',
+        ],
         manifest: {
+          id: '/',
           name: 'Achsoo — German Vocabulary & Grammar SRS',
           short_name: 'Achsoo',
           description:
-            'Local-first German Vocabulary & Grammar Flashcards with FSRS Spaced Repetition and native de-DE audio.',
+            'Local-first German Vocabulary & Grammar Flashcards with the Flashcard Fox mascot, Confidence Loop mastery, and native de-DE audio.',
           theme_color: '#FAF8F5',
           background_color: '#FAF8F5',
           display: 'standalone',

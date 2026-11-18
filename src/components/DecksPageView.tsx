@@ -29,6 +29,7 @@ import {
   VocabCard,
   formatNounLemma,
 } from '../data/vocabData';
+import { FoxMascot } from './FoxMascot';
 import {
   ASSIGNABLE_ICONS,
   CustomDeckRecord,
@@ -1579,10 +1580,12 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
             {/* 4. PINNED HERO CARD AT TOP: Fokus-Loop Queue */}
             <div className="surface-paper border px-3 py-2.5 flex items-center justify-between gap-2.5">
               <div className="flex items-center gap-2.5 min-w-0">
-                {renderIconTile({
-                  tint: 'terracotta',
-                  iconId: 'Clock',
-                })}
+                <FoxMascot
+                  pose={lowConfidenceDeck.lowConfidence > 0 ? 'juggler' : 'welcome'}
+                  size="sm"
+                  interactive
+                  speechPlacement="right"
+                />
                 <div className="min-w-0 space-y-0.5">
                   <div className="font-display text-[15px] font-semibold text-[var(--fg-primary)] leading-snug">
                     {lowConfidenceDeck.lowConfidence > 0 ? (
@@ -1632,9 +1635,12 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
               <div className="space-y-2.5">
                 {enrichedFolders.length === 0 ? (
                   <div className="surface-paper border p-5 text-center space-y-3">
-                    <div className="w-9 h-9 rounded-[10px] bg-[var(--intent-primary-soft)] text-[var(--intent-primary)] flex items-center justify-center mx-auto">
-                      <Folder className="w-[18px] h-[18px]" />
-                    </div>
+                    <FoxMascot
+                      pose="studio"
+                      size="md"
+                      interactive
+                      className="mx-auto"
+                    />
                     <div className="space-y-1">
                       <h2 className="font-display text-[15px] font-semibold text-[var(--fg-primary)]">
                         Noch keine Ordner
@@ -1680,7 +1686,13 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
                   </div>
                 ) : (
                   enrichedFolders.length === 0 && (
-                    <div className="surface-paper border p-5 text-center space-y-1.5">
+                    <div className="surface-paper border p-6 text-center space-y-2.5">
+                      <FoxMascot
+                        pose="studio"
+                        size="md"
+                        interactive
+                        className="mx-auto"
+                      />
                       <div className="font-display text-[15px] font-semibold text-[var(--fg-primary)]">
                         Keine passenden Decks gefunden
                       </div>

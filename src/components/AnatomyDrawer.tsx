@@ -16,6 +16,7 @@ import {
 import { useSheetSwipeDismiss } from '../hooks/useMobileGestures';
 import { triggerHapticFeedback } from '../utils/srsEngine';
 import { Button } from './HeroPrimitives';
+import { FoxMascot } from './FoxMascot';
 import { PillOption, SlidingPillSwitcher } from './SlidingPillSwitcher';
 
 const ANATOMY_TAB_MEMORY_KEY = 'achsoo_anatomy_tab_memory_v2';
@@ -563,6 +564,12 @@ export const AnatomyDrawer: React.FC<AnatomyDrawerProps> = ({
             </div>
 
             <div className="flex items-center gap-1.5 shrink-0">
+              <FoxMascot
+                pose="aha"
+                size="sm"
+                interactive
+                speechPlacement="bottom"
+              />
               <Button
                 intent={speakingId === 'drawer-lemma' ? 'primary' : 'tertiary'}
                 size="icon"
@@ -1534,13 +1541,22 @@ const AnatomyFamilyAndTipSection: React.FC<{
       )}
 
       {card.anatomy.b1ExamTip && (
-        <div className="pt-4 border-t border-[var(--border-subtle)] space-y-1.5">
-          <div className="text-xs font-bold text-[var(--intent-warning)]">
-            B1 Prüfungs- &amp; Praxis-Tipp
+        <div className="pt-4 border-t border-[var(--border-subtle)] flex items-start gap-3">
+          <FoxMascot
+            pose="studio"
+            size="sm"
+            interactive
+            speechPlacement="top"
+            className="mt-0.5"
+          />
+          <div className="space-y-1 min-w-0">
+            <div className="text-xs font-bold text-[var(--intent-warning)]">
+              Studio-Fuchs · B1 Prüfungs- &amp; Praxis-Tipp
+            </div>
+            <p className="text-xs sm:text-[13px] text-[var(--fg-secondary)] leading-relaxed">
+              {card.anatomy.b1ExamTip}
+            </p>
           </div>
-          <p className="text-xs sm:text-[13px] text-[var(--fg-secondary)] leading-relaxed">
-            {card.anatomy.b1ExamTip}
-          </p>
         </div>
       )}
     </div>

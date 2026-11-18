@@ -64,6 +64,11 @@ import {
   ProgressBar,
   SemanticIntent,
 } from './components/HeroPrimitives';
+import {
+  FOX_POSE_CATALOG,
+  FoxMascot,
+  FoxMascotPose,
+} from './components/FoxMascot';
 import { RecallEaseHeatmap } from './components/RecallEaseHeatmap';
 import { SlidingPillSwitcher } from './components/SlidingPillSwitcher';
 import { useSheetSwipeDismiss } from './hooks/useMobileGestures';
@@ -794,10 +799,23 @@ export default function App() {
   }, [navigateToView]);
 
   const brandTriadPose = brandClickSeq % 3;
+  const brandFoxPoses: ReadonlyArray<FoxMascotPose> = [
+    'aha',
+    'welcome',
+    'juggler',
+    'champion',
+    'studio',
+    'runner',
+  ];
+  const activeBrandFoxPose =
+    brandFoxPoses[brandClickSeq % brandFoxPoses.length];
   const brandAhaExpressions = [
     { de: 'Ach so!', en: 'Aha!' },
-    { de: 'Genau!', en: 'Spot on' },
-    { de: 'Alles klar!', en: 'Crystal clear' },
+    { de: 'Los geht’s!', en: 'Let’s dive in' },
+    { de: 'Im Fokus-Loop!', en: 'In the groove' },
+    { de: 'Meisterhaft!', en: 'Champion mode' },
+    { de: 'Schlau wie ein Fuchs!', en: 'Clever as a fox' },
+    { de: 'Starkes Tempo!', en: 'Unstoppable streak' },
   ];
   const activeBrandExpression =
     brandAhaExpressions[brandClickSeq % brandAhaExpressions.length];
@@ -3718,22 +3736,40 @@ export default function App() {
 
                 <div className="flex-1 space-y-1 md:space-y-1.5">
                   <div className="flex items-center justify-between text-xs md:text-[13px] font-sans tabular-nums gap-2">
-                    <span className="font-semibold text-[var(--fg-primary)] truncate">
-                      {activeLoopState.phase === 'sweep' ? (
-                        <>
-                          Final Sweep{' '}
-                          <span className="text-[var(--fg-muted)] font-normal">
-                            ({activeLoopState.sweepQueue.length} übrig)
-                          </span>
-                        </>
-                      ) : (
-                        <>
-                          {activeLoopState.clearedIds.length}{' '}
-                          <span className="text-[var(--fg-muted)] font-normal">
-                            / {studyDeck.length} klar · {activeLoopState.activePool.length} aktiv
-                          </span>
-                        </>
-                      )}
+                    <span className="inline-flex items-center gap-1.5 font-semibold text-[var(--fg-primary)] truncate min-w-0">
+                      <FoxMascot
+                        pose={
+                          activeLoopState.phase === 'sweep'
+                            ? 'juggler'
+                            : activeLoopState.virtualClock === 0
+                              ? 'welcome'
+                              : recentRatingEcho === '4' ||
+                                  recentRatingEcho === '5'
+                                ? 'aha'
+                                : 'juggler'
+                        }
+                        size="xs"
+                        interactive
+                        speechPlacement="right"
+                      />
+                      <span className="truncate">
+                        {activeLoopState.phase === 'sweep' ? (
+                          <>
+                            Final Sweep{' '}
+                            <span className="text-[var(--fg-muted)] font-normal">
+                              ({activeLoopState.sweepQueue.length} übrig)
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            {activeLoopState.clearedIds.length}{' '}
+                            <span className="text-[var(--fg-muted)] font-normal">
+                              / {studyDeck.length} klar ·{' '}
+                              {activeLoopState.activePool.length} aktiv
+                            </span>
+                          </>
+                        )}
+                      </span>
                     </span>
                     <div className="flex items-center gap-1.5 text-[var(--fg-secondary)] shrink-0">
                       {recentRatingEcho ? (
@@ -3827,9 +3863,13 @@ export default function App() {
             {/* Empty Low Confidence Queue OR Deck Done Celebration State */}
             {studyDeck.length === 0 ? (
               <Card.Root className="p-6 sm:p-10 text-center space-y-4 my-2 surface-paper">
-                <div className="w-12 h-12 rounded-2xl bg-[var(--intent-success-soft)] text-[var(--intent-success)] flex items-center justify-center mx-auto">
-                  <CheckCircle2 className="w-6 h-6" />
-                </div>
+                <FoxMascot
+                  pose="studio"
+                  size="xl"
+                  interactive
+                  cyclePosesOnClick
+                  className="mx-auto"
+                />
                 <div className="space-y-1.5">
                   <h2 className="font-display text-xl font-bold text-[var(--fg-primary)]">
                     Keine Fokus-Karten offen
@@ -3859,9 +3899,13 @@ export default function App() {
               </Card.Root>
             ) : isActiveDeckDone ? (
               <Card.Root className="p-6 sm:p-10 text-center space-y-4 my-2 surface-paper">
-                <div className="w-12 h-12 rounded-2xl bg-[var(--intent-success-soft)] text-[var(--intent-success)] flex items-center justify-center mx-auto">
-                  <Trophy className="w-6 h-6" />
-                </div>
+                <FoxMascot
+                  pose="champion"
+                  size="hero"
+                  interactive
+                  cyclePosesOnClick
+                  className="mx-auto"
+                />
                 <div className="space-y-1.5">
                   <h2 className="font-display text-xl font-bold text-[var(--fg-primary)]">
                     Deck geschafft!
@@ -4750,9 +4794,12 @@ export default function App() {
             <Card.Root className="p-5 space-y-4 surface-paper">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-[var(--radius-control)] bg-[var(--intent-primary-soft)] text-[var(--intent-primary)] flex items-center justify-center shrink-0">
-                    <TrendingUp className="w-4 h-4" />
-                  </div>
+                  <FoxMascot
+                    pose="runner"
+                    size="sm"
+                    interactive
+                    speechPlacement="right"
+                  />
                   <div>
                     <h2 className="font-display text-sm font-bold text-[var(--fg-primary)]">
                       Learning Velocity
@@ -4846,9 +4893,12 @@ export default function App() {
             <Card.Root className="p-5 space-y-4 surface-paper">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-xl bg-[var(--intent-warning-soft)] text-[var(--intent-warning)] flex items-center justify-center shrink-0">
-                    <Trophy className="w-4 h-4" />
-                  </div>
+                  <FoxMascot
+                    pose="champion"
+                    size="sm"
+                    interactive
+                    speechPlacement="right"
+                  />
                   <div>
                     <h2 className="font-display text-sm font-bold text-[var(--fg-primary)]">
                       Personal Milestones
@@ -4928,6 +4978,77 @@ export default function App() {
               </div>
             </Card.Root>
 
+            {/* Interactive Flashcard Fox Mascot Gallery (All 6 Poses & Situations) */}
+            <Card.Root className="p-5 space-y-4 surface-paper">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="font-display text-sm font-bold text-[var(--fg-primary)]">
+                    Der Flashcard-Fuchs · Dein Lernbegleiter
+                  </h2>
+                  <p className="text-xs text-[var(--fg-secondary)]">
+                    Tippe auf eine Pose für Animation &amp; Spruch — jede Haltung begleitet eine Phase deines Lern-Loops
+                  </p>
+                </div>
+                <span className="text-xs font-sans font-semibold text-[var(--accent-secondary)] shrink-0">
+                  6 Posen · 800px Retina
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                {(
+                  [
+                    {
+                      pose: 'welcome' as const,
+                      situation: 'Deck-Start & Begrüßung',
+                    },
+                    {
+                      pose: 'juggler' as const,
+                      situation: 'Fokus-Loop & Final Sweep',
+                    },
+                    {
+                      pose: 'aha' as const,
+                      situation: 'Ach-so!-Moment & Logo',
+                    },
+                    {
+                      pose: 'studio' as const,
+                      situation: 'Wort-Anatomie & Fokus frei',
+                    },
+                    {
+                      pose: 'runner' as const,
+                      situation: 'Tages-Serie & Tempo',
+                    },
+                    {
+                      pose: 'champion' as const,
+                      situation: 'Deck geschafft! & Meilenstein',
+                    },
+                  ] as const
+                ).map(({ pose, situation }) => {
+                  const meta = FOX_POSE_CATALOG[pose];
+                  return (
+                    <div
+                      key={pose}
+                      className="p-3 rounded-2xl surface-2 border flex flex-col items-center text-center gap-2"
+                    >
+                      <FoxMascot
+                        pose={pose}
+                        size="md"
+                        interactive
+                        speechPlacement="top"
+                      />
+                      <div className="space-y-0.5 min-w-0 w-full">
+                        <div className="font-display text-xs font-bold text-[var(--fg-primary)] truncate">
+                          {meta.germanTitle}
+                        </div>
+                        <div className="text-[11px] text-[var(--fg-secondary)] leading-tight">
+                          {situation}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </Card.Root>
+
             {/* Quick Utilities */}
             <Card.Root className="p-5 flex items-center justify-between gap-4 surface-paper">
               <div>
@@ -4995,6 +5116,24 @@ export default function App() {
               </div>
             </div>
 
+            {archiveCards.length === 0 ? (
+              <Card.Root className="p-8 text-center space-y-3 surface-paper">
+                <FoxMascot
+                  pose="studio"
+                  size="lg"
+                  interactive
+                  className="mx-auto"
+                />
+                <div className="space-y-1">
+                  <h3 className="font-display text-base font-bold text-[var(--fg-primary)]">
+                    Keine passenden Wörter im Archiv
+                  </h3>
+                  <p className="text-xs text-[var(--fg-secondary)]">
+                    Der Studio-Fuchs hat für „{archiveSearchQuery}“ noch keinen Treffer gefunden.
+                  </p>
+                </div>
+              </Card.Root>
+            ) : (
             <Card.Root className="divide-y divide-[var(--border-subtle)] overflow-hidden surface-paper">
               {archiveCards.map((card) => (
                   <div
@@ -5088,6 +5227,7 @@ export default function App() {
                   </div>
               ))}
             </Card.Root>
+            )}
           </div>
         )}
     </>
@@ -5099,18 +5239,18 @@ export default function App() {
       {!isZenSessionActive && (
         <header className="sticky top-0 z-30 h-14 surface-1/90 backdrop-blur-xl border-b border-[var(--border-subtle)]">
           <div className="max-w-5xl mx-auto h-full flex items-center justify-between gap-3 sm:gap-6 px-3.5 sm:px-6">
-            {/* Zone 1: Interactive Nordic Linen Brand Icon + Animated Wordmark */}
+            {/* Zone 1: Interactive Flashcard Fox Mascot Emblem + Animated Wordmark */}
             <div className="relative flex items-center shrink-0">
               <button
                 type="button"
                 onClick={handleBrandClick}
-                aria-label="Achsoo — Return to Study & cycle Nordic triad emblem"
-                title="Achsoo! Click to animate & return to Study"
+                aria-label="Achsoo — Flashcard Fox Mascot · Click to animate & open Decks"
+                title="Achsoo! Click to animate the Flashcard Fox & open Decks"
                 className={`brand-lockup group cursor-pointer theme-focus ${
                   isBrandClicking ? 'is-clicking' : ''
                 }`}
               >
-                {/* Interactive Multi-Layer Nordic App Icon (Sage Green, Terracotta Coral, Fjord Blue) */}
+                {/* Interactive Flashcard Fox Mascot Avatar */}
                 <span className="brand-icon-stage" aria-hidden="true">
                   {isBrandClicking && (
                     <span
@@ -5118,129 +5258,13 @@ export default function App() {
                       className="brand-click-ring"
                     />
                   )}
-                  {/* Back Fanned Mini-Card 1 (Coral / Fjord / Sage cycle) */}
-                  <span
-                    className="brand-card-coral"
-                    style={{
-                      backgroundColor:
-                        brandTriadPose === 0
-                          ? 'var(--brand-coral)'
-                          : brandTriadPose === 1
-                            ? 'var(--brand-fjord)'
-                            : 'var(--brand-sage)',
-                    }}
+                  <img
+                    src={FOX_POSE_CATALOG[activeBrandFoxPose].src}
+                    alt=""
+                    referrerPolicy="no-referrer"
+                    draggable={false}
+                    className="brand-fox-avatar"
                   />
-                  {/* Back Fanned Mini-Card 2 (Fjord / Sage / Coral cycle) */}
-                  <span
-                    className="brand-card-fjord"
-                    style={{
-                      backgroundColor:
-                        brandTriadPose === 0
-                          ? 'var(--brand-fjord)'
-                          : brandTriadPose === 1
-                            ? 'var(--brand-sage)'
-                            : 'var(--brand-coral)',
-                    }}
-                  />
-                  {/* Front Nordic Emblem Tile */}
-                  <span
-                    className="brand-card-front"
-                    style={{
-                      backgroundColor:
-                        brandTriadPose === 0
-                          ? 'var(--brand-sage)'
-                          : brandTriadPose === 1
-                            ? 'var(--brand-coral)'
-                            : 'var(--brand-fjord)',
-                    }}
-                  >
-                    <svg
-                      viewBox="0 0 22 30"
-                      className="w-[19px] h-[27px] overflow-visible"
-                    >
-                      {/* Warm Linen Portrait Inner Flashcard */}
-                      <rect
-                        x="1.5"
-                        y="1.5"
-                        width="19"
-                        height="27"
-                        rx="4.5"
-                        fill="var(--brand-linen)"
-                      />
-                      {/* Top-left subtle flashcard index pill */}
-                      <rect
-                        x="4.2"
-                        y="5.2"
-                        width="5"
-                        height="1.5"
-                        rx="0.75"
-                        opacity="0.32"
-                        fill={
-                          brandTriadPose === 0
-                            ? 'var(--brand-sage)'
-                            : brandTriadPose === 1
-                              ? 'var(--brand-coral)'
-                              : 'var(--brand-fjord)'
-                        }
-                      />
-                      {/* Terracotta Coral Spark Dot */}
-                      <circle
-                        cx="16"
-                        cy="6"
-                        r="1.95"
-                        className="brand-spark-dot"
-                        fill={
-                          brandTriadPose === 0
-                            ? 'var(--brand-coral)'
-                            : brandTriadPose === 1
-                              ? 'var(--brand-fjord)'
-                              : 'var(--brand-sage)'
-                        }
-                      />
-                      {/* Achsoo 'A' Monogram */}
-                      <path
-                        d="M10.35 9.2L6.2 21h2.4l0.85-2.6h3.1l0.85 2.6h2.4L11.65 9.2h-1.3zm-0.55 7l1.2-3.65 1.2 3.65H9.8z"
-                        fill={
-                          brandTriadPose === 0
-                            ? 'var(--brand-sage)'
-                            : brandTriadPose === 1
-                              ? 'var(--brand-coral)'
-                              : 'var(--brand-fjord)'
-                        }
-                      />
-                      {/* Fjord Blue / Triad Crossbar Accent */}
-                      <rect
-                        x="8.2"
-                        y="16.4"
-                        width="5.6"
-                        height="1.45"
-                        rx="0.72"
-                        fill={
-                          brandTriadPose === 0
-                            ? 'var(--brand-fjord)'
-                            : brandTriadPose === 1
-                              ? 'var(--brand-sage)'
-                              : 'var(--brand-coral)'
-                        }
-                      />
-                      {/* Subtle bottom flashcard rule */}
-                      <rect
-                        x="5.8"
-                        y="23.6"
-                        width="10.4"
-                        height="1.3"
-                        rx="0.65"
-                        opacity="0.28"
-                        fill={
-                          brandTriadPose === 0
-                            ? 'var(--brand-fjord)'
-                            : brandTriadPose === 1
-                              ? 'var(--brand-sage)'
-                              : 'var(--brand-coral)'
-                        }
-                      />
-                    </svg>
-                  </span>
                 </span>
 
                 {/* Animated Wordmark with Nordic Triad Accents & 3-Segment Ribbon */}
