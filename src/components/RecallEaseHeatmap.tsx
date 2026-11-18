@@ -169,7 +169,7 @@ const TIER_STYLES: Record<
     borderStyle: 'border border-[var(--conf-1-border)]',
     accentColor: 'var(--conf-1)',
     dotBg: 'bg-[var(--conf-1)]',
-    diagnosticText: 'Fokus empfohlen (1–2)',
+    diagnosticText: 'Fokus empfohlen',
     diagnosticColor: 'text-[var(--conf-1)]',
   },
   building: {
@@ -193,7 +193,7 @@ const TIER_STYLES: Record<
     borderStyle: 'border border-[var(--conf-5-border)]',
     accentColor: 'var(--conf-5)',
     dotBg: 'bg-[var(--conf-5)]',
-    diagnosticText: 'Sicher beherrscht (4–5)',
+    diagnosticText: 'Sicher beherrscht',
     diagnosticColor: 'text-[var(--conf-5)]',
   },
 };
@@ -414,8 +414,8 @@ export const RecallEaseHeatmap: React.FC<RecallEaseHeatmapProps> = ({
             </h2>
             <p className="text-xs text-[var(--fg-secondary)] leading-snug">
               {mode === 'confidence'
-                ? 'Vertrauen (1–5) je Bereich & CEFR-Stufe'
-                : 'Anteil sicherer Karten (4–5) je Bereich & CEFR-Stufe'}
+                ? 'Vertrauen je Bereich & CEFR-Stufe'
+                : 'Anteil sicherer Karten je Bereich & CEFR-Stufe'}
             </p>
           </div>
         </div>
@@ -423,7 +423,7 @@ export const RecallEaseHeatmap: React.FC<RecallEaseHeatmapProps> = ({
         <SlidingPillSwitcher
           options={[
             { id: 'confidence', label: 'Vertrauen %' },
-            { id: 'mastery', label: 'Stufe 4–5' },
+            { id: 'mastery', label: 'Sicher %' },
           ]}
           value={mode}
           onChange={setMode}
@@ -740,7 +740,7 @@ export const RecallEaseHeatmap: React.FC<RecallEaseHeatmapProps> = ({
                   </strong>
                 </span>
                 <span>
-                  Sicher (4–5){' '}
+                  Sicher{' '}
                   <strong className="font-semibold text-[var(--fg-primary)]">
                     {activeCell.masteredCount}
                   </strong>

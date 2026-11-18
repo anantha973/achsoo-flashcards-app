@@ -1029,11 +1029,11 @@ export default function App() {
       },
       {
         id: 'low-confidence',
-        title: 'Low Confidence (1–2)',
-        shortTitle: 'Fokus 1–2',
-        subtitle: 'Karten mit Unsicherheit (1–2) zum gezielten Wiederholen',
+        title: 'Fokus-Loop',
+        shortTitle: 'Fokus',
+        subtitle: 'Unsichere Karten zum gezielten Wiederholen',
         categoryGroup: 'smart',
-        levelTag: 'Fokus 1–2',
+        levelTag: 'Fokus',
         icon: Clock,
         iconBg: 'bg-[var(--intent-warning-soft)] text-[var(--intent-warning)]',
         intent: 'warning',
@@ -3832,10 +3832,10 @@ export default function App() {
                 </div>
                 <div className="space-y-1.5">
                   <h2 className="font-display text-xl font-bold text-[var(--fg-primary)]">
-                    Keine Karten mit Fokus 1–2
+                    Keine Fokus-Karten offen
                   </h2>
                   <p className="text-xs sm:text-sm text-[var(--fg-secondary)] max-w-sm mx-auto">
-                    Momentan hat keine Karte eine niedrige Confidence (1–2). Starte einfach ein Deck oder alle {cards.length} Karten.
+                    Momentan ist keine Karte als unsicher markiert. Starte einfach ein Deck oder alle {cards.length} Karten.
                   </p>
                 </div>
                 <div className="pt-2 flex items-center justify-center gap-3">
@@ -4698,7 +4698,7 @@ export default function App() {
               <Card.Root className="p-4 space-y-2 surface-paper">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold text-[var(--fg-secondary)]">
-                    Fokus (1–2)
+                    Fokus
                   </span>
                   <Clock className="w-4 h-4 text-[var(--accent-terracotta)]" />
                 </div>

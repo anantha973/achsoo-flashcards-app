@@ -1051,12 +1051,12 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
             {deck.lowConfidence > 0 && (
               <span className="hidden min-[375px]:inline">
                 {' '}
-                · {deck.lowConfidence} Fokus (1–2)
+                · {deck.lowConfidence} Fokus
               </span>
             )}
             <span className="hidden min-[375px]:inline">
               {' '}
-              · {deck.mastered} sicher (4–5)
+              · {deck.mastered} sicher
             </span>
           </div>
         </div>
@@ -1188,7 +1188,7 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
             {folder.totalLowConfidence > 0 && (
               <span className="hidden min-[375px]:inline">
                 {' '}
-                · {folder.totalLowConfidence} Fokus (1–2)
+                · {folder.totalLowConfidence} Fokus
               </span>
             )}
           </div>
@@ -1485,7 +1485,7 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
                   className="min-w-0"
                 />
 
-                {/* Sort Dropdown Menu ("Last Studied" | "Low Confidence 1–2" | "Name") */}
+                {/* Sort Dropdown Menu ("Last Studied" | "Fokus" | "Name") */}
                 <div ref={sortMenuRef} className="relative shrink-0">
                   <button
                     type="button"
@@ -1508,7 +1508,7 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
                       {sortOption === 'last-studied'
                         ? 'Last Studied'
                         : sortOption === 'low-confidence'
-                        ? 'Fokus 1–2'
+                        ? 'Fokus'
                         : 'Name'}
                     </span>
                     <ChevronDown
@@ -1528,7 +1528,7 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
                       {(
                         [
                           { id: 'last-studied', label: 'Last Studied' },
-                          { id: 'low-confidence', label: 'Low Confidence (1–2)' },
+                          { id: 'low-confidence', label: 'Fokus' },
                           { id: 'name', label: 'Name' },
                         ] as const
                       ).map((opt) => {
@@ -1576,7 +1576,7 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
               )}
             </div>
 
-            {/* 4. PINNED HERO CARD AT TOP: Low Confidence (1-2) Focus Queue */}
+            {/* 4. PINNED HERO CARD AT TOP: Fokus-Loop Queue */}
             <div className="surface-paper border px-3 py-2.5 flex items-center justify-between gap-2.5">
               <div className="flex items-center gap-2.5 min-w-0">
                 {renderIconTile({
@@ -1589,7 +1589,7 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
                       <>
                         Fokus-Loop:{' '}
                         <span className="tabular-nums text-[var(--accent-terracotta)]">
-                          {lowConfidenceDeck.lowConfidence} unsicher (1–2)
+                          {lowConfidenceDeck.lowConfidence} unsicher
                         </span>
                       </>
                     ) : (
@@ -1598,7 +1598,7 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
                   </div>
                   <div className="font-sans text-[12px] text-[var(--fg-muted)] tabular-nums truncate">
                     {lowConfidenceDeck.lowConfidence > 0
-                      ? `Low Confidence 1–2 · ${lowConfidenceDeck.mastered} sicher (4–5)`
+                      ? `Gezieltes Training · ${lowConfidenceDeck.mastered} sicher`
                       : `Alle ${allCards.length} Karten · Wähle ein Deck oder starte den Gesamt-Loop`}
                   </div>
                 </div>
@@ -1750,7 +1750,7 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
                   <div className="font-sans text-[12px] text-[var(--fg-muted)] tabular-nums truncate">
                     {activeFolder.deckCount}{' '}
                     {activeFolder.deckCount === 1 ? 'Deck' : 'Decks'} ·{' '}
-                    {activeFolder.totalLowConfidence} Fokus (1–2) ·{' '}
+                    {activeFolder.totalLowConfidence} Fokus ·{' '}
                     {activeFolder.progressPct}% Vertrauen
                   </div>
                 </div>
@@ -1897,7 +1897,7 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
                   </h1>
                   <div className="font-sans text-[12px] text-[var(--fg-muted)] tabular-nums whitespace-nowrap">
                     <span>{activeDetailDeck.total} Karten</span>
-                    <span> · {activeDetailDeck.mastered} sicher (4–5)</span>
+                    <span> · {activeDetailDeck.mastered} sicher</span>
                     <span> · {activeDetailDeck.progressPct}% Vertrauen</span>
                   </div>
                 </div>
