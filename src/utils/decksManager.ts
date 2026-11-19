@@ -447,6 +447,12 @@ export const DUMMY_BUILTIN_DECK_IDS = [
 
 export type DeckSortOption = 'last-studied' | 'low-confidence' | 'name';
 
+export type DeckStudyDirection = 'de-en' | 'en-de';
+
+export function normalizeStudyDirection(dir?: unknown): DeckStudyDirection {
+  return dir === 'en-de' ? 'en-de' : 'de-en';
+}
+
 export interface DeckFolder {
   id: string;
   name: string;
@@ -465,6 +471,7 @@ export interface CustomDeckRecord {
   folderId: string | null;
   cardIds: string[];
   levelTag: string;
+  studyDirection?: DeckStudyDirection;
   createdAt: number;
 }
 
@@ -474,6 +481,7 @@ export interface DeckMetaOverride {
   tint?: DeckTintId;
   folderId?: string | null;
   hidden?: boolean;
+  studyDirection?: DeckStudyDirection;
 }
 
 export interface UnifiedDeckItem {
@@ -492,6 +500,7 @@ export interface UnifiedDeckItem {
   iconId: string;
   tint: DeckTintId;
   folderId: string | null;
+  studyDirection: DeckStudyDirection;
   createdAt: number;
 }
 
@@ -904,6 +913,7 @@ export interface LastStudySessionState {
   deckId: string;
   isCustomQueue: boolean;
   shortTitle?: string;
+  studyDirection?: DeckStudyDirection;
   cardIds?: string[];
 }
 
@@ -929,6 +939,12 @@ export function loadLastStudySession(): LastStudySessionState | null {
       isCustomQueue: Boolean(parsed.isCustomQueue),
       shortTitle:
         typeof parsed.shortTitle === 'string' ? parsed.shortTitle : undefined,
+      studyDirection:
+        parsed.studyDirection === 'en-de'
+          ? 'en-de'
+          : parsed.studyDirection === 'de-en'
+          ? 'de-en'
+          : undefined,
       cardIds: Array.isArray(parsed.cardIds)
         ? parsed.cardIds.filter((id): id is string => typeof id === 'string')
         : undefined,

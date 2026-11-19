@@ -11,6 +11,7 @@ import {
   clearTrailRatingForUndo,
   ensureBuiltInA2Workspace,
   hasMissingBuiltInA2Workspace,
+  normalizeStudyDirection,
   recordTrailRating,
   resolveSavedDeckIndex,
   stepTrailNext,
@@ -260,5 +261,56 @@ describe('study trail rating gate, backward rating visibility & spaced repetitio
     expect(undone.trail.entries).toEqual([{ cardId: 'c1' }]);
   });
 });
+
+describe('per-deck card studyDirection persistence and safety', () => {
+  it('normalizes unknown or omitted studyDirection safely to de-en', () => {
+    expect(normalizeStudyDirection('en-de')).toBe('en-de');
+    expect(normalizeStudyDirection('de-en')).toBe('de-en');
+    expect(normalizeStudyDirection(undefined)).toBe('de-en');
+    expect(normalizeStudyDirection('invalid')).toBe('de-en');
+  });
+
+  it('preserves studyDirection across A2 workspace healing and archive migrations', () => {
+    const flippedA2: CustomDeckRecord = {
+      ...DEFAULT_A2_CUSTOM_DECKS[0],
+      folderId: ARCHIVE_FOLDER_ID,
+      studyDirection: 'en-de',
+      cardIds: DEFAULT_A2_CUSTOM_DECKS[0].cardIds.slice(0, 3),
+    };
+    const userFlippedDeck: CustomDeckRecord = {
+      id: 'custom-flipped-1',
+      title: 'Flipped Custom',
+      subtitle: 'Custom',
+      icon: 'Star',
+      tint: 'sage',
+      folderId: null,
+      cardIds: ['v1'],
+      levelTag: 'Custom',
+      studyDirection: 'en-de',
+      createdAt: 1710000003000,
+    };
+
+    const migrated = archiveDummyDecksInWorkspace({
+      folders: [],
+      customDecks: [flippedA2, userFlippedDeck],
+      deckOverrides: {
+        all: { studyDirection: 'en-de' },
+        verb: { studyDirection: 'en-de' },
+      },
+    });
+
+    const healedA2 = migrated.customDecks.find((d) => d.id === flippedA2.id);
+    expect(healedA2?.studyDirection).toBe('en-de');
+    expect(healedA2?.folderId).toBe(A2_NETZWERK_FOLDER_ID);
+
+    const migratedUser = migrated.customDecks.find(
+      (d) => d.id === userFlippedDeck.id
+    );
+    expect(migratedUser?.studyDirection).toBe('en-de');
+    expect(migrated.deckOverrides.all?.studyDirection).toBe('en-de');
+    expect(migrated.deckOverrides.verb?.studyDirection).toBe('en-de');
+  });
+});
+
 
 

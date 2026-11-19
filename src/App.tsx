@@ -81,6 +81,7 @@ import {
   CustomDeckRecord,
   DeckFolder,
   DeckMetaOverride,
+  DeckStudyDirection,
   DeckTintId,
   LastStudySessionState,
   StudyDeckTrail,
@@ -95,6 +96,7 @@ import {
   loadStudyDeckPositions,
   loadStudyDeckTrails,
   needsRemoteArchiveDummyMigration,
+  normalizeStudyDirection,
   recordTrailRating,
   resolveSavedDeckIndex,
   saveCustomDecks,
@@ -875,6 +877,7 @@ export default function App() {
     id: string;
     shortTitle: string;
     cards: VocabCard[];
+    studyDirection?: DeckStudyDirection;
   } | null>(() => {
     if (!initialStudySession || !initialStudySession.isCustomQueue) return null;
     const cardById = new Map(cards.map((c) => [c.id, c]));
@@ -891,6 +894,9 @@ export default function App() {
           id: matchedCustom.id,
           shortTitle: ov?.title || matchedCustom.title,
           cards: matchedCards,
+          studyDirection: normalizeStudyDirection(
+            matchedCustom.studyDirection ?? initialStudySession.studyDirection
+          ),
         };
       }
     }
@@ -903,6 +909,9 @@ export default function App() {
           id: initialStudySession.deckId,
           shortTitle: initialStudySession.shortTitle || 'Study Session',
           cards: restoredCards,
+          studyDirection: normalizeStudyDirection(
+            initialStudySession.studyDirection
+          ),
         };
       }
     }
@@ -1499,6 +1508,7 @@ export default function App() {
             ov?.icon && ov.icon !== 'level-text' ? ov.icon : cfg.iconId,
           tint: ov?.tint || cfg.tint,
           folderId: ov?.folderId ?? null,
+          studyDirection: normalizeStudyDirection(ov?.studyDirection),
           createdAt: 1700000000000 - idx * 1000,
           lastStudiedAt,
           cards: d.cards,
@@ -1553,6 +1563,7 @@ export default function App() {
         iconId: cd.icon || 'BookOpen',
         tint: cd.tint || 'sage',
         folderId: cd.folderId ?? null,
+        studyDirection: normalizeStudyDirection(cd.studyDirection),
         createdAt: cd.createdAt,
         lastStudiedAt,
         cards: matchingCards,
@@ -1581,6 +1592,21 @@ export default function App() {
       enrichedDecks.find((d) => d.id === selectedDeckId) || enrichedDecks[0]
     );
   }, [customStudyQueue, enrichedDecks, selectedDeckId]);
+
+  const activeStudyDirection: DeckStudyDirection = useMemo(() => {
+    const liveDeck = enrichedUnifiedDecks.find((d) => d.id === activeDeckObj.id);
+    if (liveDeck) return liveDeck.studyDirection;
+    return normalizeStudyDirection(customStudyQueue?.studyDirection);
+  }, [enrichedUnifiedDecks, activeDeckObj.id, customStudyQueue?.studyDirection]);
+
+  const isEnToDe = activeStudyDirection === 'en-de';
+
+  const getCardEnglishPrompt = useCallback((card: VocabCard) => {
+    const trimmed = card.translation?.trim();
+    if (trimmed) return trimmed;
+    const fallbackEn = card.exampleEn?.trim();
+    return fallbackEn || '(No English meaning)';
+  }, []);
 
   const studyDeck = activeDeckObj.cards;
 
@@ -1620,6 +1646,7 @@ export default function App() {
         id: matchedUnified.id,
         shortTitle: matchedUnified.shortTitle,
         cards: matchedUnified.cards,
+        studyDirection: matchedUnified.studyDirection,
       });
       setCurrentIndex(restoredIdx);
       hasRestoredStudyIndexRef.current = true;
@@ -1672,6 +1699,7 @@ export default function App() {
       deckId: activeDeckObj.id,
       isCustomQueue: Boolean(customStudyQueue),
       shortTitle: customStudyQueue?.shortTitle,
+      studyDirection: activeStudyDirection,
       cardIds: customStudyQueue
         ? customStudyQueue.cards.map((c) => c.id)
         : undefined,
@@ -1681,6 +1709,7 @@ export default function App() {
     }
   }, [
     activeDeckObj.id,
+    activeStudyDirection,
     customStudyQueue,
     studyDeck.length,
     currentIndex,
@@ -1716,6 +1745,17 @@ export default function App() {
   useEffect(() => {
     cardShownAtRef.current = performance.now();
   }, [currentCard?.id, activeView]);
+
+  const stopActiveAudio = useCallback(() => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      try {
+        window.speechSynthesis.cancel();
+      } catch {
+        // Ignore synthesis cancel errors
+      }
+    }
+    setSpeakingId(null);
+  }, []);
 
   // Native Web Speech API (de-DE)
   const handlePlayAudio = useCallback(
@@ -1802,6 +1842,7 @@ export default function App() {
   }, [clearCardMotionTimers]);
 
   const resetFlipInstantaneously = useCallback(() => {
+    stopActiveAudio();
     setSuppressFlipTransition(true);
     setIsFlipped(false);
     setIsBackExpanded(false);
@@ -1810,7 +1851,7 @@ export default function App() {
         setSuppressFlipTransition(false);
       });
     });
-  }, []);
+  }, [stopActiveAudio]);
 
   const handlePrevCard = useCallback(() => {
     if (studyDeck.length === 0 || isRatingTransitionRef.current) return;
@@ -2089,6 +2130,7 @@ export default function App() {
     (nextDeckId: DeckId) => {
       if (nextDeckId === selectedDeckId && !customStudyQueue) return;
       userChangedDeckRef.current = true;
+      stopActiveAudio();
       clearRateFirstHint();
       clearRatingFeedback();
       clearCardMotionTimers();
@@ -2150,12 +2192,14 @@ export default function App() {
       clearRatingFeedback,
       clearCardMotionTimers,
       resetFlipInstantaneously,
+      stopActiveAudio,
     ]
   );
 
   const handleUndoLastRating = useCallback(() => {
     const undone = undoLastReview(cards, srsMap);
     if (!undone.undoneEntry) return;
+    stopActiveAudio();
     triggerHapticFeedback(14);
     clearRateFirstHint();
     clearRatingFeedback();
@@ -2204,6 +2248,7 @@ export default function App() {
     activeDeckObj.id,
     clearRateFirstHint,
     clearRatingFeedback,
+    stopActiveAudio,
   ]);
 
   // Flashcard Touch Gesture Handlers (Tap = Flip, Long Press = Audio, Swipe L/R = Next/Prev or Rate, Swipe U/D = Forms/Anatomie/Flip)
@@ -2230,15 +2275,20 @@ export default function App() {
         suppressClick: false,
       };
 
-      longPressAudioTimerRef.current = window.setTimeout(() => {
-        if (cardTouchRef.current && cardTouchRef.current.axis === 'none') {
-          cardTouchRef.current.suppressClick = true;
-          triggerHapticFeedback([10, 25, 10]);
-          handlePlayAudio(currentCard.spokenText, isFlipped ? 'back-lemma' : 'front-lemma');
-        }
-      }, 420);
+      if (!isEnToDe || isFlipped) {
+        longPressAudioTimerRef.current = window.setTimeout(() => {
+          if (cardTouchRef.current && cardTouchRef.current.axis === 'none') {
+            cardTouchRef.current.suppressClick = true;
+            triggerHapticFeedback([10, 25, 10]);
+            handlePlayAudio(
+              currentCard.spokenText,
+              isFlipped ? 'back-lemma' : 'front-lemma'
+            );
+          }
+        }, 420);
+      }
     },
-    [clearLongPressAudio, currentCard, handlePlayAudio, isFlipped]
+    [clearLongPressAudio, currentCard, handlePlayAudio, isEnToDe, isFlipped]
   );
 
   const applyCardDragStyles = useCallback(
@@ -2380,7 +2430,7 @@ export default function App() {
           if (!isFlipped) {
             if (dy < 0) {
               handleFlipCard();
-            } else if (currentCard) {
+            } else if (currentCard && !isEnToDe) {
               triggerHapticFeedback(8);
               handlePlayAudio(currentCard.spokenText, 'front-lemma');
             }
@@ -2415,6 +2465,7 @@ export default function App() {
     [
       clearLongPressAudio,
       applyCardDragStyles,
+      isEnToDe,
       isFlipped,
       isBackExpanded,
       currentCard,
@@ -2712,6 +2763,7 @@ export default function App() {
         triggerHapticFeedback(10);
         setIsZenMode((prev) => !prev);
       } else if (e.key.toLowerCase() === 'd' && currentCard) {
+        if (isEnToDe && !isFlipped && !detailCard) return;
         e.preventDefault();
         triggerHapticFeedback(10);
         setDetailCard((prev) => (prev ? null : currentCard));
@@ -2736,10 +2788,11 @@ export default function App() {
         if (isFlipped) handleRateCard('5');
         else handleFlipCard();
       } else if (e.key.toLowerCase() === 'a') {
+        if (isEnToDe && !isFlipped && !detailCard) return;
         e.preventDefault();
         handlePlayAudio(
           detailCard ? detailCard.spokenText : currentCard?.spokenText,
-          detailCard ? 'drawer-lemma' : 'front-lemma'
+          detailCard ? 'drawer-lemma' : isFlipped ? 'back-lemma' : 'front-lemma'
         );
       } else if (!detailCard && e.key === 'ArrowRight') {
         e.preventDefault();
@@ -2757,6 +2810,7 @@ export default function App() {
     isThemePopoverOpen,
     isAddModalOpen,
     isZenMode,
+    isEnToDe,
     isFlipped,
     isBackExpanded,
     detailCard,
@@ -2775,6 +2829,7 @@ export default function App() {
     customCardsOverride?: VocabCard[]
   ) => {
     userChangedDeckRef.current = true;
+    stopActiveAudio();
     const builtInMatch = enrichedDecks.find((d) => d.id === deckId);
     let targetCardsForResume: VocabCard[] = [];
     let resumedIndex = 0;
@@ -2796,6 +2851,7 @@ export default function App() {
         id: deckId,
         shortTitle: unifiedMatch?.shortTitle || 'Study Session',
         cards: targetCards,
+        studyDirection: unifiedMatch?.studyDirection,
       });
       targetCardsForResume = targetCards;
     }
@@ -4124,7 +4180,11 @@ export default function App() {
                         ref={!isExiting ? flipCardInnerDomRef : undefined}
                         role="button"
                         tabIndex={0}
-                        aria-label={`Flashcard ${currentCard.lemma}. Tap to flip, swipe left to go next after rating, swipe right to go back.`}
+                        aria-label={
+                          isEnToDe
+                            ? `Flashcard English meaning: ${getCardEnglishPrompt(currentCard)}. Tap to flip and reveal the German word.`
+                            : `Flashcard ${currentCard.lemma}. Tap to flip, swipe left to go next after rating, swipe right to go back.`
+                        }
                         onTouchStart={!isExiting ? handleCardTouchStart : undefined}
                         onTouchMove={!isExiting ? handleCardTouchMove : undefined}
                         onTouchEnd={!isExiting ? handleCardTouchEnd : undefined}
@@ -4161,7 +4221,7 @@ export default function App() {
                           </div>
                         )}
 
-                        {/* ==================== LAYER 0: CARD FRONT (THE GERMAN WORD ONLY) ==================== */}
+                        {/* ==================== LAYER 0: CARD FRONT (GERMAN WORD OR ENGLISH PROMPT) ==================== */}
                         <div
                           className={`relative flip-card-face flip-card-front rounded-[var(--radius-card)] surface-paper border fluid-card-pad flex flex-col justify-between ${
                             exitingRating
@@ -4178,8 +4238,8 @@ export default function App() {
                               }}
                             />
                           )}
-                          {/* Top Row: Harmonious Unboxed Previous Rating (when going back) + 44x44px Mobile Audio Button */}
-                          <div className="flex items-center justify-between gap-2">
+                          {/* Top Row: Harmonious Unboxed Previous Rating + Audio Button (DE->EN) or Subtle Direction Cue (EN->DE) */}
+                          <div className="flex items-center justify-between gap-2 min-h-[44px]">
                             {currentVisitRating ? (
                               <span
                                 data-testid="card-previous-rating"
@@ -4215,36 +4275,52 @@ export default function App() {
                             ) : (
                               <span aria-hidden="true" />
                             )}
-                            <button
-                              type="button"
-                              onClick={(e) =>
-                                handlePlayAudio(
-                                  currentCard.spokenText,
-                                  'front-lemma',
-                                  e
-                                )
-                              }
-                              aria-label="Play German pronunciation"
-                              title="Listen [A]"
-                              className={`w-11 h-11 -mr-1 rounded-full flex items-center justify-center transition-all shrink-0 cursor-pointer active:scale-90 theme-focus ${
-                                speakingId === 'front-lemma'
-                                  ? 'bg-[var(--intent-primary-soft)] text-[var(--intent-primary)] scale-105'
-                                  : 'text-[var(--fg-secondary)] hover:text-[var(--fg-primary)] hover:bg-black/[0.04] dark:hover:bg-white/[0.06]'
-                              }`}
-                            >
-                              <Volume2 className="w-5 h-5" />
-                            </button>
+                            {isEnToDe ? (
+                              <span className="font-sans text-[11.5px] font-semibold tracking-wide text-[var(--fg-muted)] select-none">
+                                EN → DE
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={(e) =>
+                                  handlePlayAudio(
+                                    currentCard.spokenText,
+                                    'front-lemma',
+                                    e
+                                  )
+                                }
+                                aria-label="Play German pronunciation"
+                                title="Listen [A]"
+                                className={`w-11 h-11 -mr-1 rounded-full flex items-center justify-center transition-all shrink-0 cursor-pointer active:scale-90 theme-focus ${
+                                  speakingId === 'front-lemma'
+                                    ? 'bg-[var(--intent-primary-soft)] text-[var(--intent-primary)] scale-105'
+                                    : 'text-[var(--fg-secondary)] hover:text-[var(--fg-primary)] hover:bg-black/[0.04] dark:hover:bg-white/[0.06]'
+                                }`}
+                              >
+                                <Volume2 className="w-5 h-5" />
+                              </button>
+                            )}
                           </div>
 
-                        {/* Center: Pure German Word Prompt (Length-Aware Fluid clamp() Font Scaling) */}
+                        {/* Center: Pure German Word Prompt (DE->EN) or Pure English Meaning Prompt (EN->DE) */}
                         <div className="my-auto text-center py-3 sm:py-5 md:py-6 px-1 md:px-3">
-                          <h2
-                            className={`font-lemma font-semibold tracking-tight text-[var(--fg-primary)] break-words text-balance ${getFluidLemmaClass(
-                              currentCard.lemma
-                            )}`}
-                          >
-                            {renderFormattedLemma(currentCard)}
-                          </h2>
+                          {isEnToDe ? (
+                            <h2
+                              className={`font-display font-bold tracking-tight text-[var(--fg-primary)] break-words text-balance ${getFluidMeaningClass(
+                                getCardEnglishPrompt(currentCard)
+                              )}`}
+                            >
+                              {getCardEnglishPrompt(currentCard)}
+                            </h2>
+                          ) : (
+                            <h2
+                              className={`font-lemma font-semibold tracking-tight text-[var(--fg-primary)] break-words text-balance ${getFluidLemmaClass(
+                                currentCard.lemma
+                              )}`}
+                            >
+                              {renderFormattedLemma(currentCard)}
+                            </h2>
+                          )}
                         </div>
 
                         {/* Bottom Row: Subtle Flip Hint */}
@@ -4254,10 +4330,10 @@ export default function App() {
                             <span>Tap to flip</span>
                           </span>
                           <span className="font-sans text-xs sm:hidden">
-                            Swipe · Hold for audio
+                            {isEnToDe ? 'Swipe to navigate' : 'Swipe · Hold for audio'}
                           </span>
                           <span className="font-sans text-xs md:text-[13px] hidden sm:inline">
-                            [Space] Flip · [D] Anatomie
+                            {isEnToDe ? '[Space] Flip' : '[Space] Flip · [D] Anatomie'}
                           </span>
                         </div>
                       </div>
@@ -4389,29 +4465,49 @@ export default function App() {
                                     </button>
                                   </div>
 
-                                  {/* Prominent Centered German Word in Upper 40% */}
+                                  {/* Prominent Centered Anchor in Upper 40% (German in DE->EN, English Prompt in EN->DE) */}
                                   <div className="my-auto text-center py-2 px-1 min-w-0 max-w-full">
-                                    <div
-                                      className={`font-lemma font-semibold tracking-tight text-[var(--fg-primary)] break-words text-balance ${getFluidBackLemmaClass(
-                                        currentCard.lemma
-                                      )}`}
-                                    >
-                                      {renderFormattedLemma(currentCard)}
-                                    </div>
+                                    {isEnToDe ? (
+                                      <div
+                                        className={`font-display font-semibold tracking-tight text-[var(--fg-secondary)] break-words text-balance ${getFluidMeaningClass(
+                                          getCardEnglishPrompt(currentCard)
+                                        )}`}
+                                      >
+                                        {getCardEnglishPrompt(currentCard)}
+                                      </div>
+                                    ) : (
+                                      <div
+                                        className={`font-lemma font-semibold tracking-tight text-[var(--fg-primary)] break-words text-balance ${getFluidBackLemmaClass(
+                                          currentCard.lemma
+                                        )}`}
+                                      >
+                                        {renderFormattedLemma(currentCard)}
+                                      </div>
+                                    )}
                                   </div>
                                 </div>
 
-                                {/* LOWER ~60% ZONE: Prominent Centered English Meaning + Subordinate 3-Forms Whisper Strip */}
+                                {/* LOWER ~60% ZONE: Prominent Centered Reveal Hero + Subordinate 3-Forms Whisper Strip */}
                                 <div className="flex-[3] flex flex-col justify-between pt-3 md:pt-4 min-h-0 min-w-0 max-w-full">
-                                  {/* Center of Lower 60%: Pure English Meaning Hero */}
+                                  {/* Center of Lower 60%: English Meaning Hero (DE->EN) or Revealed German Lemma Hero (EN->DE) */}
                                   <div className="my-auto text-center py-2 sm:py-3 md:py-4 px-1 md:px-3 min-w-0 max-w-full">
-                                    <p
-                                      className={`font-display font-bold tracking-tight text-[var(--fg-primary)] break-words text-balance ${getFluidMeaningClass(
-                                        currentCard.translation
-                                      )}`}
-                                    >
-                                      {currentCard.translation}
-                                    </p>
+                                    {isEnToDe ? (
+                                      <p
+                                        className={`font-lemma font-semibold tracking-tight text-[var(--fg-primary)] break-words text-balance ${getFluidBackLemmaClass(
+                                          currentCard.lemma
+                                        )}`}
+                                      >
+                                        {renderFormattedLemma(currentCard)}
+                                      </p>
+                                    ) : (
+                                      <p
+                                        className={`font-display font-bold tracking-tight text-[var(--fg-primary)] break-words text-balance ${getFluidMeaningClass(
+                                          currentCard.translation
+                                        )}`}
+                                      >
+                                        {currentCard.translation}
+                                      </p>
+                                    )}
                                   </div>
 
                                   {/* Bottom Whisper Strip: Subordinate Smaller 3 Forms + Clean Static ChevronUp */}
@@ -4486,15 +4582,31 @@ export default function App() {
                                   title="Scroll down or tap to return to 40/60 German-English split"
                                 >
                                   <div className="min-w-0 flex items-baseline gap-2 md:gap-2.5 flex-wrap">
-                                    <span className="font-lemma text-sm sm:text-base md:text-lg font-semibold text-[var(--fg-primary)] break-words">
-                                      {renderFormattedLemma(currentCard)}
-                                    </span>
-                                    <span className="text-[var(--fg-muted)] text-xs md:text-sm">
-                                      —
-                                    </span>
-                                    <span className="font-display text-sm sm:text-base md:text-lg font-bold text-[var(--accent-secondary)] truncate max-w-full">
-                                      {currentCard.translation}
-                                    </span>
+                                    {isEnToDe ? (
+                                      <>
+                                        <span className="font-display text-sm sm:text-base md:text-lg font-bold text-[var(--accent-secondary)] truncate max-w-full">
+                                          {getCardEnglishPrompt(currentCard)}
+                                        </span>
+                                        <span className="text-[var(--fg-muted)] text-xs md:text-sm">
+                                          —
+                                        </span>
+                                        <span className="font-lemma text-sm sm:text-base md:text-lg font-semibold text-[var(--fg-primary)] break-words">
+                                          {renderFormattedLemma(currentCard)}
+                                        </span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <span className="font-lemma text-sm sm:text-base md:text-lg font-semibold text-[var(--fg-primary)] break-words">
+                                          {renderFormattedLemma(currentCard)}
+                                        </span>
+                                        <span className="text-[var(--fg-muted)] text-xs md:text-sm">
+                                          —
+                                        </span>
+                                        <span className="font-display text-sm sm:text-base md:text-lg font-bold text-[var(--accent-secondary)] truncate max-w-full">
+                                          {currentCard.translation}
+                                        </span>
+                                      </>
+                                    )}
                                   </div>
 
                                   <span className="w-9 h-9 md:w-10 md:h-10 rounded-full inline-flex items-center justify-center text-xs font-medium text-[var(--fg-muted)] group-hover:text-[var(--fg-primary)] group-hover:bg-black/[0.04] dark:group-hover:bg-white/[0.06] shrink-0">
@@ -4601,7 +4713,7 @@ export default function App() {
                                       className="min-h-[40px] md:min-h-[44px] inline-flex items-center gap-1.5 text-[13px] md:text-sm font-medium text-[var(--fg-muted)] hover:text-[var(--fg-primary)] cursor-pointer"
                                     >
                                       <ChevronDown className="w-3.5 h-3.5 md:w-4 md:h-4" />
-                                      <span>Meaning</span>
+                                      <span>{isEnToDe ? 'German' : 'Meaning'}</span>
                                     </button>
                                   </div>
 

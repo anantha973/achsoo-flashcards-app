@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ArrowLeftRight,
   ArrowUpDown,
   Check,
   ChevronDown,
@@ -37,6 +38,7 @@ import {
   DeckFolder,
   DeckMetaOverride,
   DeckSortOption,
+  DeckStudyDirection,
   DeckTintId,
   ICON_GROUP_ORDER,
   getTintConfig,
@@ -73,6 +75,7 @@ export interface EnrichedUnifiedDeck {
   iconId: string;
   tint: DeckTintId;
   folderId: string | null;
+  studyDirection: DeckStudyDirection;
   createdAt: number;
   lastStudiedAt: number;
   cards: VocabCard[];
@@ -256,6 +259,8 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
   const [editorUseTextTile, setEditorUseTextTile] = useState<boolean>(false);
   const [editorTint, setEditorTint] = useState<DeckTintId>('sage');
   const [editorFolderId, setEditorFolderId] = useState<string | null>(null);
+  const [editorDirection, setEditorDirection] =
+    useState<DeckStudyDirection>('de-en');
   const [editorSelectedCardIds, setEditorSelectedCardIds] = useState<string[]>(
     []
   );
@@ -662,6 +667,7 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
       setEditorUseTextTile(false);
       setEditorTint(lastChoice.tint);
       setEditorFolderId(options?.initialFolderId ?? null);
+      setEditorDirection('de-en');
       setEditorSelectedCardIds(allCards.slice(0, 8).map((c) => c.id));
       setHasManualIconPick(false);
     } else if (mode === 'edit-deck' && options?.targetId) {
@@ -673,6 +679,7 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
       setEditorUseTextTile(deck.useTextTile);
       setEditorTint(deck.tint);
       setEditorFolderId(deck.folderId);
+      setEditorDirection(deck.studyDirection || 'de-en');
       setEditorSelectedCardIds(deck.cards.map((c) => c.id));
       setHasManualIconPick(true);
     } else if (mode === 'create-folder') {
@@ -682,6 +689,7 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
       setEditorUseTextTile(false);
       setEditorTint(lastChoice.tint);
       setEditorFolderId(null);
+      setEditorDirection('de-en');
       setEditorSelectedCardIds([]);
       setHasManualIconPick(false);
     } else if (mode === 'edit-folder' && options?.targetId) {
@@ -693,6 +701,7 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
       setEditorUseTextTile(false);
       setEditorTint(folder.tint);
       setEditorFolderId(null);
+      setEditorDirection('de-en');
       setEditorSelectedCardIds([]);
       setHasManualIconPick(true);
     }
@@ -704,6 +713,30 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
       autoMoveDeckIdAfterFolderCreate: options?.autoMoveDeckIdAfterFolderCreate,
     });
   };
+
+  const handleSetDeckStudyDirection = useCallback(
+    (deckId: string, nextDirection: DeckStudyDirection) => {
+      triggerHapticFeedback(8);
+      const isCustom = customDecks.some((d) => d.id === deckId);
+      if (isCustom) {
+        onUpdateCustomDecks(
+          customDecks.map((d) =>
+            d.id === deckId ? { ...d, studyDirection: nextDirection } : d
+          )
+        );
+      } else {
+        const prevOverride = deckOverrides[deckId] || {};
+        onUpdateDeckOverrides({
+          ...deckOverrides,
+          [deckId]: {
+            ...prevOverride,
+            studyDirection: nextDirection,
+          },
+        });
+      }
+    },
+    [customDecks, deckOverrides, onUpdateCustomDecks, onUpdateDeckOverrides]
+  );
 
   // Auto-suggest icon & tint from keywords when typing a new deck or folder name
   const handleEditorNameChange = (val: string) => {
@@ -767,6 +800,7 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
         folderId: editorFolderId,
         cardIds: chosenCards,
         levelTag: 'Custom',
+        studyDirection: editorDirection,
         createdAt: Date.now(),
       };
       onUpdateCustomDecks([...customDecks, newDeck]);
@@ -783,6 +817,7 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
                 icon: editorIcon,
                 tint: editorTint,
                 folderId: editorFolderId,
+                studyDirection: editorDirection,
                 cardIds:
                   editorSelectedCardIds.length > 0
                     ? editorSelectedCardIds
@@ -801,6 +836,7 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
             icon: editorUseTextTile ? 'level-text' : editorIcon,
             tint: editorTint,
             folderId: editorFolderId,
+            studyDirection: editorDirection,
           },
         });
       }
@@ -1938,12 +1974,70 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
               </button>
             </div>
 
+            {/* Deck Card Direction Toggle (DE -> EN vs EN -> DE Active Recall) */}
+            <div className="surface-paper border px-3 py-2 flex flex-wrap items-center justify-between gap-2.5">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="w-7 h-7 rounded-[var(--radius-control)] surface-2 border flex items-center justify-center text-[var(--fg-secondary)] shrink-0">
+                  <ArrowLeftRight className="w-3.5 h-3.5" />
+                </span>
+                <div className="min-w-0">
+                  <div className="font-sans text-[12px] font-semibold text-[var(--fg-primary)] leading-tight">
+                    Kartenrichtung
+                  </div>
+                  <div className="font-sans text-[11px] text-[var(--fg-muted)] leading-tight truncate">
+                    {activeDetailDeck.studyDirection === 'en-de'
+                      ? 'Englisch vorne · Deutsches Wort erinnern'
+                      : 'Deutsch vorne · Bedeutung erinnern'}
+                  </div>
+                </div>
+              </div>
+
+              <div
+                role="group"
+                aria-label="Kartenrichtung wählen"
+                className="inline-flex items-center p-0.5 rounded-[var(--radius-control)] surface-2 border shrink-0"
+              >
+                <button
+                  type="button"
+                  aria-pressed={activeDetailDeck.studyDirection !== 'en-de'}
+                  onClick={() =>
+                    handleSetDeckStudyDirection(activeDetailDeck.id, 'de-en')
+                  }
+                  className={`min-h-[44px] px-3.5 rounded-[calc(var(--radius-control)-2px)] font-sans text-[12px] font-semibold transition-all cursor-pointer theme-focus ${
+                    activeDetailDeck.studyDirection !== 'en-de'
+                      ? 'surface-1 text-[var(--fg-primary)] shadow-ring'
+                      : 'text-[var(--fg-muted)] hover:text-[var(--fg-primary)]'
+                  }`}
+                >
+                  DE → EN
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={activeDetailDeck.studyDirection === 'en-de'}
+                  onClick={() =>
+                    handleSetDeckStudyDirection(activeDetailDeck.id, 'en-de')
+                  }
+                  className={`min-h-[44px] px-3.5 rounded-[calc(var(--radius-control)-2px)] font-sans text-[12px] font-semibold transition-all cursor-pointer theme-focus ${
+                    activeDetailDeck.studyDirection === 'en-de'
+                      ? 'bg-[var(--intent-primary)] text-[var(--intent-primary-fg)] shadow-ring'
+                      : 'text-[var(--fg-muted)] hover:text-[var(--fg-primary)]'
+                  }`}
+                >
+                  EN → DE
+                </button>
+              </div>
+            </div>
+
             {/* Unified Grouped Card List inside this Deck */}
             <div className="surface-paper border overflow-hidden divide-y divide-[var(--border-subtle)]">
               {activeDetailDeck.cards.map((card) => {
                 const st = srsMap[card.id] || createDefaultSrsState(card.id);
                 const isLow = isCardLowConfidence(st);
                 const badgeText = formatConfidenceBadge(st);
+                const formattedGerman = card.nounDetails
+                  ? formatNounLemma(card.lemma, card.nounDetails.gender)
+                  : card.lemma;
+                const isEnToDe = activeDetailDeck.studyDirection === 'en-de';
                 return (
                   <div
                     key={card.id}
@@ -1961,9 +2055,7 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
                     <div className="min-w-0 space-y-0.5">
                       <div className="flex items-baseline gap-1.5 flex-wrap">
                         <span className="font-display text-[15px] font-semibold text-[var(--fg-primary)] leading-snug">
-                          {card.nounDetails
-                            ? formatNounLemma(card.lemma, card.nounDetails.gender)
-                            : card.lemma}
+                          {isEnToDe ? card.translation : formattedGerman}
                         </span>
                         <span className="font-sans text-[11.5px] font-semibold text-[var(--accent-secondary)]">
                           {card.cefr}
@@ -1973,7 +2065,7 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
                         </span>
                       </div>
                       <div className="font-sans text-[12.5px] text-[var(--fg-secondary)] truncate">
-                        {card.translation}
+                        {isEnToDe ? formattedGerman : card.translation}
                       </div>
                     </div>
 
@@ -2808,6 +2900,61 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
                             </option>
                           ))}
                       </select>
+                    </div>
+                  )}
+
+                  {/* Study Direction Selector for Decks (DE -> EN vs EN -> DE) */}
+                  {!isFolderEditor && (
+                    <div className="space-y-1.5">
+                      <label className="block font-sans text-[12px] font-semibold text-[var(--fg-secondary)]">
+                        Kartenrichtung
+                      </label>
+                      <div
+                        role="group"
+                        aria-label="Kartenrichtung wählen"
+                        className="grid grid-cols-2 gap-2"
+                      >
+                        <button
+                          type="button"
+                          aria-pressed={editorDirection === 'de-en'}
+                          onClick={() => {
+                            triggerHapticFeedback(6);
+                            setEditorDirection('de-en');
+                          }}
+                          className={`min-h-[44px] px-3 py-2 rounded-[var(--radius-control)] border text-left transition-all cursor-pointer theme-focus ${
+                            editorDirection === 'de-en'
+                              ? 'border-[var(--intent-primary)] bg-[var(--intent-primary-soft)] text-[var(--fg-primary)] shadow-ring'
+                              : 'surface-1 text-[var(--fg-secondary)] hover:text-[var(--fg-primary)]'
+                          }`}
+                        >
+                          <div className="font-sans text-[12.5px] font-semibold leading-tight">
+                            DE → EN
+                          </div>
+                          <div className="font-sans text-[11px] text-[var(--fg-muted)] leading-tight mt-0.5">
+                            Deutsch vorne · Bedeutung
+                          </div>
+                        </button>
+                        <button
+                          type="button"
+                          aria-pressed={editorDirection === 'en-de'}
+                          onClick={() => {
+                            triggerHapticFeedback(6);
+                            setEditorDirection('en-de');
+                          }}
+                          className={`min-h-[44px] px-3 py-2 rounded-[var(--radius-control)] border text-left transition-all cursor-pointer theme-focus ${
+                            editorDirection === 'en-de'
+                              ? 'border-[var(--intent-primary)] bg-[var(--intent-primary-soft)] text-[var(--fg-primary)] shadow-ring'
+                              : 'surface-1 text-[var(--fg-secondary)] hover:text-[var(--fg-primary)]'
+                          }`}
+                        >
+                          <div className="font-sans text-[12.5px] font-semibold leading-tight">
+                            EN → DE
+                          </div>
+                          <div className="font-sans text-[11px] text-[var(--fg-muted)] leading-tight mt-0.5">
+                            Englisch vorne · Aktiv erinnern
+                          </div>
+                        </button>
+                      </div>
                     </div>
                   )}
 
