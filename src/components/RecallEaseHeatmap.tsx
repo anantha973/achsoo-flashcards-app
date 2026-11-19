@@ -1,5 +1,4 @@
 import React, { useMemo, useState } from 'react';
-import * as d3 from 'd3';
 import {
   BookOpen,
   Compass,
@@ -198,6 +197,46 @@ const TIER_STYLES: Record<
   },
 };
 
+function describeDonutArc(
+  startAngle: number,
+  endAngle: number,
+  innerR: number,
+  outerR: number
+): string {
+  const sweep = endAngle - startAngle;
+  // Full-circle ring fallback (SVG single arc cannot draw exact 2*PI from start === end)
+  if (sweep >= Math.PI * 2 - 0.001) {
+    return [
+      `M 0 ${-outerR}`,
+      `A ${outerR} ${outerR} 0 1 1 0 ${outerR}`,
+      `A ${outerR} ${outerR} 0 1 1 0 ${-outerR}`,
+      'Z',
+      `M 0 ${-innerR}`,
+      `A ${innerR} ${innerR} 0 1 0 0 ${innerR}`,
+      `A ${innerR} ${innerR} 0 1 0 0 ${-innerR}`,
+      'Z',
+    ].join(' ');
+  }
+
+  const x1 = Math.sin(startAngle) * outerR;
+  const y1 = -Math.cos(startAngle) * outerR;
+  const x2 = Math.sin(endAngle) * outerR;
+  const y2 = -Math.cos(endAngle) * outerR;
+  const x3 = Math.sin(endAngle) * innerR;
+  const y3 = -Math.cos(endAngle) * innerR;
+  const x4 = Math.sin(startAngle) * innerR;
+  const y4 = -Math.cos(startAngle) * innerR;
+  const largeArc = sweep > Math.PI ? 1 : 0;
+
+  return [
+    `M ${x1.toFixed(3)} ${y1.toFixed(3)}`,
+    `A ${outerR} ${outerR} 0 ${largeArc} 1 ${x2.toFixed(3)} ${y2.toFixed(3)}`,
+    `L ${x3.toFixed(3)} ${y3.toFixed(3)}`,
+    `A ${innerR} ${innerR} 0 ${largeArc} 0 ${x4.toFixed(3)} ${y4.toFixed(3)}`,
+    'Z',
+  ].join(' ');
+}
+
 const CellBreakdownDonut: React.FC<{
   total: number;
   reviewed: number;
@@ -215,23 +254,23 @@ const CellBreakdownDonut: React.FC<{
       { key: 'unseen', value: unseen, color: 'var(--border-strong)' },
     ].filter((s) => s.value > 0);
 
-    const pieGen = d3
-      .pie<{ key: string; value: number; color: string }>()
-      .value((d) => d.value)
-      .sort(null)
-      .padAngle(segments.length > 1 ? 0.05 : 0);
+    const padAngle = segments.length > 1 ? 0.05 : 0;
+    const totalVal = segments.reduce((sum, s) => sum + s.value, 0);
+    if (totalVal === 0) return [];
 
-    const arcGen = d3
-      .arc<d3.PieArcDatum<{ key: string; value: number; color: string }>>()
-      .innerRadius(16)
-      .outerRadius(22)
-      .cornerRadius(3);
-
-    return pieGen(segments).map((slice) => ({
-      key: slice.data.key,
-      color: slice.data.color,
-      d: arcGen(slice) || '',
-    }));
+    let cursor = 0;
+    return segments.map((seg) => {
+      const sliceSpan = (seg.value / totalVal) * Math.PI * 2;
+      const halfPad = Math.min(padAngle / 2, sliceSpan * 0.25);
+      const start = cursor + halfPad;
+      const end = cursor + sliceSpan - halfPad;
+      cursor += sliceSpan;
+      return {
+        key: seg.key,
+        color: seg.color,
+        d: describeDonutArc(start, end, 16, 22),
+      };
+    });
   }, [total, mastered, inProgress, unseen]);
 
   return (
@@ -279,14 +318,31 @@ export const RecallEaseHeatmap: React.FC<RecallEaseHeatmapProps> = ({
   } | null>(null);
 
   const { matrixData, hardestReviewedCell, firstActiveCell } = useMemo(() => {
+    // Single O(N) pass to bucket cards by category:cefr and category:ALL
+    const buckets = new Map<string, VocabCard[]>();
+    for (const c of cards) {
+      const exactKey = `${c.category}:${c.cefr}`;
+      const allKey = `${c.category}:ALL`;
+      let exactList = buckets.get(exactKey);
+      if (!exactList) {
+        exactList = [];
+        buckets.set(exactKey, exactList);
+      }
+      exactList.push(c);
+
+      let allList = buckets.get(allKey);
+      if (!allList) {
+        allList = [];
+        buckets.set(allKey, allList);
+      }
+      allList.push(c);
+    }
+
     const cells: HeatmapCellData[] = [];
 
     for (const row of ARCHETYPE_ROWS) {
       for (const col of CEFR_COLS) {
-        const matching = cards.filter(
-          (c) =>
-            c.category === row.id && (col === 'ALL' ? true : c.cefr === col)
-        );
+        const matching = buckets.get(`${row.id}:${col}`) || [];
 
         let totalConfidenceSum = 0;
         let reviewedConfidenceSum = 0;

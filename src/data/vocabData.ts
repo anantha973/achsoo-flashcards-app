@@ -407,3 +407,7 @@ export function validateAndNormalizeContentCards(
 
 export const INITIAL_CARDS: VocabCard[] =
   validateAndNormalizeContentCards(RAW_CARDS_DATA);
+
+export const INITIAL_CARD_ID_SET: ReadonlySet<string> = new Set(
+  INITIAL_CARDS.map((c) => c.id)
+);

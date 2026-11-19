@@ -338,6 +338,8 @@ export const FoxMascot: React.FC<FoxMascotProps> = ({
         <img
           src={meta.src}
           alt={meta.alt}
+          loading={size === 'xs' ? 'eager' : 'lazy'}
+          decoding="async"
           referrerPolicy="no-referrer"
           draggable={false}
           onError={() => setImgError(true)}

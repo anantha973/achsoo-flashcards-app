@@ -261,7 +261,17 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
   );
   const [editorIconSearch, setEditorIconSearch] = useState<string>('');
   const [editorCardSearch, setEditorCardSearch] = useState<string>('');
+  const [pickerVisibleCount, setPickerVisibleCount] = useState<number>(60);
   const [hasManualIconPick, setHasManualIconPick] = useState<boolean>(false);
+
+  const editorSelectedSet = useMemo(
+    () => new Set(editorSelectedCardIds),
+    [editorSelectedCardIds]
+  );
+
+  useEffect(() => {
+    setPickerVisibleCount(60);
+  }, [editorCardSearch, editorState?.mode, editorState?.targetId]);
 
   // Close "+ New" and "Sort" menus when clicking outside or pressing Escape
   useEffect(() => {
@@ -2967,44 +2977,76 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
 
                       <div
                         data-sheet-scroll="true"
+                        onScroll={(e) => {
+                          if (pickerVisibleCount >= filteredCardsForPicker.length)
+                            return;
+                          const el = e.currentTarget;
+                          if (
+                            el.scrollHeight - el.scrollTop - el.clientHeight <
+                            120
+                          ) {
+                            setPickerVisibleCount((prev) =>
+                              Math.min(filteredCardsForPicker.length, prev + 60)
+                            );
+                          }
+                        }}
                         className="max-h-40 overflow-y-auto divide-y divide-[var(--border-subtle)] rounded-[var(--radius-control)] border surface-1"
                       >
-                        {filteredCardsForPicker.map((c) => {
-                          const checked = editorSelectedCardIds.includes(c.id);
-                          return (
-                            <button
-                              key={c.id}
-                              type="button"
-                              onClick={() => {
-                                setEditorSelectedCardIds((prev) =>
-                                  prev.includes(c.id)
-                                    ? prev.filter((id) => id !== c.id)
-                                    : [...prev, c.id]
-                                );
-                              }}
-                              className="w-full min-h-[44px] px-3 py-1.5 flex items-center justify-between gap-2 text-left hover:bg-[var(--surface-2)] cursor-pointer"
-                            >
-                              <div className="min-w-0">
-                                <span className="font-display text-[14px] font-semibold text-[var(--fg-primary)]">
-                                  {c.lemma}
-                                </span>
-                                <span className="font-sans text-[12px] text-[var(--fg-muted)]">
-                                  {' '}
-                                  · {c.translation} ({c.cefr})
-                                </span>
-                              </div>
-                              <span
-                                className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 ${
-                                  checked
-                                    ? 'bg-[var(--intent-primary)] text-[var(--intent-primary-fg)]'
-                                    : 'border border-[var(--border-strong)]'
-                                }`}
+                        {filteredCardsForPicker
+                          .slice(0, pickerVisibleCount)
+                          .map((c) => {
+                            const checked = editorSelectedSet.has(c.id);
+                            return (
+                              <button
+                                key={c.id}
+                                type="button"
+                                onClick={() => {
+                                  setEditorSelectedCardIds((prev) =>
+                                    prev.includes(c.id)
+                                      ? prev.filter((id) => id !== c.id)
+                                      : [...prev, c.id]
+                                  );
+                                }}
+                                className="w-full min-h-[44px] px-3 py-1.5 flex items-center justify-between gap-2 text-left hover:bg-[var(--surface-2)] cursor-pointer"
                               >
-                                {checked && <Check className="w-3.5 h-3.5" />}
-                              </span>
-                            </button>
-                          );
-                        })}
+                                <div className="min-w-0">
+                                  <span className="font-display text-[14px] font-semibold text-[var(--fg-primary)]">
+                                    {c.lemma}
+                                  </span>
+                                  <span className="font-sans text-[12px] text-[var(--fg-muted)]">
+                                    {' '}
+                                    · {c.translation} ({c.cefr})
+                                  </span>
+                                </div>
+                                <span
+                                  className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 ${
+                                    checked
+                                      ? 'bg-[var(--intent-primary)] text-[var(--intent-primary-fg)]'
+                                      : 'border border-[var(--border-strong)]'
+                                  }`}
+                                >
+                                  {checked && <Check className="w-3.5 h-3.5" />}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        {pickerVisibleCount < filteredCardsForPicker.length && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setPickerVisibleCount((prev) =>
+                                Math.min(
+                                  filteredCardsForPicker.length,
+                                  prev + 60
+                                )
+                              )
+                            }
+                            className="w-full py-2.5 px-3 text-center font-sans text-[12px] font-semibold text-[var(--intent-primary)] hover:bg-[var(--surface-2)] cursor-pointer"
+                          >
+                            Mehr Karten anzeigen ({pickerVisibleCount} /{' '}
+                            {filteredCardsForPicker.length})
+                          </button>
+                        )}
                       </div>
                     </div>
                   )}

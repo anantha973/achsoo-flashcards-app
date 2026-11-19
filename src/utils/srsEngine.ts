@@ -1,6 +1,7 @@
 import {
   CardSrsState,
   ConfidenceRating,
+  INITIAL_CARD_ID_SET,
   INITIAL_CARDS,
   LEGACY_RATING_MAP,
   LegacyRatingKey,
@@ -45,6 +46,79 @@ const CUSTOM_CARDS_STORAGE_KEY = 'wortschatz_custom_cards_v1';
 
 // In-memory append-only review log cache (authoritative runtime log, backed by IndexedDB + localStorage mirror)
 let memoryReviewLogs: ReviewLogEntry[] | null = null;
+
+// Debounced localStorage mirror write scheduler (avoids blocking card exit animations while staying synchronous in Vitest)
+const pendingMirrorWriters = new Map<string, () => string>();
+let pendingMirrorTimer: number | null = null;
+let mirrorFlushListenersBound = false;
+
+function isTestRuntime(): boolean {
+  try {
+    if (typeof process !== 'undefined' && process.env?.VITEST) return true;
+  } catch {
+    // Ignore
+  }
+  return false;
+}
+
+function flushAllMirrors(): void {
+  if (pendingMirrorTimer !== null && typeof window !== 'undefined') {
+    window.clearTimeout(pendingMirrorTimer);
+    pendingMirrorTimer = null;
+  }
+  if (pendingMirrorWriters.size === 0 || typeof localStorage === 'undefined') {
+    pendingMirrorWriters.clear();
+    return;
+  }
+  const entries = Array.from(pendingMirrorWriters.entries());
+  pendingMirrorWriters.clear();
+  for (const [key, serialize] of entries) {
+    try {
+      localStorage.setItem(key, serialize());
+    } catch {
+      // Ignore storage quota errors in localStorage mirror; IndexedDB is primary
+    }
+  }
+}
+
+function clearPendingMirrors(): void {
+  if (pendingMirrorTimer !== null && typeof window !== 'undefined') {
+    window.clearTimeout(pendingMirrorTimer);
+    pendingMirrorTimer = null;
+  }
+  pendingMirrorWriters.clear();
+}
+
+function bindMirrorFlushListeners(): void {
+  if (mirrorFlushListenersBound || typeof window === 'undefined') return;
+  mirrorFlushListenersBound = true;
+  window.addEventListener('pagehide', flushAllMirrors);
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') {
+        flushAllMirrors();
+      }
+    });
+  }
+}
+
+function scheduleMirrorWrite(key: string, serialize: () => string): void {
+  if (typeof localStorage === 'undefined') return;
+  if (isTestRuntime() || typeof window === 'undefined') {
+    try {
+      localStorage.setItem(key, serialize());
+    } catch {
+      // Ignore storage quota errors
+    }
+    return;
+  }
+  bindMirrorFlushListeners();
+  pendingMirrorWriters.set(key, serialize);
+  if (pendingMirrorTimer !== null) {
+    window.clearTimeout(pendingMirrorTimer);
+  }
+  pendingMirrorTimer = window.setTimeout(flushAllMirrors, 120);
+}
 
 export interface VelocityPoint {
   dateKey: string;
@@ -388,16 +462,13 @@ export function loadReviewLogs(): ReviewLogEntry[] {
   }
 }
 
-export function saveReviewLogsMirror(logs: ReviewLogEntry[]): void {
-  const normalized = migrateLegacyReviewLogs(logs);
+export function saveReviewLogsMirror(
+  logs: ReviewLogEntry[],
+  alreadyNormalized = false
+): void {
+  const normalized = alreadyNormalized ? logs : migrateLegacyReviewLogs(logs);
   memoryReviewLogs = normalized;
-  try {
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(REVIEW_LOGS_STORAGE_KEY, JSON.stringify(normalized));
-    }
-  } catch {
-    // Ignore storage quota errors in localStorage mirror; IndexedDB is primary
-  }
+  scheduleMirrorWrite(REVIEW_LOGS_STORAGE_KEY, () => JSON.stringify(normalized));
 }
 
 export function replayCardStateFromLogs(
@@ -623,13 +694,7 @@ export function deriveStudyStatsFromLogs(
     totalTimeStudiedMs,
   };
 
-  try {
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(STATS_STORAGE_KEY, JSON.stringify(stats));
-    }
-  } catch {
-    // Ignore
-  }
+  scheduleMirrorWrite(STATS_STORAGE_KEY, () => JSON.stringify(stats));
 
   return stats;
 }
@@ -699,7 +764,7 @@ export function appendRatingEvent(params: {
   };
 
   const nextLogs = [...currentLogs, logEntry];
-  saveReviewLogsMirror(nextLogs);
+  saveReviewLogsMirror(nextLogs, true);
 
   const updatedMap: Record<string, CardSrsState> = {
     ...params.srsMap,
@@ -857,22 +922,24 @@ export async function hydrateEngineFromIndexedDB(
     idbGetAllCustomCards(),
   ]);
 
-  const localCustomCards = loadAllCards().filter(
-    (c) => !INITIAL_CARDS.some((ic) => ic.id === c.id)
-  );
+  const localCustomCards = loadCustomCardsOnly();
   const mergedCustomMap = new Map<string, VocabCard>();
   for (const c of [...localCustomCards, ...idbCustomCards]) {
-    mergedCustomMap.set(c.id, c);
+    if (c && c.id && !INITIAL_CARD_ID_SET.has(c.id)) {
+      mergedCustomMap.set(c.id, c);
+    }
   }
 
   const localLogs = loadReviewLogs();
   const baseLocalLogs = migrateLegacyReviewLogs([...idbLogs, ...localLogs]);
-  const baseCustomCards = Array.from(mergedCustomMap.values());
+  const baseCustomCards = validateAndNormalizeContentCards(
+    Array.from(mergedCustomMap.values())
+  );
 
-  const tempCards = validateAndNormalizeContentCards([
-    ...INITIAL_CARDS,
-    ...baseCustomCards,
-  ]);
+  const tempCards =
+    baseCustomCards.length > 0
+      ? [...INITIAL_CARDS, ...baseCustomCards]
+      : INITIAL_CARDS;
   const localSrs = loadSrsMap(tempCards);
   const baseOrphanStates: Record<string, CardSrsState> = {};
   for (const [k, v] of Object.entries({ ...idbStates, ...localSrs })) {
@@ -888,31 +955,32 @@ export async function hydrateEngineFromIndexedDB(
 
   if (remoteResult?.remoteCustomCards?.length) {
     for (const rc of remoteResult.remoteCustomCards) {
-      mergedCustomMap.set(rc.id, rc);
-      void idbSaveCustomCard(rc);
-    }
-    try {
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem(
-          CUSTOM_CARDS_STORAGE_KEY,
-          JSON.stringify(Array.from(mergedCustomMap.values()))
-        );
+      if (rc && rc.id && !INITIAL_CARD_ID_SET.has(rc.id)) {
+        mergedCustomMap.set(rc.id, rc);
+        void idbSaveCustomCard(rc);
       }
-    } catch {
-      // Ignore
     }
+    const mergedCustomList = Array.from(mergedCustomMap.values());
+    scheduleMirrorWrite(CUSTOM_CARDS_STORAGE_KEY, () =>
+      JSON.stringify(mergedCustomList)
+    );
   }
 
-  const allCards = validateAndNormalizeContentCards([
-    ...INITIAL_CARDS,
-    ...Array.from(mergedCustomMap.values()),
-  ]);
+  const normalizedCustomCards =
+    remoteResult?.remoteCustomCards?.length
+      ? validateAndNormalizeContentCards(Array.from(mergedCustomMap.values()))
+      : baseCustomCards;
+
+  const allCards =
+    normalizedCustomCards.length > 0
+      ? [...INITIAL_CARDS, ...normalizedCustomCards]
+      : INITIAL_CARDS;
 
   const mergedLogs = migrateLegacyReviewLogs([
     ...baseLocalLogs,
     ...(remoteResult?.remoteLogs || []),
   ]);
-  saveReviewLogsMirror(mergedLogs);
+  saveReviewLogsMirror(mergedLogs, true);
 
   const orphanBase: Record<string, CardSrsState> = {};
   for (const [k, v] of Object.entries({
@@ -947,35 +1015,39 @@ export async function hydrateEngineFromIndexedDB(
   };
 }
 
-export function loadAllCards(): VocabCard[] {
+function loadCustomCardsOnly(): VocabCard[] {
   try {
     const raw =
       typeof localStorage !== 'undefined'
         ? localStorage.getItem(CUSTOM_CARDS_STORAGE_KEY)
         : null;
-    if (!raw) return INITIAL_CARDS;
+    if (!raw) return [];
     const custom: VocabCard[] = JSON.parse(raw);
-    if (!Array.isArray(custom)) return INITIAL_CARDS;
-    return validateAndNormalizeContentCards([...INITIAL_CARDS, ...custom]);
+    if (!Array.isArray(custom) || custom.length === 0) return [];
+    return custom.filter((c) => c && c.id && !INITIAL_CARD_ID_SET.has(c.id));
   } catch {
-    return INITIAL_CARDS;
+    return [];
   }
+}
+
+export function loadAllCards(): VocabCard[] {
+  const custom = loadCustomCardsOnly();
+  if (custom.length === 0) return INITIAL_CARDS;
+  const normalizedCustom = validateAndNormalizeContentCards(custom);
+  return [...INITIAL_CARDS, ...normalizedCustom];
 }
 
 export function saveCustomCard(newCard: VocabCard): VocabCard[] {
   void idbSaveCustomCard(newCard);
   void syncCustomCardToSupabase(newCard);
   try {
-    const raw =
-      typeof localStorage !== 'undefined'
-        ? localStorage.getItem(CUSTOM_CARDS_STORAGE_KEY)
-        : null;
-    const custom: VocabCard[] = raw ? JSON.parse(raw) : [];
+    const custom = loadCustomCardsOnly();
     const updated = [...custom, newCard];
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem(CUSTOM_CARDS_STORAGE_KEY, JSON.stringify(updated));
     }
-    return validateAndNormalizeContentCards([...INITIAL_CARDS, ...updated]);
+    const normalizedCustom = validateAndNormalizeContentCards(updated);
+    return [...INITIAL_CARDS, ...normalizedCustom];
   } catch {
     return INITIAL_CARDS;
   }
@@ -1012,23 +1084,13 @@ export function loadSrsMap(cards: VocabCard[]): Record<string, CardSrsState> {
 }
 
 export function saveSrsMap(map: Record<string, CardSrsState>): void {
-  try {
-    if (typeof localStorage !== 'undefined') {
-      const existingRaw = localStorage.getItem(SRS_STORAGE_KEY);
-      const existing = existingRaw
-        ? (JSON.parse(existingRaw) as Record<string, CardSrsState>)
-        : {};
-      const merged = { ...existing, ...map };
-      localStorage.setItem(SRS_STORAGE_KEY, JSON.stringify(merged));
-    }
-  } catch {
-    // Ignore storage quota errors
-  }
+  scheduleMirrorWrite(SRS_STORAGE_KEY, () => JSON.stringify(map));
 }
 
 export function resetAllSrsProgress(
   cards: VocabCard[]
 ): Record<string, CardSrsState> {
+  clearPendingMirrors();
   memoryReviewLogs = [];
   try {
     if (typeof localStorage !== 'undefined') {

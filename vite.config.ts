@@ -61,8 +61,9 @@ export default defineConfig(() => {
           cleanupOutdatedCaches: true,
           clientsClaim: true,
           skipWaiting: true,
-          maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
+          maximumFileSizeToCacheInBytes: 2.5 * 1024 * 1024,
           globPatterns: ['**/*.{js,css,html,ico,png,svg,json,woff2}'],
+          globIgnores: ['**/assets/aistudio/**'],
           navigateFallback: 'index.html',
           runtimeCaching: [
             {
@@ -90,6 +91,30 @@ export default defineConfig(() => {
         },
       }),
     ],
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('src/data/cardsData')) {
+              return 'vocab-dataset';
+            }
+            if (
+              id.includes('node_modules/react/') ||
+              id.includes('node_modules/react-dom/')
+            ) {
+              return 'vendor-react';
+            }
+            if (id.includes('node_modules/@supabase/')) {
+              return 'vendor-supabase';
+            }
+            if (id.includes('node_modules/recharts')) {
+              return 'vendor-charts';
+            }
+            return undefined;
+          },
+        },
+      },
+    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

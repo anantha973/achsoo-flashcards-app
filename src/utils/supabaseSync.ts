@@ -359,9 +359,19 @@ export interface RemoteWorkspaceSnapshot {
   themePrefs?: ThemePreferences;
 }
 
-export async function syncWorkspaceToSupabase(
-  snapshot: RemoteWorkspaceSnapshot
-): Promise<void> {
+let pendingWorkspaceSnapshot: RemoteWorkspaceSnapshot | null = null;
+let pendingWorkspaceTimer: number | null = null;
+let workspaceFlushListenersBound = false;
+
+async function flushWorkspaceSnapshot(): Promise<void> {
+  if (pendingWorkspaceTimer !== null && typeof window !== 'undefined') {
+    window.clearTimeout(pendingWorkspaceTimer);
+    pendingWorkspaceTimer = null;
+  }
+  const snapshot = pendingWorkspaceSnapshot;
+  pendingWorkspaceSnapshot = null;
+  if (!snapshot) return;
+
   const client = getSupabaseClient();
   if (!client) return;
   try {
@@ -384,6 +394,47 @@ export async function syncWorkspaceToSupabase(
   } catch {
     // Ignore when offline
   }
+}
+
+function bindWorkspaceFlushListeners(): void {
+  if (workspaceFlushListenersBound || typeof window === 'undefined') return;
+  workspaceFlushListenersBound = true;
+  window.addEventListener('pagehide', () => {
+    void flushWorkspaceSnapshot();
+  });
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') {
+        void flushWorkspaceSnapshot();
+      }
+    });
+  }
+}
+
+export async function syncWorkspaceToSupabase(
+  snapshot: RemoteWorkspaceSnapshot
+): Promise<void> {
+  const client = getSupabaseClient();
+  if (!client) return;
+
+  pendingWorkspaceSnapshot = {
+    ...(pendingWorkspaceSnapshot || {}),
+    ...snapshot,
+  };
+
+  if (typeof window === 'undefined' || isTestEnvironment()) {
+    await flushWorkspaceSnapshot();
+    return;
+  }
+
+  bindWorkspaceFlushListeners();
+  if (pendingWorkspaceTimer !== null) {
+    window.clearTimeout(pendingWorkspaceTimer);
+  }
+  pendingWorkspaceTimer = window.setTimeout(() => {
+    pendingWorkspaceTimer = null;
+    void flushWorkspaceSnapshot();
+  }, 300);
 }
 
 export async function deleteReviewsFromSupabase(

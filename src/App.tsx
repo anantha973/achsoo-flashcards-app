@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Award,
   BookMarked,
@@ -44,16 +44,6 @@ import {
   X,
 } from 'lucide-react';
 import {
-  CartesianGrid,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
-import { AnatomyDrawer } from './components/AnatomyDrawer';
-import {
   DeckSubScreen,
   DecksPageView,
   EnrichedUnifiedDeck,
@@ -69,8 +59,23 @@ import {
   FoxMascot,
   FoxMascotPose,
 } from './components/FoxMascot';
-import { RecallEaseHeatmap } from './components/RecallEaseHeatmap';
 import { SlidingPillSwitcher } from './components/SlidingPillSwitcher';
+
+const AnatomyDrawer = React.lazy(() =>
+  import('./components/AnatomyDrawer').then((m) => ({
+    default: m.AnatomyDrawer,
+  }))
+);
+const RecallEaseHeatmap = React.lazy(() =>
+  import('./components/RecallEaseHeatmap').then((m) => ({
+    default: m.RecallEaseHeatmap,
+  }))
+);
+const LearningVelocityChart = React.lazy(() =>
+  import('./components/LearningVelocityChart').then((m) => ({
+    default: m.LearningVelocityChart,
+  }))
+);
 import { useSheetSwipeDismiss } from './hooks/useMobileGestures';
 import {
   CustomDeckRecord,
@@ -145,7 +150,6 @@ import {
   createInitialDeckLoopState,
   getCurrentLoopCardId,
 } from './utils/confidenceLoopEngine';
-import { generateStandaloneVanillaHtml } from './utils/standaloneExporter';
 
 type ActiveView = 'study' | 'decks' | 'dashboard' | 'archive';
 
@@ -562,19 +566,35 @@ export default function App() {
     [themePrefs.themeId]
   );
 
+  // Single-pass startup snapshot for cards & workspace seed (eliminates redundant mount reads)
+  const [initialBoot] = useState(() => ({
+    cards: loadAllCards(),
+    seed: ensureInitialTestFolderSeed(),
+  }));
+
   // Persistent cards, SRS state, and study streak
-  const [cards, setCards] = useState<VocabCard[]>(() => loadAllCards());
+  const [cards, setCards] = useState<VocabCard[]>(initialBoot.cards);
+  const latestCardsRef = useRef<VocabCard[]>(cards);
+  latestCardsRef.current = cards;
   const [srsMap, setSrsMap] = useState<Record<string, CardSrsState>>(() =>
-    loadSrsMap(loadAllCards())
+    loadSrsMap(initialBoot.cards)
   );
   const [stats, setStats] = useState<StudyStats>(() => loadStudyStats());
 
   useEffect(() => {
     let active = true;
+    let hasCompletedFirstSync = false;
 
     const runSync = () => {
-      const seed = ensureInitialTestFolderSeed();
-      hydrateEngineFromIndexedDB(loadAllCards(), {
+      const seed = hasCompletedFirstSync
+        ? ensureInitialTestFolderSeed()
+        : initialBoot.seed;
+      const currentCardsSnapshot = hasCompletedFirstSync
+        ? latestCardsRef.current
+        : initialBoot.cards;
+      hasCompletedFirstSync = true;
+
+      hydrateEngineFromIndexedDB(currentCardsSnapshot, {
         folders: seed.folders,
         customDecks: seed.customDecks,
         deckOverrides: seed.deckOverrides,
@@ -822,14 +842,14 @@ export default function App() {
 
   // Persistent Folders (1-level), Custom Decks & Deck Overrides for "All Decks" page
   const [folders, setFolders] = useState<DeckFolder[]>(
-    () => ensureInitialTestFolderSeed().folders
+    initialBoot.seed.folders
   );
   const [customDecks, setCustomDecks] = useState<CustomDeckRecord[]>(
-    () => ensureInitialTestFolderSeed().customDecks
+    initialBoot.seed.customDecks
   );
   const [deckOverrides, setDeckOverrides] = useState<
     Record<string, DeckMetaOverride>
-  >(() => ensureInitialTestFolderSeed().deckOverrides);
+  >(initialBoot.seed.deckOverrides);
 
   const [initialStudySession] = useState<LastStudySessionState | null>(() =>
     loadLastStudySession()
@@ -982,12 +1002,12 @@ export default function App() {
   const [speakingId, setSpeakingId] = useState<string | null>(null);
   const [sessionReviewedCount, setSessionReviewedCount] = useState<number>(0);
 
-  // Mobile & Tablet Flashcard Gesture Physics (4-way swipe + long-press audio + live finger tracking)
-  const [cardDrag, setCardDrag] = useState<{
-    dx: number;
-    dy: number;
-    active: boolean;
-  }>({ dx: 0, dy: 0, active: false });
+  // Mobile & Tablet Flashcard Gesture Physics (4-way swipe + long-press audio + ref-driven 60/120fps drag tracking)
+  const flipCardInnerDomRef = useRef<HTMLDivElement | null>(null);
+  const edgeStampDomRef = useRef<HTMLDivElement | null>(null);
+  const edgeStampTextDomRef = useRef<HTMLSpanElement | null>(null);
+  const edgeStampDotDomRef = useRef<HTMLSpanElement | null>(null);
+  const dragReleaseTimerRef = useRef<number | null>(null);
   const cardTouchRef = useRef<{
     x: number;
     y: number;
@@ -1388,6 +1408,11 @@ export default function App() {
     [cards, srsMap, stats]
   );
 
+  const cardsById = useMemo(
+    () => new Map(cards.map((c) => [c.id, c])),
+    [cards]
+  );
+
   // Unified Enriched Decks for the mobile-first "All Decks" view (Built-in + Custom Decks + Overrides)
   const enrichedUnifiedDecks: EnrichedUnifiedDeck[] = useMemo(() => {
     const defaultConfigMap: Record<
@@ -1488,8 +1513,9 @@ export default function App() {
       });
 
     const customList: EnrichedUnifiedDeck[] = customDecks.map((cd) => {
-      const cardSet = new Set(cd.cardIds);
-      const matchingCards = cards.filter((c) => cardSet.has(c.id));
+      const matchingCards = cd.cardIds
+        .map((id) => cardsById.get(id))
+        .filter((c): c is VocabCard => Boolean(c));
       let mastered = 0;
       let learning = 0;
       let lowConfidence = 0;
@@ -1541,7 +1567,7 @@ export default function App() {
     });
 
     return [...builtInList, ...customList];
-  }, [enrichedDecks, deckOverrides, customDecks, cards, srsMap]);
+  }, [enrichedDecks, deckOverrides, customDecks, cardsById, srsMap]);
 
   const activeDeckObj = useMemo(() => {
     if (customStudyQueue) {
@@ -2215,6 +2241,78 @@ export default function App() {
     [clearLongPressAudio, currentCard, handlePlayAudio, isFlipped]
   );
 
+  const applyCardDragStyles = useCallback(
+    (dx: number, dy: number, active: boolean) => {
+      const cardEl = flipCardInnerDomRef.current;
+      if (cardEl) {
+        if (dragReleaseTimerRef.current !== null) {
+          window.clearTimeout(dragReleaseTimerRef.current);
+          dragReleaseTimerRef.current = null;
+        }
+        if (active) {
+          cardEl.style.transition = 'none';
+          cardEl.style.transform = `translate3d(${dx}px, ${dy}px, 0) rotate(${dx * 0.035}deg)`;
+        } else {
+          cardEl.style.transition =
+            'transform 220ms cubic-bezier(0.22, 1, 0.36, 1)';
+          cardEl.style.transform = '';
+          dragReleaseTimerRef.current = window.setTimeout(() => {
+            if (flipCardInnerDomRef.current) {
+              flipCardInnerDomRef.current.style.transition = '';
+            }
+            dragReleaseTimerRef.current = null;
+          }, 230);
+        }
+      }
+
+      const stampEl = edgeStampDomRef.current;
+      if (stampEl) {
+        if (active && Math.abs(dx) > 16) {
+          const opacity = Math.min(1, (Math.abs(dx) - 14) / 42);
+          stampEl.style.opacity = String(opacity);
+          stampEl.style.display = 'inline-flex';
+          const isNextSwipe = dx < 0;
+          const isBlockedNext = isNextSwipe && !canGoNext;
+          stampEl.className = `absolute top-4 z-30 pointer-events-none px-3 py-1 rounded-[var(--radius-control)] text-xs font-semibold shadow-ring inline-flex items-center gap-1.5 ${
+            isNextSwipe
+              ? canGoNext
+                ? 'right-4 surface-2 text-[var(--fg-primary)] border'
+                : 'right-4 surface-1 text-[var(--intent-warning)] border border-[var(--intent-warning-border)]'
+              : canGoPrev
+              ? 'left-4 surface-2 text-[var(--fg-primary)] border'
+              : 'left-4 surface-2 text-[var(--fg-muted)] border'
+          }`;
+          if (edgeStampDotDomRef.current) {
+            edgeStampDotDomRef.current.style.display = isBlockedNext
+              ? 'inline-block'
+              : 'none';
+          }
+          if (edgeStampTextDomRef.current) {
+            edgeStampTextDomRef.current.textContent = isNextSwipe
+              ? canGoNext
+                ? 'Next →'
+                : 'Rate first'
+              : canGoPrev
+              ? '← Prev'
+              : 'First card';
+          }
+        } else {
+          stampEl.style.opacity = '0';
+          stampEl.style.display = 'none';
+        }
+      }
+    },
+    [canGoNext, canGoPrev]
+  );
+
+  useEffect(() => {
+    return () => {
+      if (dragReleaseTimerRef.current !== null) {
+        window.clearTimeout(dragReleaseTimerRef.current);
+      }
+    };
+  }, []);
+
   const handleCardTouchMove = useCallback(
     (e: React.TouchEvent<HTMLDivElement>) => {
       const st = cardTouchRef.current;
@@ -2240,20 +2338,16 @@ export default function App() {
             : canGoPrev
             ? Math.min(150, dx)
             : Math.min(44, dx * 0.28);
-        setCardDrag({
-          dx: dampedDx,
-          dy: Math.max(-18, Math.min(18, dy * 0.14)),
-          active: true,
-        });
+        applyCardDragStyles(
+          dampedDx,
+          Math.max(-18, Math.min(18, dy * 0.14)),
+          true
+        );
       } else {
-        setCardDrag({
-          dx: 0,
-          dy: Math.max(-44, Math.min(44, dy * 0.28)),
-          active: true,
-        });
+        applyCardDragStyles(0, Math.max(-44, Math.min(44, dy * 0.28)), true);
       }
     },
-    [clearLongPressAudio, canGoNext, canGoPrev]
+    [clearLongPressAudio, canGoNext, canGoPrev, applyCardDragStyles]
   );
 
   const handleCardTouchEnd = useCallback(
@@ -2269,7 +2363,7 @@ export default function App() {
       const vx = Math.abs(dx) / elapsed;
       const vy = Math.abs(dy) / elapsed;
 
-      setCardDrag({ dx: 0, dy: 0, active: false });
+      applyCardDragStyles(0, 0, false);
 
       if (st.axis === 'horizontal') {
         if (Math.abs(dx) >= 64 || (Math.abs(dx) >= 38 && vx >= 0.42)) {
@@ -2320,6 +2414,7 @@ export default function App() {
     },
     [
       clearLongPressAudio,
+      applyCardDragStyles,
       isFlipped,
       isBackExpanded,
       currentCard,
@@ -2335,8 +2430,8 @@ export default function App() {
   const handleCardTouchCancel = useCallback(() => {
     clearLongPressAudio();
     cardTouchRef.current = null;
-    setCardDrag({ dx: 0, dy: 0, active: false });
-  }, [clearLongPressAudio]);
+    applyCardDragStyles(0, 0, false);
+  }, [clearLongPressAudio, applyCardDragStyles]);
 
   // Top-Level Horizontal Page Swipe Navigation (Study <-> Decks <-> Overview <-> Vocab)
   const ORDERED_VIEWS: ActiveView[] = ['study', 'decks', 'dashboard', 'archive'];
@@ -2823,7 +2918,10 @@ export default function App() {
     setSessionReviewedCount(0);
   };
 
-  const handleDownloadStandaloneHtml = () => {
+  const handleDownloadStandaloneHtml = async () => {
+    const { generateStandaloneVanillaHtml } = await import(
+      './utils/standaloneExporter'
+    );
     const htmlContent = generateStandaloneVanillaHtml();
     const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -3059,7 +3157,10 @@ export default function App() {
     setIsAddModalOpen(false);
   };
 
-  // Filtered vocabulary archive
+  // Filtered vocabulary archive with progressive 60-item windowing
+  const [archiveVisibleCount, setArchiveVisibleCount] = useState<number>(60);
+  const archiveSentinelRef = useRef<HTMLDivElement | null>(null);
+
   const archiveCards = useMemo(() => {
     return cards.filter((c) => {
       if (archiveCefrFilter !== 'ALL' && c.cefr !== archiveCefrFilter)
@@ -3081,6 +3182,39 @@ export default function App() {
       return true;
     });
   }, [cards, archiveCefrFilter, archiveCategoryFilter, archiveSearchQuery]);
+
+  useEffect(() => {
+    setArchiveVisibleCount(60);
+  }, [archiveCefrFilter, archiveCategoryFilter, archiveSearchQuery]);
+
+  useEffect(() => {
+    if (
+      activeView !== 'archive' ||
+      archiveVisibleCount >= archiveCards.length ||
+      typeof IntersectionObserver === 'undefined'
+    ) {
+      return;
+    }
+    const target = archiveSentinelRef.current;
+    if (!target) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setArchiveVisibleCount((prev) =>
+            Math.min(archiveCards.length, prev + 60)
+          );
+        }
+      },
+      { rootMargin: '320px' }
+    );
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [activeView, archiveVisibleCount, archiveCards.length]);
+
+  const visibleArchiveCards = useMemo(
+    () => archiveCards.slice(0, archiveVisibleCount),
+    [archiveCards, archiveVisibleCount]
+  );
 
   // Noun Gender Color System (--gender-m / --gender-f / --gender-n tokens)
   const getNounGenderStyles = (gender?: NounGender) => {
@@ -3987,22 +4121,10 @@ export default function App() {
                       }`}
                     >
                       <div
+                        ref={!isExiting ? flipCardInnerDomRef : undefined}
                         role="button"
                         tabIndex={0}
                         aria-label={`Flashcard ${currentCard.lemma}. Tap to flip, swipe left to go next after rating, swipe right to go back.`}
-                        style={
-                          !isExiting &&
-                          (cardDrag.active ||
-                            cardDrag.dx !== 0 ||
-                            cardDrag.dy !== 0)
-                            ? {
-                                transform: `translate3d(${cardDrag.dx}px, ${cardDrag.dy}px, 0) rotate(${cardDrag.dx * 0.035}deg)`,
-                                transition: cardDrag.active
-                                  ? 'none'
-                                  : 'transform 220ms cubic-bezier(0.22, 1, 0.36, 1)',
-                              }
-                            : undefined
-                        }
                         onTouchStart={!isExiting ? handleCardTouchStart : undefined}
                         onTouchMove={!isExiting ? handleCardTouchMove : undefined}
                         onTouchEnd={!isExiting ? handleCardTouchEnd : undefined}
@@ -4021,47 +4143,23 @@ export default function App() {
                           isFlipped ? 'is-flipped' : ''
                         } ${suppressFlipTransition ? 'no-flip-transition' : ''}`}
                       >
-                        {/* Live Edge Gesture Stamp (Visible ONLY while actively swiping horizontally) */}
-                        {!isExiting &&
-                          cardDrag.active &&
-                          Math.abs(cardDrag.dx) > 16 && (
-                            <div
+                        {/* Live Edge Gesture Stamp (Ref-driven at 60/120fps without React re-renders) */}
+                        {!isExiting && (
+                          <div
+                            ref={edgeStampDomRef}
+                            aria-hidden="true"
+                            style={{ opacity: 0, display: 'none' }}
+                            className="absolute top-4 z-30 pointer-events-none px-3 py-1 rounded-[var(--radius-control)] text-xs font-semibold shadow-ring items-center gap-1.5"
+                          >
+                            <span
+                              ref={edgeStampDotDomRef}
                               aria-hidden="true"
-                              style={{
-                                opacity: Math.min(
-                                  1,
-                                  (Math.abs(cardDrag.dx) - 14) / 42
-                                ),
-                              }}
-                              className={`absolute top-4 z-30 pointer-events-none px-3 py-1 rounded-[var(--radius-control)] text-xs font-semibold shadow-ring inline-flex items-center gap-1.5 ${
-                                cardDrag.dx < 0
-                                  ? canGoNext
-                                    ? 'right-4 surface-2 text-[var(--fg-primary)] border'
-                                    : 'right-4 surface-1 text-[var(--intent-warning)] border border-[var(--intent-warning-border)]'
-                                  : canGoPrev
-                                  ? 'left-4 surface-2 text-[var(--fg-primary)] border'
-                                  : 'left-4 surface-2 text-[var(--fg-muted)] border'
-                              }`}
-                            >
-                              {cardDrag.dx < 0 ? (
-                                canGoNext ? (
-                                  'Next →'
-                                ) : (
-                                  <>
-                                    <span
-                                      aria-hidden="true"
-                                      className="w-1.5 h-1.5 rounded-full bg-[var(--intent-warning)] shrink-0"
-                                    />
-                                    <span>Rate first</span>
-                                  </>
-                                )
-                              ) : canGoPrev ? (
-                                '← Prev'
-                              ) : (
-                                'First card'
-                              )}
-                            </div>
-                          )}
+                              style={{ display: 'none' }}
+                              className="w-1.5 h-1.5 rounded-full bg-[var(--intent-warning)] shrink-0"
+                            />
+                            <span ref={edgeStampTextDomRef} />
+                          </div>
+                        )}
 
                         {/* ==================== LAYER 0: CARD FRONT (THE GERMAN WORD ONLY) ==================== */}
                         <div
@@ -4779,16 +4877,22 @@ export default function App() {
               </Card.Root>
             </section>
 
-            {/* D3 Recall Ease Heatmap across Grammar Archetypes & CEFR Levels */}
-            <RecallEaseHeatmap
-              cards={cards}
-              srsMap={srsMap}
-              themeId={themePrefs.themeId}
-              colorMode={themePrefs.colorMode}
-              onSelectArchetypeDeck={(category) =>
-                launchDeckStudy(category, false)
+            {/* Recall Ease Heatmap across Grammar Archetypes & CEFR Levels */}
+            <Suspense
+              fallback={
+                <div className="h-64 rounded-[var(--radius-card)] surface-paper border animate-pulse" />
               }
-            />
+            >
+              <RecallEaseHeatmap
+                cards={cards}
+                srsMap={srsMap}
+                themeId={themePrefs.themeId}
+                colorMode={themePrefs.colorMode}
+                onSelectArchetypeDeck={(category) =>
+                  launchDeckStudy(category, false)
+                }
+              />
+            </Suspense>
 
             {/* Learning Velocity Chart */}
             <Card.Root className="p-5 space-y-4 surface-paper">
@@ -4820,73 +4924,16 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="h-56 w-full pt-2">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart
-                    data={velocityData}
-                    margin={{ top: 8, right: 12, left: -20, bottom: 0 }}
-                  >
-                    <CartesianGrid
-                      strokeDasharray="3 3"
-                      vertical={false}
-                      stroke="var(--border-subtle)"
-                    />
-                    <XAxis
-                      dataKey="dayLabel"
-                      tickLine={false}
-                      axisLine={false}
-                      tick={{
-                        fill: 'var(--fg-muted)',
-                        fontSize: 11,
-                        fontFamily: 'var(--font-body)',
-                      }}
-                      dy={6}
-                    />
-                    <YAxis
-                      allowDecimals={false}
-                      tickLine={false}
-                      axisLine={false}
-                      tick={{
-                        fill: 'var(--fg-muted)',
-                        fontSize: 11,
-                        fontFamily: 'var(--font-body)',
-                      }}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: 'var(--surface-1)',
-                        borderColor: 'var(--border-strong)',
-                        borderRadius: 'var(--radius-control)',
-                        fontSize: '12px',
-                        fontFamily: 'var(--font-body)',
-                        color: 'var(--fg-primary)',
-                        boxShadow: 'var(--shadow-overlay)',
-                      }}
-                      labelFormatter={(_label, payload) => {
-                        const point = payload?.[0]?.payload;
-                        return point
-                          ? `${point.dayLabel} (${point.fullDateLabel})`
-                          : String(_label);
-                      }}
-                      formatter={(value) => [`${value ?? 0} cards`, 'Mastered']}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="mastered"
-                      isAnimationActive={!isExiting}
-                      stroke="var(--chart-1)"
-                      strokeWidth={2.5}
-                      dot={{
-                        r: 4,
-                        fill: 'var(--chart-1)',
-                        strokeWidth: 2,
-                        stroke: 'var(--surface-1)',
-                      }}
-                      activeDot={{ r: 6, fill: 'var(--chart-2)' }}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
+              <Suspense
+                fallback={
+                  <div className="h-56 w-full pt-2 rounded-[var(--radius-control)] surface-2 animate-pulse" />
+                }
+              >
+                <LearningVelocityChart
+                  velocityData={velocityData}
+                  isAnimationActive={!isExiting}
+                />
+              </Suspense>
             </Card.Root>
 
             {/* Personal Milestones */}
@@ -5135,7 +5182,7 @@ export default function App() {
               </Card.Root>
             ) : (
             <Card.Root className="divide-y divide-[var(--border-subtle)] overflow-hidden surface-paper">
-              {archiveCards.map((card) => (
+              {visibleArchiveCards.map((card) => (
                   <div
                     key={card.id}
                     onClick={() => setDetailCard(card)}
@@ -5225,7 +5272,26 @@ export default function App() {
                       </Button>
                     </div>
                   </div>
-              ))}
+                ))}
+              {archiveVisibleCount < archiveCards.length && (
+                <div
+                  ref={archiveSentinelRef}
+                  className="p-3.5 flex items-center justify-center"
+                >
+                  <Button
+                    intent="secondary"
+                    size="sm"
+                    onClick={() =>
+                      setArchiveVisibleCount((prev) =>
+                        Math.min(archiveCards.length, prev + 60)
+                      )
+                    }
+                  >
+                    Mehr Wörter laden ({archiveVisibleCount} /{' '}
+                    {archiveCards.length})
+                  </Button>
+                </div>
+              )}
             </Card.Root>
             )}
           </div>
@@ -5517,12 +5583,14 @@ export default function App() {
 
       {/* ==================== LAYER 2: ANATOMIE DRAWER (Opens with [D], Cycles with [T], Closes with [Esc]) ==================== */}
       {detailCard && (
-        <AnatomyDrawer
-          card={detailCard}
-          onClose={() => setDetailCard(null)}
-          onPlayAudio={handlePlayAudio}
-          speakingId={speakingId}
-        />
+        <Suspense fallback={null}>
+          <AnatomyDrawer
+            card={detailCard}
+            onClose={() => setDetailCard(null)}
+            onPlayAudio={handlePlayAudio}
+            speakingId={speakingId}
+          />
+        </Suspense>
       )}
 
       {/* ==================== MODAL: ADD CUSTOM VOCABULARY CARD (ALL 6 ARCHETYPES) ==================== */}
