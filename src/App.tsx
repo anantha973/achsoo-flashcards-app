@@ -3811,7 +3811,7 @@ export default function App() {
     <>
         {/* ==================== VIEW 1: 3-LAYER FLASHCARD STUDIO ==================== */}
         {viewToRender === 'study' && (
-          <div className="study-stage-shell flex-1 flex flex-col gap-3 sm:gap-3.5 md:gap-4 md:flex-initial md:my-auto">
+          <div className="study-stage-shell flex-1 flex flex-col gap-3 sm:gap-3.5 md:gap-4">
             {/* Standard Studio Deck Strip OR Minimalist Zen HUD */}
             {!isZenSessionActive ? (
               <div className="flex items-center justify-between gap-2">
@@ -3846,25 +3846,8 @@ export default function App() {
                   className="flex-1 min-w-0 pr-1"
                 />
 
-                {/* Fresh start deck button & Distraction-Free Zen Focus Trigger */}
+                {/* Distraction-Free Zen Focus Trigger */}
                 <div className="flex items-center gap-1 shrink-0">
-                  {studyDeck.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleResetDeckSrs(
-                          studyDeck.map((c) => c.id),
-                          activeDeckObj.id
-                        )
-                      }
-                      title="Fresh start (Deck zurücksetzen)"
-                      aria-label="Fresh start deck"
-                      className="min-h-[40px] min-w-[40px] md:min-h-[44px] px-2.5 rounded-[var(--radius-pill)] text-xs font-semibold text-[var(--fg-secondary)] hover:text-[var(--fg-primary)] hover:bg-black/[0.04] dark:hover:bg-white/[0.06] inline-flex items-center justify-center gap-1.5 shrink-0 cursor-pointer transition-colors theme-focus"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5" />
-                      <span className="hidden md:inline">Fresh start</span>
-                    </button>
-                  )}
                   <button
                     type="button"
                     onClick={() => {
@@ -4107,19 +4090,6 @@ export default function App() {
                 <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
                   <Button
                     intent="primary"
-                    size="md"
-                    onClick={() =>
-                      handleResetDeckSrs(
-                        studyDeck.map((c) => c.id),
-                        activeDeckObj.id
-                      )
-                    }
-                  >
-                    <RotateCcw className="w-4 h-4" />
-                    <span>Fresh start</span>
-                  </Button>
-                  <Button
-                    intent="secondary"
                     size="md"
                     onClick={() => navigateToView('decks', 'forward')}
                   >
@@ -4527,7 +4497,7 @@ export default function App() {
                                         setIsBackExpanded(true);
                                       }
                                     }}
-                                    className="pt-2 md:pt-3 border-t border-[var(--border-subtle)] px-1 md:px-2 pb-0.5 md:pb-1 min-w-0 max-w-full rounded-xl hover:bg-black/[0.02] dark:hover:bg-white/[0.03] transition-colors cursor-pointer group"
+                                    className="pt-2 md:pt-3 border-t border-[var(--border-subtle)] px-1 md:px-2 pb-0.5 md:pb-1 min-w-0 max-w-full rounded-b-xl hover:bg-black/[0.02] dark:hover:bg-white/[0.03] transition-colors cursor-pointer group"
                                   >
                                     {/* Minimal Static Pull-Up Indicator */}
                                     <div className="flex items-center justify-center text-[var(--fg-muted)] group-hover:text-[var(--accent-secondary)] transition-colors mb-1 md:mb-1.5">

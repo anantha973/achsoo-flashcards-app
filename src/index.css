@@ -1097,6 +1097,14 @@
   }
 }
 
+@media (min-width: 1280px) and (min-height: 1020px) {
+  .study-stage-shell {
+    max-height: 880px;
+    margin-top: auto;
+    margin-bottom: auto;
+  }
+}
+
 .fluid-card-pad {
   padding: calc(clamp(1.1rem, 3.8vw, 1.85rem) * var(--density)) calc(clamp(1.2rem, 4.2vw, 2.25rem) * var(--density));
 }
@@ -1367,13 +1375,13 @@
 
 @media (min-width: 768px) and (orientation: landscape) {
   .flip-card-inner {
-    min-height: clamp(250px, min(48dvh, calc(100dvh - 245px)), 500px);
+    min-height: clamp(320px, calc(100dvh - 285px), 660px);
   }
 }
 
 @media (min-width: 1280px) and (min-height: 820px) {
   .flip-card-inner {
-    min-height: clamp(390px, 52dvh, 550px);
+    min-height: clamp(460px, calc(100dvh - 285px), 680px);
   }
 }
 
