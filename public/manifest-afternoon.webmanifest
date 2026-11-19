@@ -3,26 +3,26 @@
   "name": "Achsoo — German Vocabulary & Grammar SRS",
   "short_name": "Achsoo",
   "description": "Local-first German Vocabulary & Grammar Flashcards with the Flashcard Fox mascot, Confidence Loop mastery, and native de-DE audio.",
-  "theme_color": "#171412",
-  "background_color": "#251C15",
+  "theme_color": "#FAF8F5",
+  "background_color": "#261D14",
   "display": "standalone",
   "start_url": "/",
   "scope": "/",
   "icons": [
     {
-      "src": "/pwa-night-192x192.png",
+      "src": "/icons/pwa-afternoon-192x192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/pwa-night-512x512.png",
+      "src": "/icons/pwa-afternoon-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/pwa-night-maskable-512x512.png",
+      "src": "/icons/pwa-afternoon-maskable-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"

@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Download, Moon, Share, Sun, X } from 'lucide-react';
+import { Download, Share, X } from 'lucide-react';
 import {
   APP_ICON_CHANGE_EVENT,
-  AppIconTimeSlot,
-  getTimeOfDayIconAssets,
+  APP_ICON_CHAPTERS,
+  AppIconChapterId,
   getTimeOfDayIconSlot,
 } from '../utils/appIconScheduler';
 
@@ -77,13 +77,13 @@ export function usePWAInstall() {
 export const PWAInstallButton: React.FC = () => {
   const { canPrompt, isInstalled, isIos, promptInstall } = usePWAInstall();
   const [showIosGuide, setShowIosGuide] = useState(false);
-  const [iconSlot, setIconSlot] = useState<AppIconTimeSlot>(() =>
+  const [activeSlot, setActiveSlot] = useState<AppIconChapterId>(() =>
     getTimeOfDayIconSlot()
   );
 
   useEffect(() => {
     const handleIconChange = () => {
-      setIconSlot(getTimeOfDayIconSlot());
+      setActiveSlot(getTimeOfDayIconSlot());
     };
     window.addEventListener(APP_ICON_CHANGE_EVENT, handleIconChange);
     return () => {
@@ -94,9 +94,6 @@ export const PWAInstallButton: React.FC = () => {
   if (isInstalled || (!canPrompt && !isIos)) {
     return null;
   }
-
-  const dayAssets = getTimeOfDayIconAssets('day');
-  const nightAssets = getTimeOfDayIconAssets('night');
 
   const handleClick = async () => {
     if (canPrompt) {
@@ -115,7 +112,7 @@ export const PWAInstallButton: React.FC = () => {
         onClick={() => void handleClick()}
         aria-label="Add Achsoo to Home Screen"
         title="Install Achsoo to Home Screen"
-        className="inline-flex items-center justify-center gap-1.5 h-9 px-2.5 sm:px-3 rounded-full surface-2 border border-[var(--border-subtle)] text-xs font-medium text-[var(--fg-secondary)] hover:text-[var(--fg-primary)] hover:border-[var(--border-strong)] transition-colors cursor-pointer"
+        className="inline-flex items-center justify-center gap-1.5 h-9 px-2.5 sm:px-3 rounded-full surface-2 border border-[var(--border-subtle)] text-xs font-medium text-[var(--fg-secondary)] hover:text-[var(--fg-primary)] hover:border-[var(--border-strong)] transition-colors cursor-pointer whitespace-nowrap shrink-0"
       >
         <Download className="w-3.5 h-3.5 text-terracotta shrink-0" />
         <span className="hidden sm:inline">Install</span>
@@ -130,7 +127,7 @@ export const PWAInstallButton: React.FC = () => {
           onClick={() => setShowIosGuide(false)}
         >
           <div
-            className="w-full max-w-sm rounded-2xl surface-1 border border-[var(--border-subtle)] shadow-2xl p-5 space-y-4"
+            className="w-full max-w-md rounded-2xl surface-1 border border-[var(--border-subtle)] shadow-2xl p-5 space-y-4"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start justify-between gap-3">
@@ -142,61 +139,50 @@ export const PWAInstallButton: React.FC = () => {
                   Add Achsoo to Home Screen
                 </h2>
                 <p className="text-xs text-[var(--fg-muted)] mt-0.5">
-                  App icon adapts automatically by time of day.
+                  6 daily fox icons shift automatically around the clock.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setShowIosGuide(false)}
                 aria-label="Close install instructions"
-                className="p-1.5 rounded-full text-[var(--fg-muted)] hover:text-[var(--fg-primary)] hover:bg-[var(--bg-subtle)] transition-colors"
+                className="min-w-[40px] min-h-[40px] inline-flex items-center justify-center rounded-full text-[var(--fg-muted)] hover:text-[var(--fg-primary)] hover:bg-[var(--bg-subtle)] transition-colors"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div
-                className={`rounded-xl p-3 border text-center transition-colors ${
-                  iconSlot === 'day'
-                    ? 'border-[var(--accent-primary)] bg-[var(--bg-subtle)]'
-                    : 'border-[var(--border-subtle)] opacity-75'
-                }`}
-              >
-                <img
-                  src={dayAssets.icon192}
-                  alt="Daytime HI! DE Fox app icon"
-                  className="w-16 h-16 rounded-2xl mx-auto shadow-md"
-                />
-                <div className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-[var(--fg-primary)]">
-                  <Sun className="w-3.5 h-3.5 text-amber-500" />
-                  <span>Day</span>
-                </div>
-                <p className="text-[11px] text-[var(--fg-muted)]">
-                  {dayAssets.scheduleLabel}
-                </p>
-              </div>
-
-              <div
-                className={`rounded-xl p-3 border text-center transition-colors ${
-                  iconSlot === 'night'
-                    ? 'border-[var(--accent-primary)] bg-[var(--bg-subtle)]'
-                    : 'border-[var(--border-subtle)] opacity-75'
-                }`}
-              >
-                <img
-                  src={nightAssets.icon192}
-                  alt="Evening Ah-ha! JA! Fox app icon"
-                  className="w-16 h-16 rounded-2xl mx-auto shadow-md"
-                />
-                <div className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-[var(--fg-primary)]">
-                  <Moon className="w-3.5 h-3.5 text-indigo-400" />
-                  <span>Evening</span>
-                </div>
-                <p className="text-[11px] text-[var(--fg-muted)]">
-                  {nightAssets.scheduleLabel}
-                </p>
-              </div>
+            <div className="grid grid-cols-3 gap-2.5">
+              {APP_ICON_CHAPTERS.map((chapter) => {
+                const isActive = chapter.slot === activeSlot;
+                return (
+                  <div
+                    key={chapter.slot}
+                    className={`rounded-xl p-2.5 border text-center transition-colors ${
+                      isActive
+                        ? 'border-[var(--intent-primary)] bg-[var(--intent-primary-soft)]'
+                        : 'border-[var(--border-subtle)] opacity-80'
+                    }`}
+                  >
+                    <img
+                      src={chapter.icon192}
+                      alt={`${chapter.title} app icon`}
+                      width={56}
+                      height={56}
+                      loading="lazy"
+                      decoding="async"
+                      referrerPolicy="no-referrer"
+                      className="w-12 h-12 rounded-xl mx-auto shadow-sm"
+                    />
+                    <div className="mt-1.5 text-[11px] font-semibold text-[var(--fg-primary)] truncate">
+                      {chapter.shortLabel}
+                    </div>
+                    <div className="text-[10px] text-[var(--fg-muted)] tabular-nums">
+                      {chapter.scheduleLabel}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
 
             <ol className="text-xs text-[var(--fg-secondary)] space-y-2 list-decimal list-inside">

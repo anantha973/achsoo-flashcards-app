@@ -61,6 +61,21 @@ import {
 } from './components/FoxMascot';
 import { SlidingPillSwitcher } from './components/SlidingPillSwitcher';
 import { PWAInstallButton } from './components/PWAInstallButton';
+import { MascotMomentVisual } from './components/MascotMomentVisual';
+import { MilestoneInterludeCard } from './components/MilestoneInterludeCard';
+import {
+  MascotMomentCard,
+  MilestoneThreshold,
+  MILESTONE_THRESHOLDS,
+  evaluateMilestoneTrigger,
+  getUpcomingMomentSrcToPrefetch,
+  loadMilestoneInterludesEnabled,
+  prefetchMascotMoment,
+  saveMilestoneInterludesEnabled,
+  selectCheckpointMoment,
+  selectDeckCompletionMoment,
+  selectEmptyQueueMoment,
+} from './utils/mascotMoments';
 
 const AnatomyDrawer = React.lazy(() =>
   import('./components/AnatomyDrawer').then((m) => ({
@@ -1012,6 +1027,37 @@ export default function App() {
   const [speakingId, setSpeakingId] = useState<string | null>(null);
   const [sessionReviewedCount, setSessionReviewedCount] = useState<number>(0);
 
+  // Mascot Milestone Checkpoints (25% / 50% / 75%) & Session Rating Summary
+  const [milestoneInterludesEnabled, setMilestoneInterludesEnabled] =
+    useState<boolean>(() => loadMilestoneInterludesEnabled());
+  const [activeMilestone, setActiveMilestone] =
+    useState<MascotMomentCard | null>(null);
+  const shownMilestonesByDeckRef = useRef<
+    Record<string, Set<MilestoneThreshold>>
+  >({});
+  const ratingsSinceMilestoneByDeckRef = useRef<Record<string, number>>({});
+  const deckSessionRatingsRef = useRef<
+    Record<string, { count: number; sum: number; lowCount: number }>
+  >({});
+
+  const handleDismissMilestone = useCallback(() => {
+    triggerHapticFeedback(8);
+    setActiveMilestone(null);
+    cardShownAtRef.current = performance.now();
+  }, []);
+
+  const handleToggleMilestoneInterludes = useCallback(() => {
+    triggerHapticFeedback(8);
+    setMilestoneInterludesEnabled((prev) => {
+      const next = !prev;
+      saveMilestoneInterludesEnabled(next);
+      if (!next) {
+        setActiveMilestone(null);
+      }
+      return next;
+    });
+  }, []);
+
   // Mobile & Tablet Flashcard Gesture Physics (4-way swipe + long-press audio + ref-driven 60/120fps drag tracking)
   const flipCardInnerDomRef = useRef<HTMLDivElement | null>(null);
   const edgeStampDomRef = useRef<HTMLDivElement | null>(null);
@@ -1625,6 +1671,63 @@ export default function App() {
   const isActiveDeckDone =
     studyDeck.length > 0 && activeLoopState.phase === 'done';
 
+  const activeDeckMasteryProgressPct = useMemo(() => {
+    if (studyDeck.length === 0) return 0;
+    if (activeLoopState.phase === 'done') return 100;
+    const completedCards = Math.max(
+      activeLoopState.clearedIds.length,
+      activeLoopState.sweepPassedIds.length
+    );
+    return Math.min(
+      99,
+      Math.round((completedCards / Math.max(1, studyDeck.length)) * 100)
+    );
+  }, [
+    studyDeck.length,
+    activeLoopState.phase,
+    activeLoopState.clearedIds.length,
+    activeLoopState.sweepPassedIds.length,
+  ]);
+
+  // Predictive JIT idle prefetch for the single upcoming milestone or completion cutout
+  useEffect(() => {
+    if (activeView !== 'study' || studyDeck.length === 0) return;
+    const deckId = activeDeckObj.id;
+    const sessionSummary = deckSessionRatingsRef.current[deckId] || {
+      count: 0,
+      sum: 0,
+      lowCount: 0,
+    };
+    const recentAvgRating =
+      sessionSummary.count > 0 ? sessionSummary.sum / sessionSummary.count : 4;
+    const shownSet =
+      shownMilestonesByDeckRef.current[deckId] || new Set<MilestoneThreshold>();
+
+    const nextSrc = getUpcomingMomentSrcToPrefetch({
+      progressPct: activeDeckMasteryProgressPct,
+      phase: activeLoopState.phase,
+      deckSize: studyDeck.length,
+      localHour: new Date().getHours(),
+      recentAvgRating,
+      hasRetries: sessionSummary.lowCount > 0,
+      deckId,
+      deckTitle: activeDeckObj.shortTitle,
+      shownThresholds: shownSet,
+      interludesEnabled: milestoneInterludesEnabled,
+    });
+    if (nextSrc) {
+      prefetchMascotMoment(nextSrc);
+    }
+  }, [
+    activeView,
+    activeDeckObj.id,
+    activeDeckObj.shortTitle,
+    activeDeckMasteryProgressPct,
+    activeLoopState.phase,
+    studyDeck.length,
+    milestoneInterludesEnabled,
+  ]);
+
   // Rehydrate custom/A2 study queue after async DB/Supabase sync if needed
   useEffect(() => {
     if (
@@ -2106,6 +2209,86 @@ export default function App() {
         isRatingTransitionRef.current = false;
         setExitingRating(null);
         setCardMotion('is-entering-next');
+
+        // Track deck session rating telemetry & evaluate 25% / 50% / 75% mascot checkpoints
+        const numericRating = Number(rating) || 3;
+        const prevRatingSummary = deckSessionRatingsRef.current[
+          targetDeckId
+        ] || { count: 0, sum: 0, lowCount: 0 };
+        const updatedSummary = {
+          count: prevRatingSummary.count + 1,
+          sum: prevRatingSummary.sum + numericRating,
+          lowCount:
+            prevRatingSummary.lowCount + (numericRating <= 2 ? 1 : 0),
+        };
+        deckSessionRatingsRef.current[targetDeckId] = updatedSummary;
+
+        if (!isLowConfidenceDeck && nextLoopStateForDeck.phase !== 'done') {
+          const totalInDeck = studyDeck.length;
+          const prevPct =
+            totalInDeck > 0
+              ? Math.round(
+                  (Math.max(
+                    prevLoopSnapshot.clearedIds.length,
+                    prevLoopSnapshot.sweepPassedIds.length
+                  ) /
+                    totalInDeck) *
+                    100
+                )
+              : 0;
+          const nextPct =
+            totalInDeck > 0
+              ? Math.round(
+                  (Math.max(
+                    nextLoopStateForDeck.clearedIds.length,
+                    nextLoopStateForDeck.sweepPassedIds.length
+                  ) /
+                    totalInDeck) *
+                    100
+                )
+              : 0;
+
+          let shownSet = shownMilestonesByDeckRef.current[targetDeckId];
+          if (!shownSet) {
+            shownSet = new Set<MilestoneThreshold>();
+            // Pre-mark thresholds already passed before this session started
+            for (const th of MILESTONE_THRESHOLDS) {
+              if (prevPct >= th) shownSet.add(th);
+            }
+            shownMilestonesByDeckRef.current[targetDeckId] = shownSet;
+          }
+
+          const ratingsGap =
+            (ratingsSinceMilestoneByDeckRef.current[targetDeckId] ?? 0) + 1;
+          const triggeredThreshold = evaluateMilestoneTrigger({
+            deckSize: totalInDeck,
+            progressPct: nextPct,
+            shownThresholds: shownSet,
+            ratingsSinceLastMilestone: ratingsGap,
+            enabled: milestoneInterludesEnabled,
+          });
+
+          if (triggeredThreshold) {
+            for (const th of MILESTONE_THRESHOLDS) {
+              if (th <= triggeredThreshold) shownSet.add(th);
+            }
+            ratingsSinceMilestoneByDeckRef.current[targetDeckId] = 0;
+            const recentAvg = updatedSummary.sum / updatedSummary.count;
+            setActiveMilestone(
+              selectCheckpointMoment({
+                threshold: triggeredThreshold,
+                localHour: now.getHours(),
+                recentAvgRating: recentAvg,
+                hasRetries: updatedSummary.lowCount > 0,
+              })
+            );
+          } else {
+            ratingsSinceMilestoneByDeckRef.current[targetDeckId] = ratingsGap;
+          }
+        } else {
+          setActiveMilestone(null);
+        }
+
         cardMotionTimersRef.current.idleTimer = window.setTimeout(
           () => setCardMotion('idle'),
           320
@@ -2121,6 +2304,7 @@ export default function App() {
       activeDeckObj.id,
       activeLoopState,
       activeTrail,
+      milestoneInterludesEnabled,
       clearRateFirstHint,
       clearCardMotionTimers,
       resetFlipInstantaneously,
@@ -2175,6 +2359,7 @@ export default function App() {
       setSelectedDeckId(nextDeckId);
       setCurrentIndex(restoredCardIdx);
       setDetailCard(null);
+      setActiveMilestone(null);
       resetFlipInstantaneously();
       setCardMotion(dirClass);
       cardMotionTimersRef.current.idleTimer = window.setTimeout(
@@ -2239,6 +2424,7 @@ export default function App() {
     setStats(undone.updatedStats);
     setSessionReviewedCount((prev) => Math.max(0, prev - 1));
     setCurrentIndex(undoResult.deckIndex);
+    setActiveMilestone(null);
     setIsFlipped(false);
     setIsBackExpanded(false);
   }, [
@@ -2736,6 +2922,19 @@ export default function App() {
 
       if (activeView !== 'study' || isAddModalOpen) return;
 
+      if (activeMilestone && !detailCard) {
+        if (
+          e.code === 'Space' ||
+          e.key === 'Enter' ||
+          e.key === 'ArrowRight' ||
+          e.key === 'Escape'
+        ) {
+          e.preventDefault();
+          handleDismissMilestone();
+        }
+        return;
+      }
+
       if (e.code === 'Space' && !detailCard) {
         e.preventDefault();
         handleFlipCard();
@@ -2816,6 +3015,8 @@ export default function App() {
     isBackExpanded,
     detailCard,
     currentCard,
+    activeMilestone,
+    handleDismissMilestone,
     handleFlipCard,
     handleRateCard,
     handleUndoLastRating,
@@ -2880,6 +3081,7 @@ export default function App() {
     clearRateFirstHint();
     clearRatingFeedback();
     setCurrentIndex(resumedIndex);
+    setActiveMilestone(null);
     setIsFlipped(false);
     setIsBackExpanded(false);
     setDetailCard(null);
@@ -3803,6 +4005,38 @@ export default function App() {
               );
             })}
           </div>
+
+          <div className="pt-2 border-t border-[var(--border-subtle)] flex items-center justify-between gap-3 px-1">
+            <div className="min-w-0">
+              <div className="text-xs font-semibold text-[var(--fg-primary)]">
+                Milestone breaks
+              </div>
+              <div className="text-[11px] text-[var(--fg-muted)] truncate">
+                Fox check-ins at 25%, 50%, 75%
+              </div>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={milestoneInterludesEnabled}
+              aria-label="Toggle milestone breaks"
+              onClick={handleToggleMilestoneInterludes}
+              className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-colors duration-150 cursor-pointer theme-focus ${
+                milestoneInterludesEnabled
+                  ? 'bg-[var(--intent-primary)] border-transparent'
+                  : 'bg-[var(--surface-2)] border-[var(--border-strong)]'
+              }`}
+            >
+              <span
+                aria-hidden="true"
+                className={`inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform duration-150 ${
+                  milestoneInterludesEnabled
+                    ? 'translate-x-5'
+                    : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -4034,80 +4268,130 @@ export default function App() {
               </div>
             )}
 
-            {/* Empty Low Confidence Queue OR Deck Done Celebration State */}
+            {/* Empty Low Confidence Queue, Deck Done Celebration, OR 25/50/75 Milestone Check-in */}
             {studyDeck.length === 0 ? (
-              <Card.Root className="p-6 sm:p-10 text-center space-y-4 my-2 surface-paper">
-                <FoxMascot
-                  pose="studio"
-                  size="xl"
-                  interactive
-                  cyclePosesOnClick
-                  className="mx-auto"
-                />
-                <div className="space-y-1.5">
-                  <h2 className="font-display text-xl font-bold text-[var(--fg-primary)]">
-                    Keine Fokus-Karten offen
-                  </h2>
-                  <p className="text-xs sm:text-sm text-[var(--fg-secondary)] max-w-sm mx-auto">
-                    Momentan ist keine Karte als unsicher markiert. Starte einfach ein Deck oder alle {cards.length} Karten.
-                  </p>
-                </div>
-                <div className="pt-2 flex items-center justify-center gap-3">
-                  <Button
-                    intent="primary"
-                    size="md"
-                    onClick={() => handleSelectStudyDeck('all')}
-                  >
-                    Study All {cards.length} Cards
-                  </Button>
-                  {isZenSessionActive && (
-                    <Button
-                      intent="secondary"
-                      size="md"
-                      onClick={() => setIsZenMode(false)}
-                    >
-                      Exit Zen
-                    </Button>
-                  )}
-                </div>
-              </Card.Root>
+              (() => {
+                const emptyMoment = selectEmptyQueueMoment(
+                  new Date().getHours()
+                );
+                return (
+                  <Card.Root className="p-6 sm:p-10 text-center space-y-4 my-2 surface-paper">
+                    <p className="text-xs font-medium tracking-wide text-[var(--fg-muted)]">
+                      {emptyMoment.kicker}
+                    </p>
+                    <MascotMomentVisual
+                      poseId={emptyMoment.poseId}
+                      size="lg"
+                      priority
+                      className="mx-auto"
+                    />
+                    <div className="space-y-1.5">
+                      <h2 className="font-display text-xl font-bold text-[var(--fg-primary)] text-balance">
+                        {emptyMoment.headline}
+                      </h2>
+                      <p className="text-xs sm:text-sm text-[var(--fg-secondary)] max-w-sm mx-auto">
+                        {emptyMoment.subline}
+                      </p>
+                    </div>
+                    <div className="pt-2 flex items-center justify-center gap-3">
+                      <Button
+                        intent="primary"
+                        size="md"
+                        onClick={() => handleSelectStudyDeck('all')}
+                      >
+                        Study All {cards.length} Cards
+                      </Button>
+                      {isZenSessionActive && (
+                        <Button
+                          intent="secondary"
+                          size="md"
+                          onClick={() => setIsZenMode(false)}
+                        >
+                          Exit Zen
+                        </Button>
+                      )}
+                    </div>
+                  </Card.Root>
+                );
+              })()
             ) : isActiveDeckDone ? (
-              <Card.Root className="p-6 sm:p-10 text-center space-y-4 my-2 surface-paper">
-                <FoxMascot
-                  pose="champion"
-                  size="hero"
-                  interactive
-                  cyclePosesOnClick
-                  className="mx-auto"
-                />
-                <div className="space-y-1.5">
-                  <h2 className="font-display text-xl font-bold text-[var(--fg-primary)]">
-                    Deck geschafft!
-                  </h2>
-                  <p className="text-xs sm:text-sm text-[var(--fg-secondary)] max-w-md mx-auto">
-                    Alle {studyDeck.length} Karten in „{activeDeckObj.shortTitle}“ haben Loop und Final Sweep bestanden ({activeLoopState.virtualClock} Bewertungen in dieser Session).
-                  </p>
-                </div>
-                <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
-                  <Button
-                    intent="primary"
-                    size="md"
-                    onClick={() => navigateToView('decks', 'forward')}
-                  >
-                    <Layers className="w-4 h-4" />
-                    <span>Alle Decks</span>
-                  </Button>
-                  {isZenSessionActive && (
-                    <Button
-                      intent="tertiary"
-                      size="md"
-                      onClick={() => setIsZenMode(false)}
-                    >
-                      Exit Zen
-                    </Button>
-                  )}
-                </div>
-              </Card.Root>
+              (() => {
+                const summary = deckSessionRatingsRef.current[
+                  activeDeckObj.id
+                ] || { count: 0, sum: 0, lowCount: 0 };
+                const avgRating =
+                  summary.count > 0 ? summary.sum / summary.count : 4;
+                const completionMoment = selectDeckCompletionMoment({
+                  avgRating,
+                  totalReviews: Math.max(
+                    activeLoopState.virtualClock,
+                    summary.count
+                  ),
+                  deckSize: studyDeck.length,
+                  deckId: activeDeckObj.id,
+                  deckTitle: activeDeckObj.shortTitle,
+                  localHour: new Date().getHours(),
+                });
+                return (
+                  <Card.Root className="milestone-interlude-enter p-6 sm:p-10 text-center space-y-4 my-2 surface-paper">
+                    <p className="text-xs font-medium tracking-wide text-[var(--fg-muted)] tabular-nums">
+                      <span>{completionMoment.kicker}</span>
+                      <span aria-hidden="true" className="mx-1.5 opacity-55">
+                        ·
+                      </span>
+                      <span>
+                        {studyDeck.length} Karten ·{' '}
+                        {activeLoopState.virtualClock} Bewertungen
+                      </span>
+                    </p>
+                    <MascotMomentVisual
+                      poseId={completionMoment.poseId}
+                      size="hero"
+                      priority
+                      className="mx-auto"
+                    />
+                    <div className="space-y-1.5">
+                      <h2 className="font-display text-xl sm:text-2xl font-bold text-[var(--fg-primary)] text-balance">
+                        {completionMoment.headline}
+                      </h2>
+                      <p className="text-xs sm:text-sm text-[var(--fg-secondary)] max-w-md mx-auto leading-relaxed">
+                        {completionMoment.subline}
+                      </p>
+                    </div>
+                    <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
+                      <Button
+                        intent="primary"
+                        size="md"
+                        onClick={() => navigateToView('decks', 'forward')}
+                        className="min-h-[44px]"
+                      >
+                        <Layers className="w-4 h-4" />
+                        <span>{completionMoment.ctaLabel}</span>
+                      </Button>
+                      {isZenSessionActive && (
+                        <Button
+                          intent="tertiary"
+                          size="md"
+                          onClick={() => setIsZenMode(false)}
+                          className="min-h-[44px]"
+                        >
+                          Exit Zen
+                        </Button>
+                      )}
+                    </div>
+                  </Card.Root>
+                );
+              })()
+            ) : activeMilestone ? (
+              <MilestoneInterludeCard
+                moment={activeMilestone}
+                clearedCount={Math.max(
+                  activeLoopState.clearedIds.length,
+                  activeLoopState.sweepPassedIds.length
+                )}
+                totalCount={studyDeck.length}
+                onContinue={handleDismissMilestone}
+              />
             ) : (
               currentCard && (
                 <>

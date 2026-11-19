@@ -14,21 +14,8 @@ export default defineConfig(() => {
         manifest: false,
         includeAssets: [
           'apple-touch-icon.png',
-          'apple-touch-icon-day.png',
-          'apple-touch-icon-night.png',
-          'favicon-day.png',
-          'favicon-night.png',
-          'pwa-192x192.png',
-          'pwa-512x512.png',
-          'pwa-maskable-512x512.png',
-          'pwa-day-192x192.png',
-          'pwa-day-512x512.png',
-          'pwa-day-maskable-512x512.png',
-          'pwa-night-192x192.png',
-          'pwa-night-512x512.png',
-          'pwa-night-maskable-512x512.png',
-          'manifest-day.webmanifest',
-          'manifest-night.webmanifest',
+          'icons/favicon-*.png',
+          'manifest-*.webmanifest',
           'assets/mascot/*.png',
         ],
         workbox: {
@@ -37,9 +24,25 @@ export default defineConfig(() => {
           skipWaiting: true,
           maximumFileSizeToCacheInBytes: 2.5 * 1024 * 1024,
           globPatterns: ['**/*.{js,css,html,ico,png,svg,json,woff2,webmanifest}'],
-          globIgnores: ['**/assets/aistudio/**'],
+          globIgnores: [
+            '**/assets/aistudio/**',
+            '**/assets/mascot/moments/**',
+            '**/icons/pwa-*.png',
+            '**/icons/apple-touch-icon-*.png',
+          ],
           navigateFallback: 'index.html',
           runtimeCaching: [
+            {
+              urlPattern: /\/(?:icons\/(?:pwa|apple-touch-icon)-.+\.png|assets\/mascot\/moments\/.+\.webp)$/i,
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'achsoo-mascot-media-v1',
+                expiration: {
+                  maxEntries: 40,
+                  maxAgeSeconds: 60 * 60 * 24 * 30,
+                },
+              },
+            },
             {
               urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
               handler: 'StaleWhileRevalidate',
