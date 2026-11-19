@@ -60,6 +60,7 @@ import {
   FoxMascotPose,
 } from './components/FoxMascot';
 import { SlidingPillSwitcher } from './components/SlidingPillSwitcher';
+import { PWAInstallButton } from './components/PWAInstallButton';
 
 const AnatomyDrawer = React.lazy(() =>
   import('./components/AnatomyDrawer').then((m) => ({
@@ -5524,8 +5525,9 @@ export default function App() {
               ))}
             </nav>
 
-            {/* Zone 3: Anchored Theme Popover + Separate Light/Dark Mode Toggle */}
+            {/* Zone 3: PWA Install Action + Anchored Theme Popover + Light/Dark Mode Toggle */}
             <div className="flex items-center gap-2 shrink-0">
+              <PWAInstallButton />
               {renderAppearanceControls()}
             </div>
           </div>

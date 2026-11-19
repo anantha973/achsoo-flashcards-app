@@ -14,14 +14,25 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Achsoo" />
-    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
-    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link id="app-favicon" rel="icon" type="image/png" sizes="64x64" href="/favicon-day.png" />
+    <link id="app-apple-touch-icon" rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon-day.png" />
+    <link id="app-manifest" rel="manifest" href="/manifest-day.webmanifest" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400&family=Geist:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <script>
       (function () {
         try {
+          var hour = new Date().getHours();
+          var iconSlot = hour >= 6 && hour < 18 ? 'day' : 'night';
+          document.documentElement.setAttribute('data-app-icon-slot', iconSlot);
+          var favEl = document.getElementById('app-favicon');
+          if (favEl) favEl.setAttribute('href', '/favicon-' + iconSlot + '.png');
+          var appleEl = document.getElementById('app-apple-touch-icon');
+          if (appleEl) appleEl.setAttribute('href', '/apple-touch-icon-' + iconSlot + '.png');
+          var manifestEl = document.getElementById('app-manifest');
+          if (manifestEl) manifestEl.setAttribute('href', '/manifest-' + iconSlot + '.webmanifest');
+
           var themeId = 'nordic';
           var colorMode = '';
           var rawV2 = localStorage.getItem('wortschatz_theme_v2');

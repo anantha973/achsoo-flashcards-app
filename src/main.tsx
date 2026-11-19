@@ -2,6 +2,9 @@ import {createRoot} from 'react-dom/client';
 import {registerSW} from 'virtual:pwa-register';
 import App from './App.tsx';
 import './index.css';
+import {startTimeOfDayIconScheduler} from './utils/appIconScheduler';
+
+startTimeOfDayIconScheduler();
 
 if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
   if (import.meta.env.PROD) {
