@@ -6,6 +6,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { createPortal } from 'react-dom';
 import { Volume2, X } from 'lucide-react';
 import {
   CardCategory,
@@ -513,14 +514,14 @@ export const AnatomyDrawer: React.FC<AnatomyDrawerProps> = ({
 
   const backdropDim = Math.max(0.1, 1 - dragY / 280);
 
-  return (
+  const drawerContent = (
     <div
       role="dialog"
       aria-modal="true"
       aria-labelledby="word-anatomy-title"
       onClick={onClose}
       style={{ opacity: backdropDim }}
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-black/45 backdrop-blur-xs anatomy-backdrop-enter overscroll-none"
+      className="fixed inset-0 z-[60] h-[100dvh] w-screen flex items-end sm:items-center justify-center sm:p-4 bg-black/45 backdrop-blur-xs anatomy-backdrop-enter overscroll-none"
     >
       <div
         onClick={(e) => e.stopPropagation()}
@@ -530,7 +531,7 @@ export const AnatomyDrawer: React.FC<AnatomyDrawerProps> = ({
         onTouchMove={handleBodyTouchMove}
         onTouchEnd={handleBodyTouchEnd}
         onTouchCancel={sheetTouchHandlers.onTouchCancel}
-        className="w-full max-w-xl md:max-w-2xl surface-overlay border rounded-b-none sm:rounded-[var(--radius-card)] max-h-[86vh] flex flex-col overflow-hidden anatomy-sheet-enter overscroll-y-contain"
+        className="w-full max-w-xl md:max-w-2xl surface-overlay border rounded-b-none sm:rounded-[var(--radius-card)] max-h-[86dvh] pb-[env(safe-area-inset-bottom,0px)] sm:pb-0 flex flex-col overflow-hidden anatomy-sheet-enter overscroll-y-contain"
       >
         {/* ==================== EDITORIAL HEADER ==================== */}
         <div
@@ -1443,6 +1444,10 @@ export const AnatomyDrawer: React.FC<AnatomyDrawerProps> = ({
       </div>
     </div>
   );
+
+  return typeof document !== 'undefined'
+    ? createPortal(drawerContent, document.body)
+    : drawerContent;
 };
 
 /* ==================== CLEAN EDITORIAL SUB-SECTIONS (ZERO BOX-IN-BOX) ==================== */

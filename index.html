@@ -10,9 +10,10 @@
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="theme-color" content="#FAF8F5" id="meta-theme-color" />
+    <meta name="color-scheme" content="light dark" id="meta-color-scheme" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" id="meta-apple-status-bar" />
     <meta name="apple-mobile-web-app-title" content="Achsoo" />
     <link id="app-favicon" rel="icon" type="image/png" sizes="64x64" href="/icons/favicon-midday.png" />
     <link id="app-apple-touch-icon" rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon-midday.png" />
@@ -87,9 +88,19 @@
             'coss:light': '#FAFAFA',
             'coss:dark': '#09090B'
           };
+          var resolvedBg = metaColorMap[themeId + ':' + colorMode] || (colorMode === 'dark' ? '#171412' : '#FAF8F5');
+          root.style.backgroundColor = resolvedBg;
           var metaEl = document.getElementById('meta-theme-color');
           if (metaEl) {
-            metaEl.setAttribute('content', metaColorMap[themeId + ':' + colorMode] || '#FAF8F5');
+            metaEl.setAttribute('content', resolvedBg);
+          }
+          var colorSchemeEl = document.getElementById('meta-color-scheme');
+          if (colorSchemeEl) {
+            colorSchemeEl.setAttribute('content', colorMode);
+          }
+          var appleStatusBarEl = document.getElementById('meta-apple-status-bar');
+          if (appleStatusBarEl) {
+            appleStatusBarEl.setAttribute('content', colorMode === 'dark' ? 'black-translucent' : 'default');
           }
         } catch (e) {}
       })();

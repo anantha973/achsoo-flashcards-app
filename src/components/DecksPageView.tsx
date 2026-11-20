@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   ArrowLeftRight,
   ArrowUpDown,
@@ -50,10 +51,9 @@ import {
   suggestIconFromKeywords,
 } from '../utils/decksManager';
 import { useSheetSwipeDismiss } from '../hooks/useMobileGestures';
-import { computeConfidenceMasteryPct } from '../utils/confidenceLoopEngine';
 import {
-  createDefaultSrsState,
   formatConfidenceBadge,
+  getCardSrsForDirection,
   isCardLowConfidence,
   triggerHapticFeedback,
 } from '../utils/srsEngine';
@@ -108,7 +108,11 @@ interface DecksPageViewProps {
   onSelectCardDetail: (card: VocabCard) => void;
   onPlayAudio: (text?: string, idTag?: string, e?: React.MouseEvent) => void;
   speakingId: string | null;
-  onResetDeckSrs: (cardIds: string[], deckId?: string) => void;
+  onResetDeckSrs: (
+    cardIds: string[],
+    deckId?: string,
+    direction?: DeckStudyDirection
+  ) => void;
   onSubScreenChange?: (isNested: boolean) => void;
   controlledSubScreen?: DeckSubScreen;
   onControlledSubScreenChange?: (next: DeckSubScreen) => void;
@@ -277,6 +281,26 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
   useEffect(() => {
     setPickerVisibleCount(60);
   }, [editorCardSearch, editorState?.mode, editorState?.targetId]);
+
+  const hasOpenModalOverlay = Boolean(
+    actionDeckId ||
+      actionFolderId ||
+      moveTargetDeckId ||
+      assignToFolderId ||
+      deleteFolderTarget ||
+      isFilterSheetOpen ||
+      editorState
+  );
+
+  // Lock background page scroll whenever a Decks modal or sheet is open
+  useEffect(() => {
+    if (!hasOpenModalOverlay || typeof document === 'undefined') return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [hasOpenModalOverlay]);
 
   // Close "+ New" and "Sort" menus when clicking outside or pressing Escape
   useEffect(() => {
@@ -515,19 +539,19 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
         let totalLearning = 0;
         let totalLowConfidence = 0;
         let lastStudiedAt = 0;
+        let weightedProgressSum = 0;
         const levelCounts: Record<string, number> = { A1: 0, A2: 0, B1: 0 };
-        const folderCardIds: string[] = [];
 
         for (const d of childDecks) {
           totalCards += d.total;
           totalMastered += d.mastered;
           totalLearning += d.learning;
           totalLowConfidence += d.lowConfidence;
+          weightedProgressSum += d.progressPct * d.total;
           if (d.lastStudiedAt > lastStudiedAt) {
             lastStudiedAt = d.lastStudiedAt;
           }
           for (const c of d.cards) {
-            folderCardIds.push(c.id);
             levelCounts[c.cefr] = (levelCounts[c.cefr] || 0) + 1;
           }
         }
@@ -536,7 +560,8 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
           totalCards > 0 ? (totalMastered / totalCards) * 100 : 0;
         const learningPct =
           totalCards > 0 ? (totalLearning / totalCards) * 100 : 0;
-        const progressPct = computeConfidenceMasteryPct(folderCardIds, srsMap);
+        const progressPct =
+          totalCards > 0 ? Math.round(weightedProgressSum / totalCards) : 0;
 
         let dominantLevel = 'A1–B1';
         const topEntry = Object.entries(levelCounts).sort(
@@ -1818,16 +1843,23 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
                 type="button"
                 disabled={activeFolder.totalCards === 0}
                 onClick={() => {
-                  const allFolderCards = activeFolder.childDecks.flatMap(
-                    (d) => d.cards
-                  );
                   const uniqueMap = new Map<string, VocabCard>();
-                  for (const c of allFolderCards) uniqueMap.set(c.id, c);
+                  const lowConfidenceIds = new Set<string>();
+                  for (const d of activeFolder.childDecks) {
+                    for (const c of d.cards) {
+                      uniqueMap.set(c.id, c);
+                      if (
+                        isCardLowConfidence(
+                          getCardSrsForDirection(srsMap, c.id, d.studyDirection)
+                        )
+                      ) {
+                        lowConfidenceIds.add(c.id);
+                      }
+                    }
+                  }
                   const uniqueCards = Array.from(uniqueMap.values());
                   const focusCards = uniqueCards.filter((c) =>
-                    isCardLowConfidence(
-                      srsMap[c.id] || createDefaultSrsState(c.id)
-                    )
+                    lowConfidenceIds.has(c.id)
                   );
                   onStartDeckStudy(
                     `folder-${activeFolder.id}`,
@@ -2031,7 +2063,11 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
             {/* Unified Grouped Card List inside this Deck */}
             <div className="surface-paper border overflow-hidden divide-y divide-[var(--border-subtle)]">
               {activeDetailDeck.cards.map((card) => {
-                const st = srsMap[card.id] || createDefaultSrsState(card.id);
+                const st = getCardSrsForDirection(
+                  srsMap,
+                  card.id,
+                  activeDetailDeck.studyDirection
+                );
                 const isLow = isCardLowConfidence(st);
                 const badgeText = formatConfidenceBadge(st);
                 const formattedGerman = card.nounDetails
@@ -2111,23 +2147,26 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
         )}
       </div>
 
-      {/* ====================================================================
-       * POPUP MODAL 1: DECK "⋯" OVERFLOW MENU (Preview / Edit / Move / Reset / Delete)
-       * ==================================================================== */}
-      {actionDeckId &&
-        (() => {
-          const targetDeck = enrichedDecks.find((d) => d.id === actionDeckId);
-          if (!targetDeck) return null;
-          const isInsideFolderScreen = subScreen.type === 'folder';
+      {typeof document !== 'undefined' &&
+        createPortal(
+          <>
+            {/* ====================================================================
+             * POPUP MODAL 1: DECK "⋯" OVERFLOW MENU (Preview / Edit / Move / Reset / Delete)
+             * ==================================================================== */}
+            {actionDeckId &&
+              (() => {
+                const targetDeck = enrichedDecks.find((d) => d.id === actionDeckId);
+                if (!targetDeck) return null;
+                const isInsideFolderScreen = subScreen.type === 'folder';
 
-          return (
-            <div
-              role="dialog"
-              aria-modal="true"
-              aria-label={`Options for ${targetDeck.title}`}
-              onClick={() => setActionDeckId(null)}
-              className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs anatomy-backdrop-enter"
-            >
+                return (
+                  <div
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label={`Options for ${targetDeck.title}`}
+                    onClick={() => setActionDeckId(null)}
+                    className="fixed inset-0 z-[60] h-[100dvh] w-screen flex items-center justify-center p-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] bg-black/50 backdrop-blur-xs anatomy-backdrop-enter"
+                  >
               <div
                 onClick={(e) => e.stopPropagation()}
                 className="w-full max-w-[380px] sm:max-w-md rounded-[var(--radius-card)] surface-overlay border p-4 sm:p-5 space-y-3 max-h-[85dvh] overflow-y-auto modal-pop-enter"
@@ -2241,7 +2280,8 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
                       onClick={() => {
                         onResetDeckSrs(
                           targetDeck.cards.map((c) => c.id),
-                          targetDeck.id
+                          targetDeck.id,
+                          targetDeck.studyDirection
                         );
                         setActionDeckId(null);
                       }}
@@ -2249,7 +2289,7 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
                     >
                       <RotateCcw className="w-4 h-4 shrink-0 text-[var(--fg-secondary)]" />
                       <span className="min-w-0 flex-1 leading-snug">
-                        Fresh start (Deck zurücksetzen)
+                        Fresh start ({targetDeck.studyDirection === 'en-de' ? 'EN → DE' : 'DE → EN'} zurücksetzen)
                       </span>
                     </button>
 
@@ -2286,7 +2326,7 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
               aria-modal="true"
               aria-label={`Folder options for ${targetFolder.name}`}
               onClick={() => setActionFolderId(null)}
-              className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs anatomy-backdrop-enter"
+              className="fixed inset-0 z-[60] h-[100dvh] w-screen flex items-center justify-center p-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] bg-black/50 backdrop-blur-xs anatomy-backdrop-enter"
             >
               <div
                 onClick={(e) => e.stopPropagation()}
@@ -2362,7 +2402,7 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
               aria-label="In Ordner verschieben"
               onClick={() => setMoveTargetDeckId(null)}
               style={activeSheetBackdropStyle}
-              className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-black/50 backdrop-blur-xs anatomy-backdrop-enter"
+              className="fixed inset-0 z-[60] h-[100dvh] w-screen flex items-end sm:items-center justify-center sm:p-4 bg-black/50 backdrop-blur-xs anatomy-backdrop-enter"
             >
               <div
                 onClick={(e) => e.stopPropagation()}
@@ -2371,7 +2411,7 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
                 onTouchMove={activeSheetTouchHandlers.onTouchMove}
                 onTouchEnd={activeSheetTouchHandlers.onTouchEnd}
                 onTouchCancel={activeSheetTouchHandlers.onTouchCancel}
-                className="w-full max-w-md rounded-t-3xl sm:rounded-[var(--radius-card)] surface-overlay border p-5 pt-3 sm:pt-5 space-y-3 anatomy-sheet-enter"
+                className="w-full max-w-md rounded-t-3xl sm:rounded-[var(--radius-card)] surface-overlay border p-5 pt-3 pb-[calc(1.25rem+env(safe-area-inset-bottom,0px))] sm:pt-5 sm:pb-5 space-y-3 anatomy-sheet-enter"
               >
                 <div
                   data-sheet-handle="true"
@@ -2488,7 +2528,7 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
               aria-label={`Add deck to ${folder.name}`}
               onClick={() => setAssignToFolderId(null)}
               style={activeSheetBackdropStyle}
-              className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-black/50 backdrop-blur-xs anatomy-backdrop-enter"
+              className="fixed inset-0 z-[60] h-[100dvh] w-screen flex items-end sm:items-center justify-center sm:p-4 bg-black/50 backdrop-blur-xs anatomy-backdrop-enter"
             >
               <div
                 onClick={(e) => e.stopPropagation()}
@@ -2497,7 +2537,7 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
                 onTouchMove={activeSheetTouchHandlers.onTouchMove}
                 onTouchEnd={activeSheetTouchHandlers.onTouchEnd}
                 onTouchCancel={activeSheetTouchHandlers.onTouchCancel}
-                className="w-full max-w-md rounded-t-3xl sm:rounded-[var(--radius-card)] surface-overlay border p-5 pt-3 sm:pt-5 space-y-3.5 anatomy-sheet-enter"
+                className="w-full max-w-md rounded-t-3xl sm:rounded-[var(--radius-card)] surface-overlay border p-5 pt-3 pb-[calc(1.25rem+env(safe-area-inset-bottom,0px))] sm:pt-5 sm:pb-5 space-y-3.5 anatomy-sheet-enter"
               >
                 <div
                   data-sheet-handle="true"
@@ -2591,7 +2631,7 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
           aria-modal="true"
           aria-label="Ordner löschen"
           onClick={() => setDeleteFolderTarget(null)}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs anatomy-backdrop-enter"
+          className="fixed inset-0 z-[60] h-[100dvh] w-screen flex items-center justify-center p-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] bg-black/50 backdrop-blur-xs anatomy-backdrop-enter"
         >
           <div
             onClick={(e) => e.stopPropagation()}
@@ -2645,7 +2685,7 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
           aria-label="Filter decks"
           onClick={() => setIsFilterSheetOpen(false)}
           style={activeSheetBackdropStyle}
-          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-black/50 backdrop-blur-xs anatomy-backdrop-enter"
+          className="fixed inset-0 z-[60] h-[100dvh] w-screen flex items-end sm:items-center justify-center sm:p-4 bg-black/50 backdrop-blur-xs anatomy-backdrop-enter"
         >
           <div
             onClick={(e) => e.stopPropagation()}
@@ -2654,7 +2694,7 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
             onTouchMove={activeSheetTouchHandlers.onTouchMove}
             onTouchEnd={activeSheetTouchHandlers.onTouchEnd}
             onTouchCancel={activeSheetTouchHandlers.onTouchCancel}
-            className="w-full max-w-md rounded-t-3xl sm:rounded-[var(--radius-card)] surface-overlay border p-5 pt-3 sm:pt-5 space-y-4 anatomy-sheet-enter"
+            className="w-full max-w-md rounded-t-3xl sm:rounded-[var(--radius-card)] surface-overlay border p-5 pt-3 pb-[calc(1.25rem+env(safe-area-inset-bottom,0px))] sm:pt-5 sm:pb-5 space-y-4 anatomy-sheet-enter"
           >
             <div
               data-sheet-handle="true"
@@ -2806,7 +2846,7 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
               }
               onClick={() => setEditorState(null)}
               style={activeSheetBackdropStyle}
-              className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-black/50 backdrop-blur-xs anatomy-backdrop-enter"
+              className="fixed inset-0 z-[60] h-[100dvh] w-screen flex items-end sm:items-center justify-center sm:p-4 bg-black/50 backdrop-blur-xs anatomy-backdrop-enter"
             >
               <div
                 ref={sheetScrollRef}
@@ -2816,7 +2856,7 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
                 onTouchMove={activeSheetTouchHandlers.onTouchMove}
                 onTouchEnd={activeSheetTouchHandlers.onTouchEnd}
                 onTouchCancel={activeSheetTouchHandlers.onTouchCancel}
-                className="w-full max-w-lg rounded-t-3xl sm:rounded-[var(--radius-card)] surface-overlay border p-5 pt-3 sm:pt-5 space-y-4 max-h-[90vh] overflow-y-auto anatomy-sheet-enter"
+                className="w-full max-w-lg rounded-t-3xl sm:rounded-[var(--radius-card)] surface-overlay border p-5 pt-3 pb-[calc(1.25rem+env(safe-area-inset-bottom,0px))] sm:pt-5 sm:pb-5 space-y-4 max-h-[90dvh] overflow-y-auto anatomy-sheet-enter"
               >
                 <div
                   data-sheet-handle="true"
@@ -3218,6 +3258,9 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
             </div>
           );
         })()}
+          </>,
+          document.body
+        )}
     </div>
   );
 };

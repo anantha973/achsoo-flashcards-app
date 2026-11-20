@@ -244,6 +244,7 @@ export interface CardSrsState {
 }
 
 export type ReviewEventType = 'review' | 'undo' | 'reset';
+export type StudyDirection = 'de-en' | 'en-de';
 
 export interface ReviewLogEntry {
   id: string; // UUID v4 primary key for idempotent multi-device union sync
@@ -251,6 +252,7 @@ export interface ReviewLogEntry {
   undoTargetId?: string | null; // When eventType === 'undo', the UUID of the review log entry being undone
   cardId: string;
   deckId?: string;
+  direction?: StudyDirection;
   reviewIndex?: number;
   timestamp: string; // ISO-8601 UTC review timestamp
   reviewedAt: string; // Alias of timestamp for indexed sorting

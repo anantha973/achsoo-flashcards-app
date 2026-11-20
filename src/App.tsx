@@ -145,6 +145,8 @@ import {
   applyThemePreferencesToDom,
   createDefaultSrsState,
   formatConfidenceBadge,
+  getCardSrsForDirection,
+  getDeckSessionKey,
   getLast7DaysVelocityData,
   hydrateEngineFromIndexedDB,
   isCardLowConfidence,
@@ -152,6 +154,7 @@ import {
   loadSrsMap,
   loadStudyStats,
   loadThemePreferences,
+  parseSrsStateKey,
   resetAllSrsProgress,
   resetCardsSrsProgress,
   saveCustomCard,
@@ -165,6 +168,7 @@ import {
   DeckLoopState,
   applyLoopRating,
   computeConfidenceMasteryPct,
+  computeDeckLoopProgressPct,
   createInitialDeckLoopState,
   getCurrentLoopCardId,
 } from './utils/confidenceLoopEngine';
@@ -1245,12 +1249,15 @@ export default function App() {
     []
   );
 
-  // Enrich each deck with live 1-5 confidence metrics
+  // Enrich each deck with live 1-5 confidence metrics (direction-aware for DE->EN vs EN->DE)
   const enrichedDecks = useMemo(() => {
     const now = new Date();
     return deckDefinitions.map((def) => {
+      const deckDir = normalizeStudyDirection(
+        deckOverrides[def.id]?.studyDirection
+      );
       let matchingCards = cards.filter((c) => {
-        const st = srsMap[c.id] || createDefaultSrsState(c.id);
+        const st = getCardSrsForDirection(srsMap, c.id, deckDir);
         return def.predicate(c, st, now);
       });
 
@@ -1272,7 +1279,7 @@ export default function App() {
       let lowConfidence = 0;
 
       for (const c of matchingCards) {
-        const st = srsMap[c.id] || createDefaultSrsState(c.id);
+        const st = getCardSrsForDirection(srsMap, c.id, deckDir);
         if (st.mastered || st.confidence >= 4) mastered += 1;
         else if (st.reviewCount > 0) learning += 1;
         if (isCardLowConfidence(st)) lowConfidence += 1;
@@ -1283,7 +1290,8 @@ export default function App() {
       const learningPct = total > 0 ? (learning / total) * 100 : 0;
       const confidencePct = computeConfidenceMasteryPct(
         matchingCards.map((c) => c.id),
-        srsMap
+        srsMap,
+        deckDir
       );
       const lowConfProgressPct =
         total === 0
@@ -1306,7 +1314,14 @@ export default function App() {
         progressPct,
       };
     });
-  }, [deckDefinitions, cards, srsMap, stats.totalReviewsToday, allCardsOrder]);
+  }, [
+    deckDefinitions,
+    deckOverrides,
+    cards,
+    srsMap,
+    stats.totalReviewsToday,
+    allCardsOrder,
+  ]);
 
   // Global summary metrics
   const summaryMetrics = useMemo(() => {
@@ -1527,9 +1542,14 @@ export default function App() {
           ? !ov?.icon || ov.icon === 'level-text'
           : false;
 
+        const deckDir = normalizeStudyDirection(ov?.studyDirection);
         let lastStudiedAt = 0;
         for (const c of d.cards) {
-          const reviewedAt = srsMap[c.id]?.lastReviewedAt;
+          const reviewedAt = getCardSrsForDirection(
+            srsMap,
+            c.id,
+            deckDir
+          ).lastReviewedAt;
           if (reviewedAt) {
             const ts = Date.parse(reviewedAt);
             if (!Number.isNaN(ts) && ts > lastStudiedAt) {
@@ -1555,7 +1575,7 @@ export default function App() {
             ov?.icon && ov.icon !== 'level-text' ? ov.icon : cfg.iconId,
           tint: ov?.tint || cfg.tint,
           folderId: ov?.folderId ?? null,
-          studyDirection: normalizeStudyDirection(ov?.studyDirection),
+          studyDirection: deckDir,
           createdAt: 1700000000000 - idx * 1000,
           lastStudiedAt,
           cards: d.cards,
@@ -1570,6 +1590,7 @@ export default function App() {
       });
 
     const customList: EnrichedUnifiedDeck[] = customDecks.map((cd) => {
+      const deckDir = normalizeStudyDirection(cd.studyDirection);
       const matchingCards = cd.cardIds
         .map((id) => cardsById.get(id))
         .filter((c): c is VocabCard => Boolean(c));
@@ -1578,7 +1599,7 @@ export default function App() {
       let lowConfidence = 0;
       let lastStudiedAt = 0;
       for (const c of matchingCards) {
-        const st = srsMap[c.id] || createDefaultSrsState(c.id);
+        const st = getCardSrsForDirection(srsMap, c.id, deckDir);
         if (st.mastered || st.confidence >= 4) mastered += 1;
         else if (st.reviewCount > 0) learning += 1;
         if (isCardLowConfidence(st)) lowConfidence += 1;
@@ -1594,7 +1615,8 @@ export default function App() {
       const learningPct = total > 0 ? (learning / total) * 100 : 0;
       const progressPct = computeConfidenceMasteryPct(
         matchingCards.map((c) => c.id),
-        srsMap
+        srsMap,
+        deckDir
       );
 
       return {
@@ -1610,7 +1632,7 @@ export default function App() {
         iconId: cd.icon || 'BookOpen',
         tint: cd.tint || 'sage',
         folderId: cd.folderId ?? null,
-        studyDirection: normalizeStudyDirection(cd.studyDirection),
+        studyDirection: deckDir,
         createdAt: cd.createdAt,
         lastStudiedAt,
         cards: matchingCards,
@@ -1647,6 +1669,10 @@ export default function App() {
   }, [enrichedUnifiedDecks, activeDeckObj.id, customStudyQueue?.studyDirection]);
 
   const isEnToDe = activeStudyDirection === 'en-de';
+  const activeSessionKey = getDeckSessionKey(
+    activeDeckObj.id,
+    activeStudyDirection
+  );
 
   const getCardEnglishPrompt = useCallback((card: VocabCard) => {
     const trimmed = card.translation?.trim();
@@ -1658,42 +1684,92 @@ export default function App() {
   const studyDeck = activeDeckObj.cards;
 
   const activeLoopState: DeckLoopState = useMemo(() => {
-    const existing = loopStatesByDeck[activeDeckObj.id];
-    if (existing) return existing;
+    const existing = loopStatesByDeck[activeSessionKey];
+    if (existing && existing.direction === activeStudyDirection) {
+      return existing;
+    }
     return createInitialDeckLoopState(
       activeDeckObj.id,
       studyDeck.map((c) => c.id),
       srsMap,
-      CONFIDENCE_LOOP_CONFIG
+      CONFIDENCE_LOOP_CONFIG,
+      activeStudyDirection
     );
-  }, [loopStatesByDeck, activeDeckObj.id, studyDeck, srsMap]);
+  }, [
+    loopStatesByDeck,
+    activeSessionKey,
+    activeDeckObj.id,
+    activeStudyDirection,
+    studyDeck,
+    srsMap,
+  ]);
 
   const isActiveDeckDone =
     studyDeck.length > 0 && activeLoopState.phase === 'done';
 
-  const activeDeckMasteryProgressPct = useMemo(() => {
-    if (studyDeck.length === 0) return 0;
-    if (activeLoopState.phase === 'done') return 100;
-    const completedCards = Math.max(
-      activeLoopState.clearedIds.length,
-      activeLoopState.sweepPassedIds.length
-    );
-    return Math.min(
-      99,
-      Math.round((completedCards / Math.max(1, studyDeck.length)) * 100)
-    );
+  const activeDeckMasteryProgressPct = useMemo(
+    () => computeDeckLoopProgressPct(activeLoopState),
+    [activeLoopState]
+  );
+
+  // Immediately refresh active study card, loop, and flip state whenever
+  // the user toggles a deck's studyDirection (DE->EN <-> EN->DE)
+  const prevDirectionSessionRef = useRef<string>(activeSessionKey);
+  useEffect(() => {
+    if (prevDirectionSessionRef.current === activeSessionKey) return;
+    const prevKey = prevDirectionSessionRef.current;
+    prevDirectionSessionRef.current = activeSessionKey;
+
+    // Only auto-refresh when direction toggled on the SAME active deck
+    const prevBaseDeck = prevKey.endsWith('::en-de')
+      ? prevKey.slice(0, -7)
+      : prevKey;
+    if (prevBaseDeck !== activeDeckObj.id) return;
+
+    const existingForDir = loopStatesByDeck[activeSessionKey];
+    const refreshedLoop =
+      existingForDir &&
+      existingForDir.direction === activeStudyDirection &&
+      existingForDir.phase !== 'done'
+        ? existingForDir
+        : createInitialDeckLoopState(
+            activeDeckObj.id,
+            studyDeck.map((c) => c.id),
+            srsMap,
+            CONFIDENCE_LOOP_CONFIG,
+            activeStudyDirection
+          );
+
+    setLoopStatesByDeck((prev) => ({
+      ...prev,
+      [activeSessionKey]: refreshedLoop,
+    }));
+
+    const nextCardId = getCurrentLoopCardId(refreshedLoop);
+    if (nextCardId) {
+      const idx = studyDeck.findIndex((c) => c.id === nextCardId);
+      setCurrentIndex(idx >= 0 ? idx : 0);
+    } else {
+      setCurrentIndex(0);
+    }
+    setActiveMilestone(null);
+    setIsFlipped(false);
+    setIsBackExpanded(false);
+    setDetailCard(null);
   }, [
-    studyDeck.length,
-    activeLoopState.phase,
-    activeLoopState.clearedIds.length,
-    activeLoopState.sweepPassedIds.length,
+    activeSessionKey,
+    activeDeckObj.id,
+    activeStudyDirection,
+    loopStatesByDeck,
+    studyDeck,
+    srsMap,
   ]);
 
   // Predictive JIT idle prefetch for the single upcoming milestone or completion cutout
   useEffect(() => {
     if (activeView !== 'study' || studyDeck.length === 0) return;
     const deckId = activeDeckObj.id;
-    const sessionSummary = deckSessionRatingsRef.current[deckId] || {
+    const sessionSummary = deckSessionRatingsRef.current[activeSessionKey] || {
       count: 0,
       sum: 0,
       lowCount: 0,
@@ -1701,7 +1777,8 @@ export default function App() {
     const recentAvgRating =
       sessionSummary.count > 0 ? sessionSummary.sum / sessionSummary.count : 4;
     const shownSet =
-      shownMilestonesByDeckRef.current[deckId] || new Set<MilestoneThreshold>();
+      shownMilestonesByDeckRef.current[activeSessionKey] ||
+      new Set<MilestoneThreshold>();
 
     const nextSrc = getUpcomingMomentSrcToPrefetch({
       progressPct: activeDeckMasteryProgressPct,
@@ -1721,6 +1798,7 @@ export default function App() {
   }, [
     activeView,
     activeDeckObj.id,
+    activeSessionKey,
     activeDeckObj.shortTitle,
     activeDeckMasteryProgressPct,
     activeLoopState.phase,
@@ -1777,13 +1855,13 @@ export default function App() {
       return;
     }
     const positions = loadStudyDeckPositions();
-    const saved = positions[activeDeckObj.id];
+    const saved = positions[activeSessionKey];
     const restoredIdx = resolveSavedDeckIndex(studyDeck, saved);
     hasRestoredStudyIndexRef.current = true;
     if (restoredIdx !== currentIndex) {
       setCurrentIndex(restoredIdx);
     }
-  }, [activeDeckObj.id, studyDeck, currentIndex, activeLoopState]);
+  }, [activeDeckObj.id, activeSessionKey, studyDeck, currentIndex, activeLoopState]);
 
   useEffect(() => {
     if (currentIndex >= studyDeck.length && studyDeck.length > 0) {
@@ -1809,10 +1887,11 @@ export default function App() {
         : undefined,
     });
     if (studyDeck.length > 0 && currentCard) {
-      saveStudyDeckPosition(activeDeckObj.id, currentIndex, currentCard.id);
+      saveStudyDeckPosition(activeSessionKey, currentIndex, currentCard.id);
     }
   }, [
     activeDeckObj.id,
+    activeSessionKey,
     activeStudyDirection,
     customStudyQueue,
     studyDeck.length,
@@ -1821,17 +1900,17 @@ export default function App() {
   ]);
   const currentCardSrs: CardSrsState = useMemo(() => {
     if (!currentCard) return createDefaultSrsState('empty');
-    return srsMap[currentCard.id] || createDefaultSrsState(currentCard.id);
-  }, [currentCard, srsMap]);
+    return getCardSrsForDirection(srsMap, currentCard.id, activeStudyDirection);
+  }, [currentCard, srsMap, activeStudyDirection]);
 
   const activeTrail: StudyDeckTrail = useMemo(() => {
     return syncTrailWithDeck(
-      studyTrailsByDeck[activeDeckObj.id],
+      studyTrailsByDeck[activeSessionKey],
       studyDeck,
       currentCard?.id,
       activeDeckObj.id === 'low-confidence'
     );
-  }, [studyTrailsByDeck, activeDeckObj.id, studyDeck, currentCard?.id]);
+  }, [studyTrailsByDeck, activeSessionKey, activeDeckObj.id, studyDeck, currentCard?.id]);
 
   const currentVisitRating: RatingKey | undefined =
     activeTrail.entries[activeTrail.cursor]?.rating;
@@ -1970,13 +2049,13 @@ export default function App() {
     triggerHapticFeedback(8);
     setDetailCard(null);
     setCardMotion('is-exiting-prev');
-    const targetDeckId = activeDeckObj.id;
+    const targetSessionKey = activeSessionKey;
     cardMotionTimersRef.current.exitTimer = window.setTimeout(() => {
       resetFlipInstantaneously();
-      saveStudyDeckTrail(targetDeckId, prevStep.trail);
+      saveStudyDeckTrail(targetSessionKey, prevStep.trail);
       setStudyTrailsByDeck((prev) => ({
         ...prev,
-        [targetDeckId]: prevStep.trail,
+        [targetSessionKey]: prevStep.trail,
       }));
       setCurrentIndex(prevStep.prevDeckIndex);
       isRatingTransitionRef.current = false;
@@ -1989,7 +2068,7 @@ export default function App() {
   }, [
     studyDeck,
     activeTrail,
-    activeDeckObj.id,
+    activeSessionKey,
     clearRateFirstHint,
     clearCardMotionTimers,
     resetFlipInstantaneously,
@@ -2008,13 +2087,13 @@ export default function App() {
     triggerHapticFeedback(8);
     setDetailCard(null);
     setCardMotion('is-exiting-next');
-    const targetDeckId = activeDeckObj.id;
+    const targetSessionKey = activeSessionKey;
     cardMotionTimersRef.current.exitTimer = window.setTimeout(() => {
       resetFlipInstantaneously();
-      saveStudyDeckTrail(targetDeckId, nextStep.trail);
+      saveStudyDeckTrail(targetSessionKey, nextStep.trail);
       setStudyTrailsByDeck((prev) => ({
         ...prev,
-        [targetDeckId]: nextStep.trail,
+        [targetSessionKey]: nextStep.trail,
       }));
       setCurrentIndex(nextStep.nextDeckIndex);
       isRatingTransitionRef.current = false;
@@ -2027,7 +2106,7 @@ export default function App() {
   }, [
     studyDeck,
     activeTrail,
-    activeDeckObj.id,
+    activeSessionKey,
     triggerBlockedNextFeedback,
     clearRateFirstHint,
     clearCardMotionTimers,
@@ -2058,6 +2137,8 @@ export default function App() {
 
       const now = new Date();
       const targetDeckId = activeDeckObj.id;
+      const targetDirection = activeStudyDirection;
+      const targetSessionKey = activeSessionKey;
       const durationMs = Math.max(
         0,
         Math.round(performance.now() - cardShownAtRef.current)
@@ -2067,6 +2148,7 @@ export default function App() {
         rating,
         srsMap,
         deckId: targetDeckId,
+        direction: targetDirection,
         now,
         durationMs,
       });
@@ -2080,8 +2162,11 @@ export default function App() {
 
       if (isLowConfidenceDeck) {
         const nextLowConfidenceCards = cards.filter((c) => {
-          const st =
-            result.updatedMap[c.id] || createDefaultSrsState(c.id);
+          const st = getCardSrsForDirection(
+            result.updatedMap,
+            c.id,
+            targetDirection
+          );
           return isCardLowConfidence(st);
         });
         const nextLoop = applyLoopRating(
@@ -2118,7 +2203,8 @@ export default function App() {
           targetDeckId,
           nextLowConfidenceCards.map((c) => c.id),
           result.updatedMap,
-          CONFIDENCE_LOOP_CONFIG
+          CONFIDENCE_LOOP_CONFIG,
+          targetDirection
         );
         nextTrail = recordTrailRating(activeTrail, rating, nextCardId, {
           isDueDeck: true,
@@ -2187,19 +2273,19 @@ export default function App() {
       const prevLoopSnapshot = activeLoopState;
       cardMotionTimersRef.current.exitTimer = window.setTimeout(() => {
         resetFlipInstantaneously();
-        const prevStack = loopUndoStackRef.current[targetDeckId] || [];
-        loopUndoStackRef.current[targetDeckId] = [
+        const prevStack = loopUndoStackRef.current[targetSessionKey] || [];
+        loopUndoStackRef.current[targetSessionKey] = [
           ...prevStack.slice(-29),
           prevLoopSnapshot,
         ];
         setLoopStatesByDeck((prev) => ({
           ...prev,
-          [targetDeckId]: nextLoopStateForDeck,
+          [targetSessionKey]: nextLoopStateForDeck,
         }));
-        saveStudyDeckTrail(targetDeckId, nextTrail);
+        saveStudyDeckTrail(targetSessionKey, nextTrail);
         setStudyTrailsByDeck((prev) => ({
           ...prev,
-          [targetDeckId]: nextTrail,
+          [targetSessionKey]: nextTrail,
         }));
         setSrsMap(result.updatedMap);
         setStats(result.updatedStats);
@@ -2213,7 +2299,7 @@ export default function App() {
         // Track deck session rating telemetry & evaluate 25% / 50% / 75% mascot checkpoints
         const numericRating = Number(rating) || 3;
         const prevRatingSummary = deckSessionRatingsRef.current[
-          targetDeckId
+          targetSessionKey
         ] || { count: 0, sum: 0, lowCount: 0 };
         const updatedSummary = {
           count: prevRatingSummary.count + 1,
@@ -2221,45 +2307,25 @@ export default function App() {
           lowCount:
             prevRatingSummary.lowCount + (numericRating <= 2 ? 1 : 0),
         };
-        deckSessionRatingsRef.current[targetDeckId] = updatedSummary;
+        deckSessionRatingsRef.current[targetSessionKey] = updatedSummary;
 
         if (!isLowConfidenceDeck && nextLoopStateForDeck.phase !== 'done') {
           const totalInDeck = studyDeck.length;
-          const prevPct =
-            totalInDeck > 0
-              ? Math.round(
-                  (Math.max(
-                    prevLoopSnapshot.clearedIds.length,
-                    prevLoopSnapshot.sweepPassedIds.length
-                  ) /
-                    totalInDeck) *
-                    100
-                )
-              : 0;
-          const nextPct =
-            totalInDeck > 0
-              ? Math.round(
-                  (Math.max(
-                    nextLoopStateForDeck.clearedIds.length,
-                    nextLoopStateForDeck.sweepPassedIds.length
-                  ) /
-                    totalInDeck) *
-                    100
-                )
-              : 0;
+          const prevPct = computeDeckLoopProgressPct(prevLoopSnapshot);
+          const nextPct = computeDeckLoopProgressPct(nextLoopStateForDeck);
 
-          let shownSet = shownMilestonesByDeckRef.current[targetDeckId];
+          let shownSet = shownMilestonesByDeckRef.current[targetSessionKey];
           if (!shownSet) {
             shownSet = new Set<MilestoneThreshold>();
             // Pre-mark thresholds already passed before this session started
             for (const th of MILESTONE_THRESHOLDS) {
               if (prevPct >= th) shownSet.add(th);
             }
-            shownMilestonesByDeckRef.current[targetDeckId] = shownSet;
+            shownMilestonesByDeckRef.current[targetSessionKey] = shownSet;
           }
 
           const ratingsGap =
-            (ratingsSinceMilestoneByDeckRef.current[targetDeckId] ?? 0) + 1;
+            (ratingsSinceMilestoneByDeckRef.current[targetSessionKey] ?? 0) + 1;
           const triggeredThreshold = evaluateMilestoneTrigger({
             deckSize: totalInDeck,
             progressPct: nextPct,
@@ -2272,7 +2338,7 @@ export default function App() {
             for (const th of MILESTONE_THRESHOLDS) {
               if (th <= triggeredThreshold) shownSet.add(th);
             }
-            ratingsSinceMilestoneByDeckRef.current[targetDeckId] = 0;
+            ratingsSinceMilestoneByDeckRef.current[targetSessionKey] = 0;
             const recentAvg = updatedSummary.sum / updatedSummary.count;
             setActiveMilestone(
               selectCheckpointMoment({
@@ -2283,7 +2349,8 @@ export default function App() {
               })
             );
           } else {
-            ratingsSinceMilestoneByDeckRef.current[targetDeckId] = ratingsGap;
+            ratingsSinceMilestoneByDeckRef.current[targetSessionKey] =
+              ratingsGap;
           }
         } else {
           setActiveMilestone(null);
@@ -2302,6 +2369,8 @@ export default function App() {
       studyDeck,
       currentIndex,
       activeDeckObj.id,
+      activeStudyDirection,
+      activeSessionKey,
       activeLoopState,
       activeTrail,
       milestoneInterludesEnabled,
@@ -2330,17 +2399,24 @@ export default function App() {
       let restoredCardIdx = 0;
       const nextDeckCards =
         nextIdx >= 0 ? enrichedDecks[nextIdx].cards : cards;
+      const nextDeckDir = normalizeStudyDirection(
+        deckOverrides[nextDeckId]?.studyDirection
+      );
+      const nextSessionKey = getDeckSessionKey(nextDeckId, nextDeckDir);
+      const existingLoop = loopStatesByDeck[nextSessionKey];
       const existingOrReopenedLoop =
-        loopStatesByDeck[nextDeckId] ??
-        createInitialDeckLoopState(
-          nextDeckId,
-          nextDeckCards.map((c) => c.id),
-          srsMap,
-          CONFIDENCE_LOOP_CONFIG
-        );
+        existingLoop && existingLoop.direction === nextDeckDir
+          ? existingLoop
+          : createInitialDeckLoopState(
+              nextDeckId,
+              nextDeckCards.map((c) => c.id),
+              srsMap,
+              CONFIDENCE_LOOP_CONFIG,
+              nextDeckDir
+            );
       setLoopStatesByDeck((prev) => ({
         ...prev,
-        [nextDeckId]: existingOrReopenedLoop,
+        [nextSessionKey]: existingOrReopenedLoop,
       }));
       const targetLoopCardId = getCurrentLoopCardId(existingOrReopenedLoop);
       if (targetLoopCardId) {
@@ -2352,7 +2428,7 @@ export default function App() {
         const savedPositions = loadStudyDeckPositions();
         restoredCardIdx = resolveSavedDeckIndex(
           nextDeckCards,
-          savedPositions[nextDeckId]
+          savedPositions[nextSessionKey]
         );
       }
       setCustomStudyQueue(null);
@@ -2371,6 +2447,7 @@ export default function App() {
       selectedDeckId,
       customStudyQueue,
       enrichedDecks,
+      deckOverrides,
       cards,
       loopStatesByDeck,
       srsMap,
@@ -2383,42 +2460,50 @@ export default function App() {
   );
 
   const handleUndoLastRating = useCallback(() => {
-    const undone = undoLastReview(cards, srsMap);
+    const undone = undoLastReview(cards, srsMap, new Date(), {
+      deckId: activeDeckObj.id,
+      direction: activeStudyDirection,
+    });
     if (!undone.undoneEntry) return;
     stopActiveAudio();
     triggerHapticFeedback(14);
     clearRateFirstHint();
     clearRatingFeedback();
+    const baseUndoneCardId = parseSrsStateKey(
+      undone.undoneEntry.cardId
+    ).cardId;
     const undoResult = clearTrailRatingForUndo(
       activeTrail,
-      undone.undoneEntry.cardId,
+      baseUndoneCardId,
       studyDeck
     );
     const targetDeckId = activeDeckObj.id;
-    const undoStack = loopUndoStackRef.current[targetDeckId] || [];
+    const targetSessionKey = activeSessionKey;
+    const undoStack = loopUndoStackRef.current[targetSessionKey] || [];
     if (undoStack.length > 0) {
       const restoredLoop = undoStack[undoStack.length - 1];
-      loopUndoStackRef.current[targetDeckId] = undoStack.slice(0, -1);
+      loopUndoStackRef.current[targetSessionKey] = undoStack.slice(0, -1);
       setLoopStatesByDeck((prev) => ({
         ...prev,
-        [targetDeckId]: restoredLoop,
+        [targetSessionKey]: restoredLoop,
       }));
     } else {
       const rebuiltLoop = createInitialDeckLoopState(
         targetDeckId,
         studyDeck.map((c) => c.id),
         undone.updatedMap,
-        CONFIDENCE_LOOP_CONFIG
+        CONFIDENCE_LOOP_CONFIG,
+        activeStudyDirection
       );
       setLoopStatesByDeck((prev) => ({
         ...prev,
-        [targetDeckId]: rebuiltLoop,
+        [targetSessionKey]: rebuiltLoop,
       }));
     }
-    saveStudyDeckTrail(targetDeckId, undoResult.trail);
+    saveStudyDeckTrail(targetSessionKey, undoResult.trail);
     setStudyTrailsByDeck((prev) => ({
       ...prev,
-      [targetDeckId]: undoResult.trail,
+      [targetSessionKey]: undoResult.trail,
     }));
     setSrsMap(undone.updatedMap);
     setStats(undone.updatedStats);
@@ -2433,6 +2518,8 @@ export default function App() {
     studyDeck,
     activeTrail,
     activeDeckObj.id,
+    activeStudyDirection,
+    activeSessionKey,
     clearRateFirstHint,
     clearRatingFeedback,
     stopActiveAudio,
@@ -3058,19 +3145,27 @@ export default function App() {
       targetCardsForResume = targetCards;
     }
 
-    const existingLoop = loopStatesByDeck[deckId];
+    const unifiedMatchForDir = enrichedUnifiedDecks.find((d) => d.id === deckId);
+    const launchDirection = normalizeStudyDirection(
+      unifiedMatchForDir?.studyDirection ?? deckOverrides[deckId]?.studyDirection
+    );
+    const launchSessionKey = getDeckSessionKey(deckId, launchDirection);
+    const existingLoop = loopStatesByDeck[launchSessionKey];
     const nextLoop =
-      existingLoop && existingLoop.phase !== 'done'
+      existingLoop &&
+      existingLoop.direction === launchDirection &&
+      existingLoop.phase !== 'done'
         ? existingLoop
         : createInitialDeckLoopState(
             deckId,
             targetCardsForResume.map((c) => c.id),
             srsMap,
-            CONFIDENCE_LOOP_CONFIG
+            CONFIDENCE_LOOP_CONFIG,
+            launchDirection
           );
     setLoopStatesByDeck((prev) => ({
       ...prev,
-      [deckId]: nextLoop,
+      [launchSessionKey]: nextLoop,
     }));
     const loopCardId = getCurrentLoopCardId(nextLoop);
     if (loopCardId) {
@@ -3092,32 +3187,47 @@ export default function App() {
   };
 
   const handleResetDeckSrs = useCallback(
-    (cardIds: string[], deckId?: string) => {
+    (cardIds: string[], deckId?: string, direction?: DeckStudyDirection) => {
       triggerHapticFeedback(12);
+      const targetDirection: DeckStudyDirection =
+        direction ??
+        (deckId
+          ? normalizeStudyDirection(
+              enrichedUnifiedDecks.find((d) => d.id === deckId)
+                ?.studyDirection ?? deckOverrides[deckId]?.studyDirection
+            )
+          : activeStudyDirection);
       const { updatedMap, updatedStats } = resetCardsSrsProgress(
         cardIds,
-        srsMap
+        srsMap,
+        new Date(),
+        targetDirection
       );
       setSrsMap(updatedMap);
       setStats(updatedStats);
       if (deckId) {
-        saveStudyDeckPosition(deckId, 0);
-        clearStudyDeckTrail(deckId);
-        delete loopUndoStackRef.current[deckId];
+        const targetSessionKey = getDeckSessionKey(deckId, targetDirection);
+        saveStudyDeckPosition(targetSessionKey, 0);
+        clearStudyDeckTrail(targetSessionKey);
+        delete loopUndoStackRef.current[targetSessionKey];
+        delete shownMilestonesByDeckRef.current[targetSessionKey];
+        delete deckSessionRatingsRef.current[targetSessionKey];
+        delete ratingsSinceMilestoneByDeckRef.current[targetSessionKey];
         const freshLoop = createInitialDeckLoopState(
           deckId,
           cardIds,
           updatedMap,
-          CONFIDENCE_LOOP_CONFIG
+          CONFIDENCE_LOOP_CONFIG,
+          targetDirection
         );
         setLoopStatesByDeck((prev) => ({
           ...prev,
-          [deckId]: freshLoop,
+          [targetSessionKey]: freshLoop,
         }));
         if (deckId === 'all') {
           reshuffleAllCards();
         }
-        if (activeDeckObj.id === deckId) {
+        if (activeSessionKey === targetSessionKey) {
           clearRateFirstHint();
           clearRatingFeedback();
           const firstId = getCurrentLoopCardId(freshLoop);
@@ -3132,11 +3242,21 @@ export default function App() {
           setIsBackExpanded(false);
         }
       }
+      const targetSessionKey = deckId
+        ? getDeckSessionKey(deckId, targetDirection)
+        : null;
       const resetSet = new Set(cardIds);
       setStudyTrailsByDeck((prev) => {
         const next: Record<string, StudyDeckTrail> = {};
-        for (const [dId, trail] of Object.entries(prev)) {
-          if (deckId && dId === deckId) {
+        for (const [sessionKey, trail] of Object.entries(prev)) {
+          if (targetSessionKey && sessionKey === targetSessionKey) {
+            continue;
+          }
+          const trailDir: DeckStudyDirection = sessionKey.endsWith('::en-de')
+            ? 'en-de'
+            : 'de-en';
+          if (trailDir !== targetDirection) {
+            next[sessionKey] = trail;
             continue;
           }
           const cleanedEntries = trail.entries.map((entry) => {
@@ -3145,15 +3265,18 @@ export default function App() {
             return rest;
           });
           const cleanedTrail = { ...trail, entries: cleanedEntries };
-          saveStudyDeckTrail(dId, cleanedTrail);
-          next[dId] = cleanedTrail;
+          saveStudyDeckTrail(sessionKey, cleanedTrail);
+          next[sessionKey] = cleanedTrail;
         }
         return next;
       });
     },
     [
       srsMap,
-      activeDeckObj.id,
+      enrichedUnifiedDecks,
+      deckOverrides,
+      activeStudyDirection,
+      activeSessionKey,
       studyDeck,
       reshuffleAllCards,
       clearRateFirstHint,
@@ -3167,6 +3290,9 @@ export default function App() {
     clearRateFirstHint();
     clearRatingFeedback();
     loopUndoStackRef.current = {};
+    shownMilestonesByDeckRef.current = {};
+    deckSessionRatingsRef.current = {};
+    ratingsSinceMilestoneByDeckRef.current = {};
     setLoopStatesByDeck({});
     setStudyTrailsByDeck({});
     reshuffleAllCards();
@@ -4161,11 +4287,29 @@ export default function App() {
                         speechPlacement="right"
                       />
                       <span className="truncate">
-                        {activeLoopState.phase === 'sweep' ? (
+                        {activeLoopState.currentSlotKind === 'interleave' ? (
                           <>
-                            Final Sweep{' '}
+                            <span className="text-[var(--intent-primary)] font-semibold">
+                              Auffrischung
+                            </span>{' '}
                             <span className="text-[var(--fg-muted)] font-normal">
-                              ({activeLoopState.sweepQueue.length} übrig)
+                              · {activeLoopState.clearedIds.length} /{' '}
+                              {studyDeck.length} klar
+                            </span>
+                          </>
+                        ) : activeLoopState.phase === 'sweep' ? (
+                          <>
+                            {activeLoopState.isReopenedRefresh
+                              ? 'Auffrischung'
+                              : 'Abschluss-Check'}{' '}
+                            <span className="text-[var(--fg-muted)] font-normal">
+                              · {activeLoopState.sweepPassedIds.length} /{' '}
+                              {Math.max(
+                                1,
+                                activeLoopState.finalCheckTotal ||
+                                  activeLoopState.sweepPassedIds.length +
+                                    activeLoopState.sweepQueue.length
+                              )}
                             </span>
                           </>
                         ) : (
@@ -4221,15 +4365,7 @@ export default function App() {
                     </div>
                   </div>
                   <ProgressBar
-                    value={
-                      activeLoopState.phase === 'sweep'
-                        ? (activeLoopState.sweepPassedIds.length /
-                            Math.max(1, studyDeck.length)) *
-                          100
-                        : (activeLoopState.clearedIds.length /
-                            Math.max(1, studyDeck.length)) *
-                          100
-                    }
+                    value={activeDeckMasteryProgressPct}
                     intent={
                       activeLoopState.phase === 'sweep' ? 'success' : 'primary'
                     }
@@ -4317,7 +4453,7 @@ export default function App() {
             ) : isActiveDeckDone ? (
               (() => {
                 const summary = deckSessionRatingsRef.current[
-                  activeDeckObj.id
+                  activeSessionKey
                 ] || { count: 0, sum: 0, lowCount: 0 };
                 const avgRating =
                   summary.count > 0 ? summary.sum / summary.count : 4;
@@ -5670,8 +5806,8 @@ export default function App() {
     <div className="min-h-[100dvh] flex flex-col bg-[var(--bg-canvas)] text-[var(--fg-primary)] transition-colors duration-200">
       {/* ==================== TOP APP BAR (3-Zone Contract, Hidden in Zen Mode) ==================== */}
       {!isZenSessionActive && (
-        <header className="sticky top-0 z-30 h-14 surface-1/90 backdrop-blur-xl border-b border-[var(--border-subtle)]">
-          <div className="max-w-5xl mx-auto h-full flex items-center justify-between gap-3 sm:gap-6 px-3.5 sm:px-6">
+        <header className="sticky top-0 z-30 pt-[env(safe-area-inset-top,0px)] bg-[var(--surface-1)]/90 backdrop-blur-xl border-b border-[var(--border-subtle)]">
+          <div className="max-w-5xl mx-auto h-14 flex items-center justify-between gap-3 sm:gap-6 px-3.5 sm:px-6">
             {/* Zone 1: Interactive Flashcard Fox Mascot Emblem + Animated Wordmark */}
             <div className="relative flex items-center shrink-0">
               <button
@@ -5828,7 +5964,7 @@ export default function App() {
             ? 'py-3 sm:py-8 justify-center min-h-[100dvh]'
             : activeView === 'study'
             ? 'study-main-shell'
-            : 'pt-2.5 pb-[80px] md:py-8'
+            : 'pt-2.5 pb-[calc(80px+env(safe-area-inset-bottom,0px))] md:py-8'
         }`}
       >
         <div
@@ -5870,82 +6006,84 @@ export default function App() {
       {!isZenSessionActive && (
         <nav
           aria-label="Mobile Navigation"
-          className="fixed bottom-0 left-0 right-0 z-40 md:hidden h-[64px] pb-[env(safe-area-inset-bottom)] surface-1/95 backdrop-blur-xl border-t border-[var(--border-subtle)] grid grid-cols-4 items-center px-2"
+          className="fixed bottom-0 left-0 right-0 z-40 md:hidden bg-[var(--surface-1)]/95 backdrop-blur-xl border-t border-[var(--border-subtle)] pb-[env(safe-area-inset-bottom,0px)]"
         >
-          {/* Smooth sliding top indicator pill across the 4 tabs */}
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute top-0 left-2 right-2"
-          >
+          <div className="relative h-[64px] grid grid-cols-4 items-center px-2">
+            {/* Smooth sliding top indicator pill across the 4 tabs */}
             <div
-              className="w-1/4 flex justify-center transition-transform duration-[260ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform"
-              style={{
-                transform: `translate3d(${VIEW_ORDER[activeView] * 100}%, 0, 0)`,
-              }}
+              aria-hidden="true"
+              className="pointer-events-none absolute top-0 left-2 right-2"
             >
-              <span className="w-9 h-[2.5px] rounded-b-full bg-[var(--intent-primary)]" />
+              <div
+                className="w-1/4 flex justify-center transition-transform duration-[260ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform"
+                style={{
+                  transform: `translate3d(${VIEW_ORDER[activeView] * 100}%, 0, 0)`,
+                }}
+              >
+                <span className="w-9 h-[2.5px] rounded-b-full bg-[var(--intent-primary)]" />
+              </div>
             </div>
+
+            <button
+              type="button"
+              onClick={() => navigateToView('study')}
+              className={`flex flex-col items-center justify-center h-full gap-1 transition-colors duration-200 cursor-pointer ${
+                activeView === 'study'
+                  ? 'text-[var(--intent-primary)]'
+                  : 'text-[var(--fg-muted)]'
+              }`}
+            >
+              <Sparkles className="w-[22px] h-[22px]" />
+              <span className="text-xs font-semibold tracking-tight">
+                Study
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => navigateToView('decks')}
+              className={`flex flex-col items-center justify-center h-full gap-1 transition-colors duration-200 cursor-pointer ${
+                activeView === 'decks'
+                  ? 'text-[var(--intent-primary)]'
+                  : 'text-[var(--fg-muted)]'
+              }`}
+            >
+              <Layers className="w-[22px] h-[22px]" />
+              <span className="text-xs font-semibold tracking-tight">
+                Decks
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => navigateToView('dashboard')}
+              className={`flex flex-col items-center justify-center h-full gap-1 transition-colors duration-200 cursor-pointer ${
+                activeView === 'dashboard'
+                  ? 'text-[var(--intent-primary)]'
+                  : 'text-[var(--fg-muted)]'
+              }`}
+            >
+              <LayoutDashboard className="w-[22px] h-[22px]" />
+              <span className="text-xs font-semibold tracking-tight">
+                Overview
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => navigateToView('archive')}
+              className={`flex flex-col items-center justify-center h-full gap-1 transition-colors duration-200 cursor-pointer ${
+                activeView === 'archive'
+                  ? 'text-[var(--intent-primary)]'
+                  : 'text-[var(--fg-muted)]'
+              }`}
+            >
+              <BookOpen className="w-[22px] h-[22px]" />
+              <span className="text-xs font-semibold tracking-tight">
+                Vocab
+              </span>
+            </button>
           </div>
-
-          <button
-            type="button"
-            onClick={() => navigateToView('study')}
-            className={`flex flex-col items-center justify-center h-full gap-1 transition-colors duration-200 cursor-pointer ${
-              activeView === 'study'
-                ? 'text-[var(--intent-primary)]'
-                : 'text-[var(--fg-muted)]'
-            }`}
-          >
-            <Sparkles className="w-[22px] h-[22px]" />
-            <span className="text-xs font-semibold tracking-tight">
-              Study
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => navigateToView('decks')}
-            className={`flex flex-col items-center justify-center h-full gap-1 transition-colors duration-200 cursor-pointer ${
-              activeView === 'decks'
-                ? 'text-[var(--intent-primary)]'
-                : 'text-[var(--fg-muted)]'
-            }`}
-          >
-            <Layers className="w-[22px] h-[22px]" />
-            <span className="text-xs font-semibold tracking-tight">
-              Decks
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => navigateToView('dashboard')}
-            className={`flex flex-col items-center justify-center h-full gap-1 transition-colors duration-200 cursor-pointer ${
-              activeView === 'dashboard'
-                ? 'text-[var(--intent-primary)]'
-                : 'text-[var(--fg-muted)]'
-            }`}
-          >
-            <LayoutDashboard className="w-[22px] h-[22px]" />
-            <span className="text-xs font-semibold tracking-tight">
-              Overview
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => navigateToView('archive')}
-            className={`flex flex-col items-center justify-center h-full gap-1 transition-colors duration-200 cursor-pointer ${
-              activeView === 'archive'
-                ? 'text-[var(--intent-primary)]'
-                : 'text-[var(--fg-muted)]'
-            }`}
-          >
-            <BookOpen className="w-[22px] h-[22px]" />
-            <span className="text-xs font-semibold tracking-tight">
-              Vocab
-            </span>
-          </button>
         </nav>
       )}
 
@@ -5969,7 +6107,7 @@ export default function App() {
           aria-labelledby="add-card-title"
           onClick={() => setIsAddModalOpen(false)}
           style={{ opacity: Math.max(0.1, 1 - addModalDragY / 280) }}
-          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-black/50 backdrop-blur-xs anatomy-backdrop-enter"
+          className="fixed inset-0 z-[60] h-[100dvh] w-screen flex items-end sm:items-center justify-center sm:p-4 bg-black/50 backdrop-blur-xs anatomy-backdrop-enter"
         >
           <div
             ref={addModalScrollRef}
@@ -5979,7 +6117,7 @@ export default function App() {
             onTouchMove={addModalSheetTouchHandlers.onTouchMove}
             onTouchEnd={addModalSheetTouchHandlers.onTouchEnd}
             onTouchCancel={addModalSheetTouchHandlers.onTouchCancel}
-            className="w-full max-w-lg rounded-t-3xl sm:rounded-[var(--radius-card)] surface-overlay border p-6 pt-3.5 sm:pt-6 space-y-4 max-h-[90vh] overflow-y-auto anatomy-sheet-enter"
+            className="w-full max-w-lg rounded-t-3xl sm:rounded-[var(--radius-card)] surface-overlay border p-6 pt-3.5 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))] sm:pt-6 sm:pb-6 space-y-4 max-h-[90dvh] overflow-y-auto anatomy-sheet-enter"
           >
             <div
               data-sheet-handle="true"

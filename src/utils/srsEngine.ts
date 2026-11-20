@@ -9,10 +9,17 @@ import {
   RatingKey,
   ratingToConfidence,
   ReviewLogEntry,
+  StudyDirection,
   StudyStats,
   VocabCard,
   validateAndNormalizeContentCards,
 } from '../data/vocabData';
+import {
+  getDeckSessionKey,
+  getSrsStateKey,
+  parseSrsStateKey,
+  stripDirectionSuffix,
+} from './confidenceLoopEngine';
 import {
   generateUuid,
   getOrCreateDeviceId,
@@ -221,6 +228,22 @@ export function createDefaultSrsState(cardId: string): CardSrsState {
     lapses: 0,
     learningSteps: 0,
   };
+}
+
+export {
+  getDeckSessionKey,
+  getSrsStateKey,
+  parseSrsStateKey,
+  stripDirectionSuffix,
+};
+
+export function getCardSrsForDirection(
+  srsMap: Record<string, CardSrsState | undefined>,
+  cardId: string,
+  direction: StudyDirection = 'de-en'
+): CardSrsState {
+  const stateKey = getSrsStateKey(cardId, direction);
+  return srsMap[stateKey] || createDefaultSrsState(stateKey);
 }
 
 export function isCardNew(state: CardSrsState): boolean {
@@ -604,15 +627,18 @@ export function deriveStudyStatsFromLogs(
 
   const reviewsByDay: Record<string, number> = {};
   const masteredSetByDay = new Map<string, Set<string>>();
-  const currentlyMastered = new Set<string>();
+  const currentlyMasteredKeys = new Set<string>();
 
   let totalTimeStudiedMs = 0;
   let timeStudiedMsToday = 0;
   let recalledCount = 0;
 
   for (const entry of timelineLogs) {
+    const parsedEntry = parseSrsStateKey(entry.cardId);
+    const entryDir = entry.direction ?? parsedEntry.direction;
+    const stateKey = getSrsStateKey(parsedEntry.cardId, entryDir);
     if (entry.eventType === 'reset') {
-      currentlyMastered.delete(entry.cardId);
+      currentlyMasteredKeys.delete(stateKey);
       continue;
     }
 
@@ -636,12 +662,16 @@ export function deriveStudyStatsFromLogs(
       recalledCount += 1;
     }
     if (conf >= 4) {
-      currentlyMastered.add(entry.cardId);
+      currentlyMasteredKeys.add(stateKey);
     } else if (conf <= 2) {
-      currentlyMastered.delete(entry.cardId);
+      currentlyMasteredKeys.delete(stateKey);
     }
 
-    masteredSetByDay.set(dayKey, new Set(currentlyMastered));
+    const uniqueBaseMastered = new Set<string>();
+    for (const k of currentlyMasteredKeys) {
+      uniqueBaseMastered.add(parseSrsStateKey(k).cardId);
+    }
+    masteredSetByDay.set(dayKey, uniqueBaseMastered);
   }
 
   const activeDayKeys = Object.keys(reviewsByDay).sort();
@@ -712,13 +742,18 @@ export function appendRatingEvent(params: {
   rating: RatingKey;
   srsMap: Record<string, CardSrsState>;
   deckId?: string;
+  direction?: StudyDirection;
   reviewIndex?: number;
   now?: Date;
   durationMs?: number;
 }): RateCardResult {
   const now = params.now || new Date();
+  const parsedIncoming = parseSrsStateKey(params.cardId);
+  const direction: StudyDirection =
+    params.direction ?? parsedIncoming.direction;
+  const stateKey = getSrsStateKey(parsedIncoming.cardId, direction);
   const current =
-    params.srsMap[params.cardId] || createDefaultSrsState(params.cardId);
+    params.srsMap[stateKey] || createDefaultSrsState(stateKey);
   const nextState = computeNextSrsState(current, params.rating, now);
 
   const clampedDuration =
@@ -742,8 +777,9 @@ export function appendRatingEvent(params: {
     id: generateUuid(),
     eventType: 'review',
     undoTargetId: null,
-    cardId: params.cardId,
+    cardId: stateKey,
     deckId: params.deckId,
+    direction,
     reviewIndex: nextReviewIndex,
     timestamp: now.toISOString(),
     reviewedAt: now.toISOString(),
@@ -768,7 +804,7 @@ export function appendRatingEvent(params: {
 
   const updatedMap: Record<string, CardSrsState> = {
     ...params.srsMap,
-    [params.cardId]: nextState,
+    [stateKey]: nextState,
   };
   saveSrsMap(updatedMap);
 
@@ -789,7 +825,8 @@ export function appendRatingEvent(params: {
 export function undoLastReview(
   _cards: VocabCard[],
   currentSrsMap: Record<string, CardSrsState>,
-  now: Date = new Date()
+  now: Date = new Date(),
+  options?: { deckId?: string; direction?: StudyDirection }
 ): {
   undoneEntry: ReviewLogEntry | null;
   undoMarkerEntry: ReviewLogEntry | null;
@@ -810,9 +847,19 @@ export function undoLastReview(
   }
   const undoableLogs = effectiveLogs.filter((entry) => {
     const resetTs = latestResetTsByCard.get(entry.cardId);
-    if (resetTs === undefined) return true;
-    const entryTs = Date.parse(entry.reviewedAt || entry.timestamp);
-    return entryTs > resetTs;
+    if (resetTs !== undefined) {
+      const entryTs = Date.parse(entry.reviewedAt || entry.timestamp);
+      if (entryTs <= resetTs) return false;
+    }
+    if (options?.direction) {
+      const entryDir =
+        entry.direction ?? parseSrsStateKey(entry.cardId).direction;
+      if (entryDir !== options.direction) return false;
+    }
+    if (options?.deckId && entry.deckId && entry.deckId !== options.deckId) {
+      return false;
+    }
+    return true;
   });
 
   if (undoableLogs.length === 0) {
@@ -828,6 +875,8 @@ export function undoLastReview(
 
   const undoneEntry = undoableLogs[undoableLogs.length - 1];
   const undoIso = now.toISOString();
+  const undoneDirection =
+    undoneEntry.direction ?? parseSrsStateKey(undoneEntry.cardId).direction;
 
   const undoMarkerEntry: ReviewLogEntry = {
     id: generateUuid(),
@@ -835,6 +884,7 @@ export function undoLastReview(
     undoTargetId: undoneEntry.id,
     cardId: undoneEntry.cardId,
     deckId: undoneEntry.deckId,
+    direction: undoneDirection,
     timestamp: undoIso,
     reviewedAt: undoIso,
     studyDayKey: getLocalDateString(now),
@@ -1116,12 +1166,19 @@ export function resetAllSrsProgress(
 export function resetCardsSrsProgress(
   cardIds: string[],
   currentSrsMap: Record<string, CardSrsState>,
-  now: Date = new Date()
+  now: Date = new Date(),
+  direction: StudyDirection = 'de-en'
 ): {
   updatedMap: Record<string, CardSrsState>;
   updatedStats: StudyStats;
 } {
-  const uniqueIds = Array.from(new Set(cardIds.filter(Boolean)));
+  const uniqueIds = Array.from(
+    new Set(
+      cardIds
+        .filter(Boolean)
+        .map((id) => getSrsStateKey(id, direction))
+    )
+  );
   const existingLogs = loadReviewLogs();
   const resetEntries: ReviewLogEntry[] = [];
   const resetStateSnapshot: Record<string, CardSrsState> = {};
@@ -1163,6 +1220,7 @@ export function resetCardsSrsProgress(
         eventType: 'reset',
         undoTargetId: null,
         cardId: cid,
+        direction,
         timestamp: resetIso,
         reviewedAt: resetIso,
         studyDayKey: getLocalDateString(resetDate),
@@ -1356,11 +1414,26 @@ export function applyThemePreferencesToDom(
     }
     root.style.colorScheme = prefs.colorMode;
 
+    const resolvedThemeColor =
+      META_THEME_COLORS[`${prefs.themeId}:${prefs.colorMode}`] ||
+      (prefs.colorMode === 'dark' ? '#171412' : '#FAF8F5');
+    root.style.backgroundColor = resolvedThemeColor;
+
     const metaEl = document.getElementById('meta-theme-color');
     if (metaEl) {
-      metaEl.setAttribute(
+      metaEl.setAttribute('content', resolvedThemeColor);
+    }
+
+    const colorSchemeEl = document.getElementById('meta-color-scheme');
+    if (colorSchemeEl) {
+      colorSchemeEl.setAttribute('content', prefs.colorMode);
+    }
+
+    const appleStatusBarEl = document.getElementById('meta-apple-status-bar');
+    if (appleStatusBarEl) {
+      appleStatusBarEl.setAttribute(
         'content',
-        META_THEME_COLORS[`${prefs.themeId}:${prefs.colorMode}`] || '#FAF8F5'
+        prefs.colorMode === 'dark' ? 'black-translucent' : 'default'
       );
     }
 

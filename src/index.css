@@ -805,6 +805,8 @@
   html {
     font-size: 16px;
     -webkit-text-size-adjust: 100%;
+    background-color: var(--bg-canvas);
+    min-height: 100%;
   }
 
   ::selection {
@@ -828,11 +830,13 @@
 
   body {
     position: relative;
+    min-height: 100dvh;
     font-family: var(--font-body);
     background-color: var(--bg-canvas);
     color: var(--fg-primary);
     font-size: 1rem;
     line-height: 1.55;
+    overscroll-behavior-y: none;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     -webkit-tap-highlight-color: transparent;
@@ -1048,7 +1052,7 @@
  * ========================================================================== */
 .study-main-shell {
   padding-top: 0.625rem;
-  padding-bottom: 80px;
+  padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px));
 }
 
 @media (min-width: 768px) {
@@ -1733,11 +1737,11 @@
 }
 
 .page-enter-forward {
-  animation: pageEnterFromRight 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: pageEnterFromRight 300ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
 }
 
 .page-enter-backward {
-  animation: pageEnterFromLeft 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: pageEnterFromLeft 300ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
 }
 
 .page-exit-layer {
@@ -1793,11 +1797,11 @@
 }
 
 .deck-subscreen-push {
-  animation: deckSubscreenPushIn 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: deckSubscreenPushIn 260ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
 }
 
 .deck-subscreen-pop {
-  animation: deckSubscreenPopIn 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: deckSubscreenPopIn 260ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
 }
 
 /* ==========================================================================

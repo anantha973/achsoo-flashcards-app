@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Download, Share, X } from 'lucide-react';
 import {
   APP_ICON_CHANGE_EVENT,
@@ -118,18 +119,20 @@ export const PWAInstallButton: React.FC = () => {
         <span className="hidden sm:inline">Install</span>
       </button>
 
-      {showIosGuide && (
-        <div
-          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="ios-install-title"
-          onClick={() => setShowIosGuide(false)}
-        >
+      {showIosGuide &&
+        typeof document !== 'undefined' &&
+        createPortal(
           <div
-            className="w-full max-w-md rounded-2xl surface-1 border border-[var(--border-subtle)] shadow-2xl p-5 space-y-4"
-            onClick={(e) => e.stopPropagation()}
+            className="fixed inset-0 z-[60] h-[100dvh] w-screen flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] sm:pb-4"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="ios-install-title"
+            onClick={() => setShowIosGuide(false)}
           >
+            <div
+              className="w-full max-w-md rounded-2xl surface-1 border border-[var(--border-subtle)] shadow-2xl p-5 space-y-4"
+              onClick={(e) => e.stopPropagation()}
+            >
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h2
@@ -196,10 +199,11 @@ export const PWAInstallButton: React.FC = () => {
               <li>
                 Tap <strong>Add</strong> to pin Achsoo with the active icon.
               </li>
-            </ol>
-          </div>
-        </div>
-      )}
+              </ol>
+            </div>
+          </div>,
+          document.body
+        )}
     </>
   );
 };

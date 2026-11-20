@@ -14,10 +14,14 @@ import {
   CONFIDENCE_LOOP_CONFIG,
   applyLoopRating,
   computeConfidenceMasteryPct,
+  computeDeckLoopProgressPct,
   computeLoopGap,
   createInitialDeckLoopState,
   deterministicHash,
   getCurrentLoopCardId,
+  getDeckSessionKey,
+  getSrsStateKey,
+  parseSrsStateKey,
   replayDeckLoopSession,
 } from '../confidenceLoopEngine';
 import {
@@ -26,6 +30,7 @@ import {
   createDefaultSrsState,
   deriveStudyStatsFromLogs,
   formatConfidenceBadge,
+  getCardSrsForDirection,
   getLocalDateString,
   hydrateEngineFromIndexedDB,
   isCardLowConfidence,
@@ -104,7 +109,7 @@ describe('Achsoo 1-5 Confidence Virtual-Clock Loop & Review Log Engine', () => {
     expect(res.updatedStats.streakDays).toBe(1);
   });
 
-  it('T-02: Deterministic virtual-clock gap table & consecutive multipliers match spec without RNG', () => {
+  it('T-02: Deterministic virtual-clock gap table, multipliers, and compact-deck scaling match spec without RNG', () => {
     for (let rc = 1; rc <= 12; rc += 1) {
       const g1 = computeLoopGap('c-test', rc, 1, 0, 0);
       expect(g1).toBeGreaterThanOrEqual(2);
@@ -112,23 +117,28 @@ describe('Achsoo 1-5 Confidence Virtual-Clock Loop & Review Log Engine', () => {
 
       const g2 = computeLoopGap('c-test', rc, 2, 0, 0);
       expect(g2).toBeGreaterThanOrEqual(4);
-      expect(g2).toBeLessThanOrEqual(6);
+      expect(g2).toBeLessThanOrEqual(5);
 
       const g3 = computeLoopGap('c-test', rc, 3, 0, 0);
-      expect(g3).toBeGreaterThanOrEqual(7);
-      expect(g3).toBeLessThanOrEqual(10);
+      expect(g3).toBeGreaterThanOrEqual(6);
+      expect(g3).toBeLessThanOrEqual(9);
 
       const g4First = computeLoopGap('c-test', rc, 4, 1, 0);
-      expect(g4First).toBeGreaterThanOrEqual(12);
-      expect(g4First).toBeLessThanOrEqual(18);
+      expect(g4First).toBeGreaterThanOrEqual(9);
+      expect(g4First).toBeLessThanOrEqual(14);
       const g4Second = computeLoopGap('c-test', rc, 4, 2, 0);
-      expect(g4Second).toBe(g4First * 2);
+      expect(g4Second).toBe(Math.round(g4First * 1.5));
 
       const g5First = computeLoopGap('c-test', rc, 5, 1, 1);
-      expect(g5First).toBeGreaterThanOrEqual(25);
-      expect(g5First).toBeLessThanOrEqual(40);
+      expect(g5First).toBeGreaterThanOrEqual(14);
+      expect(g5First).toBeLessThanOrEqual(22);
       const g5Second = computeLoopGap('c-test', rc, 5, 2, 2);
-      expect(g5Second).toBe(Math.round(g5First * 1.5));
+      expect(g5Second).toBe(Math.round(g5First * 1.4));
+
+      // Compact-deck soft-cap prevents rating 4/5 from piling up past deck length
+      const g5Compact = computeLoopGap('c-test', rc, 5, 1, 1, CONFIDENCE_LOOP_CONFIG, 12);
+      expect(g5Compact).toBeLessThanOrEqual(Math.max(6, Math.round(12 * 0.75)));
+      expect(g5Compact).toBeGreaterThanOrEqual(2);
     }
 
     // Identical inputs always yield identical gap & hash across runs/devices
@@ -187,7 +197,7 @@ describe('Achsoo 1-5 Confidence Virtual-Clock Loop & Review Log Engine', () => {
       expect(strugglingState.activePool.length).toBeLessThanOrEqual(4);
     }
 
-    // With moderate confidence (rating 3 -> gap 7-10), unsettled pool fills up to workingSetCap (10) and stops there
+    // With moderate confidence (rating 3 -> gap 6-9), unsettled pool expands gracefully within workingSetCap (10)
     let expandingState = createInitialDeckLoopState('capped-3s', ids, {});
     for (let step = 0; step < 25; step += 1) {
       const current = getCurrentLoopCardId(expandingState)!;
@@ -197,19 +207,37 @@ describe('Achsoo 1-5 Confidence Virtual-Clock Loop & Review Log Engine', () => {
       );
     }
 
-    expect(expandingState.activePool.length).toBe(
+    expect(expandingState.activePool.length).toBeGreaterThanOrEqual(7);
+    expect(expandingState.activePool.length).toBeLessThanOrEqual(
       CONFIDENCE_LOOP_CONFIG.workingSetCap
     );
-    expect(expandingState.waitingQueue.length).toBe(20);
+
+    // With higher confidence (rating 4 -> gap 9-14), pool reaches workingSetCap (10) and holds there
+    let highExpandingState = createInitialDeckLoopState('capped-4s', ids, {});
+    for (let step = 0; step < 10; step += 1) {
+      const current = getCurrentLoopCardId(highExpandingState)!;
+      highExpandingState = applyLoopRating(highExpandingState, current, '4');
+      expect(highExpandingState.activePool.length).toBeLessThanOrEqual(
+        CONFIDENCE_LOOP_CONFIG.workingSetCap
+      );
+    }
+    expect(highExpandingState.activePool.length).toBe(
+      CONFIDENCE_LOOP_CONFIG.workingSetCap
+    );
+    expect(
+      highExpandingState.activePool.length +
+        highExpandingState.clearedIds.length +
+        highExpandingState.waitingQueue.length
+    ).toBe(30);
   });
 
-  it('T-05: Two consecutive >=4 clears loop -> deterministic Final Sweep -> <4 bounces back -> Done -> Reopen & Fresh start', () => {
+  it('T-05: Two consecutive >=4 clears loop -> Smart Final Check -> in-place miss re-insertion -> Done -> Reopen Refresh', () => {
     const ids = ['a', 'b', 'c', 'd'];
     let state = createInitialDeckLoopState('deck-sweep', ids, {});
 
-    // First 4 is not cleared yet; second consecutive 4 clears the card
+    // First 4 is not cleared yet; second consecutive 4 clears each card
     let guard = 0;
-    while (state.phase === 'loop' && guard < 30) {
+    while (state.phase === 'loop' && guard < 40) {
       guard += 1;
       const cid = getCurrentLoopCardId(state)!;
       state = applyLoopRating(state, cid, '4');
@@ -217,16 +245,19 @@ describe('Achsoo 1-5 Confidence Virtual-Clock Loop & Review Log Engine', () => {
 
     expect(state.phase).toBe('sweep');
     expect(state.clearedIds).toHaveLength(4);
-    expect(state.sweepQueue).toHaveLength(4);
+    expect(state.sweepQueue.length).toBeGreaterThanOrEqual(1);
+    expect(state.sweepQueue.length).toBeLessThanOrEqual(
+      CONFIDENCE_LOOP_CONFIG.recentClearedCheckCount
+    );
 
-    // Fail the first sweep card with rating 2 -> bounces immediately back into loop!
+    // Fail the first Final Check card with rating 2 -> stays in 'sweep' and re-inserts in-place without back-to-back repeat
     const missedSweepCard = getCurrentLoopCardId(state)!;
     state = applyLoopRating(state, missedSweepCard, '2');
-    expect(state.phase).toBe('loop');
-    expect(state.activePool).toContain(missedSweepCard);
-    expect(state.clearedIds).not.toContain(missedSweepCard);
+    expect(state.phase).toBe('sweep');
+    expect(state.sweepQueue).toContain(missedSweepCard);
+    expect(getCurrentLoopCardId(state)).not.toBe(missedSweepCard);
 
-    // Finish clearing the bounced card with 2x rating 5, then clear remaining sweep cards
+    // Finish Final Check with rating 5
     guard = 0;
     while (state.phase !== 'done' && guard < 30) {
       guard += 1;
@@ -236,14 +267,14 @@ describe('Achsoo 1-5 Confidence Virtual-Clock Loop & Review Log Engine', () => {
 
     expect(state.phase).toBe('done');
     expect(state.clearedIds).toHaveLength(4);
-    expect(state.sweepPassedIds).toHaveLength(4);
+    expect(state.sweepPassedIds.length).toBeGreaterThanOrEqual(1);
     expect(getCurrentLoopCardId(state)).toBeNull();
 
-    // Reopening a deck: <4 goes into loop, >=4 waits for sweep, zero hidden/locked cards
+    // Reopening a deck: cards with <2 consecutive >=4 stay in loop; cards with >=2 consecutive >=4 start cleared
     const persisted = {
       a: computeNextSrsState(createDefaultSrsState('a'), '2'),
-      b: computeNextSrsState(createDefaultSrsState('b'), '4'),
-      c: computeNextSrsState(createDefaultSrsState('c'), '5'),
+      b: computeNextSrsState(computeNextSrsState(createDefaultSrsState('b'), '4'), '4'),
+      c: computeNextSrsState(computeNextSrsState(createDefaultSrsState('c'), '5'), '5'),
       d: createDefaultSrsState('d'),
     };
     const reopened = createInitialDeckLoopState('deck-reopen', ids, persisted);
@@ -251,9 +282,17 @@ describe('Achsoo 1-5 Confidence Virtual-Clock Loop & Review Log Engine', () => {
     expect(reopened.clearedIds).toEqual(['b', 'c']);
     expect([...reopened.activePool, ...reopened.waitingQueue]).toEqual(['a', 'd']);
 
-    // When all cards already have confidence >=4, reopening starts directly at Final Sweep
+    // A single 4/5 without a 2nd consecutive hit still waits in the loop on reopen
+    const singleHitReopened = createInitialDeckLoopState('deck-single-hit', ['b1'], {
+      b1: computeNextSrsState(createDefaultSrsState('b1'), '5'),
+    });
+    expect(singleHitReopened.phase).toBe('loop');
+    expect(singleHitReopened.clearedIds).toEqual([]);
+
+    // When all cards already have >=2 consecutive >=4, reopening starts a capped Reopened Refresh
     const allHighReopened = createInitialDeckLoopState('deck-all-high', ['b', 'c'], persisted);
     expect(allHighReopened.phase).toBe('sweep');
+    expect(allHighReopened.isReopenedRefresh).toBe(true);
     expect(allHighReopened.sweepQueue).toHaveLength(2);
   });
 
@@ -482,11 +521,17 @@ describe('Achsoo 1-5 Confidence Virtual-Clock Loop & Review Log Engine', () => {
     }
 
     let steps = 0;
+    let backToBackRepeats = 0;
+    let prevShownCardId: string | null = null;
     const maxSteps = 2000;
     while (simState.phase !== 'done' && steps < maxSteps) {
       steps += 1;
       const cardId = getCurrentLoopCardId(simState);
       if (!cardId) break;
+      if (prevShownCardId === cardId) {
+        backToBackRepeats += 1;
+      }
+      prevShownCardId = cardId;
 
       const meta = simState.cardLoopMeta[cardId];
       const priorReviews = meta?.reviewCount ?? 0;
@@ -517,9 +562,286 @@ describe('Achsoo 1-5 Confidence Virtual-Clock Loop & Review Log Engine', () => {
     const avgReviewsPerCard = steps / deckSize;
     expect(simState.phase).toBe('done');
     expect(simState.clearedIds).toHaveLength(deckSize);
-    expect(simState.sweepPassedIds).toHaveLength(deckSize);
-    // Validate Brainscape-like ~6-8 reviews per card target range under realistic forgetting
-    expect(avgReviewsPerCard).toBeGreaterThanOrEqual(4.5);
+    expect(simState.sweepPassedIds.length).toBeGreaterThanOrEqual(1);
+    expect(simState.sweepPassedIds.length).toBeLessThanOrEqual(
+      CONFIDENCE_LOOP_CONFIG.maxFinalCheckCards
+    );
+    // Zero back-to-back repeats across an 80-card deck including the entire endgame!
+    expect(backToBackRepeats).toBe(0);
+    // Smooth, efficient completion without trailing bloat
+    expect(avgReviewsPerCard).toBeGreaterThanOrEqual(3.5);
     expect(avgReviewsPerCard).toBeLessThanOrEqual(11);
+  });
+
+  it('T-10: DE->EN and EN->DE progress, mastery, loop state, undo, and reset are completely isolated', () => {
+    const now = new Date('2026-11-18T10:00:00.000Z');
+    const cardIds = ['v-ankommen', 'v-sprechen', 'n-bahnhof'];
+    let map = loadSrsMap(INITIAL_CARDS);
+
+    // Rate all 3 cards 5 twice in DE->EN
+    for (const cid of cardIds) {
+      const r1 = appendRatingEvent({
+        cardId: cid,
+        rating: '5',
+        deckId: 'mixed',
+        direction: 'de-en',
+        srsMap: map,
+        now,
+        durationMs: 1200,
+      });
+      const r2 = appendRatingEvent({
+        cardId: cid,
+        rating: '5',
+        deckId: 'mixed',
+        direction: 'de-en',
+        srsMap: r1.updatedMap,
+        now,
+        durationMs: 1100,
+      });
+      map = r2.updatedMap;
+    }
+
+    // DE->EN is 100% mastered; EN->DE is untouched (0%, all Neu)
+    expect(computeConfidenceMasteryPct(cardIds, map, 'de-en')).toBe(100);
+    expect(computeConfidenceMasteryPct(cardIds, map, 'en-de')).toBe(0);
+    expect(getCardSrsForDirection(map, 'v-ankommen', 'de-en').confidence).toBe(5);
+    expect(getCardSrsForDirection(map, 'v-ankommen', 'en-de').confidence).toBe(0);
+    expect(isCardNew(getCardSrsForDirection(map, 'v-ankommen', 'en-de'))).toBe(true);
+
+    // Session keys & state keys namespace EN->DE cleanly while preserving DE->EN canonical keys
+    expect(getSrsStateKey('v-ankommen', 'de-en')).toBe('v-ankommen');
+    expect(getSrsStateKey('v-ankommen', 'en-de')).toBe('v-ankommen::en-de');
+    expect(parseSrsStateKey('v-ankommen::en-de')).toEqual({
+      cardId: 'v-ankommen',
+      direction: 'en-de',
+    });
+    expect(getDeckSessionKey('verb', 'de-en')).toBe('verb');
+    expect(getDeckSessionKey('verb', 'en-de')).toBe('verb::en-de');
+
+    // Initial loop in EN->DE starts fresh in 'loop' (NOT 'sweep') even though DE->EN is 100% mastered
+    const enDeLoop = createInitialDeckLoopState(
+      'mixed',
+      cardIds,
+      map,
+      CONFIDENCE_LOOP_CONFIG,
+      'en-de'
+    );
+    expect(enDeLoop.direction).toBe('en-de');
+    expect(enDeLoop.phase).toBe('loop');
+    expect(enDeLoop.clearedIds).toHaveLength(0);
+
+    // Rate v-ankommen as 2 in EN->DE, then verify DE->EN stays 5
+    const enRes = appendRatingEvent({
+      cardId: 'v-ankommen',
+      rating: '2',
+      deckId: 'mixed',
+      direction: 'en-de',
+      srsMap: map,
+      now,
+      durationMs: 2400,
+    });
+    map = enRes.updatedMap;
+    expect(enRes.logEntry.cardId).toBe('v-ankommen::en-de');
+    expect(enRes.logEntry.direction).toBe('en-de');
+    expect(getCardSrsForDirection(map, 'v-ankommen', 'en-de').confidence).toBe(2);
+    expect(getCardSrsForDirection(map, 'v-ankommen', 'de-en').confidence).toBe(5);
+
+    // Mastered stats preserve DE->EN mastery even when EN->DE struggles, and never double-count across directions
+    const derived = deriveStudyStatsFromLogs(loadReviewLogs(), now);
+    expect(derived.dailyMasteredHistory?.[getLocalDateString(now)]).toBe(3);
+
+    // Undo in EN->DE restores v-ankommen::en-de to Neu without touching DE->EN
+    const undoEn = undoLastReview(INITIAL_CARDS, map, now, {
+      deckId: 'mixed',
+      direction: 'en-de',
+    });
+    expect(isCardNew(getCardSrsForDirection(undoEn.updatedMap, 'v-ankommen', 'en-de'))).toBe(true);
+    expect(getCardSrsForDirection(undoEn.updatedMap, 'v-ankommen', 'de-en').confidence).toBe(5);
+
+    // Rate EN->DE again and reset ONLY EN->DE -> DE->EN remains 100% intact
+    const enRes2 = appendRatingEvent({
+      cardId: 'v-sprechen',
+      rating: '4',
+      deckId: 'mixed',
+      direction: 'en-de',
+      srsMap: undoEn.updatedMap,
+      now,
+      durationMs: 1500,
+    });
+    const resetEn = resetCardsSrsProgress(cardIds, enRes2.updatedMap, now, 'en-de');
+    expect(computeConfidenceMasteryPct(cardIds, resetEn.updatedMap, 'en-de')).toBe(0);
+    expect(computeConfidenceMasteryPct(cardIds, resetEn.updatedMap, 'de-en')).toBe(100);
+  });
+
+  it('T-11: Endgame interleaves mastered cards to prevent 1-2 card back-to-back repeats and catches Quick Refresh lapses', () => {
+    const ids = ['c1', 'c2', 'c3', 'c4', 'c5', 'c6'];
+    // Pre-seed 5 mastered cards and 1 struggling active card ('c6')
+    const persisted = {
+      c1: computeNextSrsState(computeNextSrsState(createDefaultSrsState('c1'), '5'), '5'),
+      c2: computeNextSrsState(computeNextSrsState(createDefaultSrsState('c2'), '5'), '5'),
+      c3: computeNextSrsState(computeNextSrsState(createDefaultSrsState('c3'), '4'), '4'),
+      c4: computeNextSrsState(computeNextSrsState(createDefaultSrsState('c4'), '4'), '5'),
+      c5: computeNextSrsState(computeNextSrsState(createDefaultSrsState('c5'), '5'), '4'),
+      c6: computeNextSrsState(createDefaultSrsState('c6'), '1'),
+    };
+
+    let state = createInitialDeckLoopState('endgame-deck', ids, persisted);
+    expect(state.phase).toBe('loop');
+    expect(state.activePool).toEqual(['c6']);
+    expect(state.clearedIds).toHaveLength(5);
+    expect(getCurrentLoopCardId(state)).toBe('c6');
+    expect(state.currentSlotKind).toBe('active');
+
+    // Rate 'c6' as 1 -> next card MUST be an interleaved mastered card (Quick Refresh), NEVER 'c6' back-to-back!
+    state = applyLoopRating(state, 'c6', '1');
+    const buffer1 = getCurrentLoopCardId(state)!;
+    expect(buffer1).not.toBe('c6');
+    expect(state.clearedIds).toContain(buffer1);
+    expect(state.currentSlotKind).toBe('interleave');
+
+    // Pass buffer1 with rating 5 -> bounded endgame interleaving returns to 'c6' within <= 2 buffer cards after low confidence
+    let bufferCount = 1;
+    state = applyLoopRating(state, buffer1, '5');
+    while (getCurrentLoopCardId(state) !== 'c6' && bufferCount < 5) {
+      expect(state.currentSlotKind).toBe('interleave');
+      const nextBuf = getCurrentLoopCardId(state)!;
+      expect(nextBuf).not.toBe(buffer1);
+      bufferCount += 1;
+      state = applyLoopRating(state, nextBuf, '5');
+    }
+    expect(getCurrentLoopCardId(state)).toBe('c6');
+    expect(bufferCount).toBeLessThanOrEqual(CONFIDENCE_LOOP_CONFIG.maxEndgameInterleaveLow);
+
+    // Now rate 'c6' as 2 -> get an interleaved Quick Refresh card -> FAIL it with rating 2!
+    state = applyLoopRating(state, 'c6', '2');
+    expect(state.currentSlotKind).toBe('interleave');
+    const lapsedCard = getCurrentLoopCardId(state)!;
+    expect(state.clearedIds).toContain(lapsedCard);
+
+    state = applyLoopRating(state, lapsedCard, '2');
+    // Lapsed mastered card is pulled right back into activePool with reset streak!
+    expect(state.activePool).toContain(lapsedCard);
+    expect(state.clearedIds).not.toContain(lapsedCard);
+    expect(state.cardLoopMeta[lapsedCard].consecutiveHighCount).toBe(0);
+    expect(state.cardLoopMeta[lapsedCard].hadStruggleInSession).toBe(true);
+  });
+
+  it('T-12: Smart Final Check caps at <= 8 shaky/recent cards, advances progress smoothly (0->90->99->100), and re-inserts misses in-place', () => {
+    const ids = Array.from({ length: 24 }, (_, i) => `card-${i}`);
+    let state = createInitialDeckLoopState('smart-check-24', ids, {});
+
+    // Struggle on first 3 cards once, sail through all others with 4/5
+    const struggledSet = new Set(['card-0', 'card-1', 'card-2']);
+    const failedOnce = new Set<string>();
+    let prevPct = computeDeckLoopProgressPct(state);
+    expect(prevPct).toBe(0);
+
+    let guard = 0;
+    while (state.phase === 'loop' && guard < 200) {
+      guard += 1;
+      const cid = getCurrentLoopCardId(state)!;
+      if (struggledSet.has(cid) && !failedOnce.has(cid)) {
+        failedOnce.add(cid);
+        state = applyLoopRating(state, cid, '1');
+      } else {
+        state = applyLoopRating(state, cid, '4');
+      }
+    }
+
+    expect(state.phase).toBe('sweep');
+    expect(state.clearedIds).toHaveLength(24);
+    expect(state.sweepQueue.length).toBeGreaterThanOrEqual(1);
+    expect(state.sweepQueue.length).toBeLessThanOrEqual(
+      CONFIDENCE_LOOP_CONFIG.maxFinalCheckCards
+    );
+    expect(state.finalCheckTotal).toBe(state.sweepQueue.length);
+
+    const sweepStartPct = computeDeckLoopProgressPct(state);
+    expect(sweepStartPct).toBe(90);
+
+    // Advance until only 1 card remains in sweepQueue, then fail it -> must buffer with Quick Refresh instead of repeating back-to-back!
+    while (state.phase === 'sweep' && state.sweepQueue.length > 1) {
+      const cid = getCurrentLoopCardId(state)!;
+      state = applyLoopRating(state, cid, '5');
+      const midPct = computeDeckLoopProgressPct(state);
+      expect(midPct).toBeGreaterThanOrEqual(90);
+      expect(midPct).toBeLessThanOrEqual(99);
+    }
+
+    if (state.phase === 'sweep' && state.sweepQueue.length === 1) {
+      const lastSweepCard = getCurrentLoopCardId(state)!;
+      state = applyLoopRating(state, lastSweepCard, '2');
+      expect(state.phase).toBe('sweep');
+      expect(state.sweepQueue).toEqual([lastSweepCard]);
+      // Next card is an interleaved Quick Refresh card, NOT lastSweepCard back-to-back
+      expect(state.currentSlotKind).toBe('interleave');
+      expect(getCurrentLoopCardId(state)).not.toBe(lastSweepCard);
+    }
+
+    // Complete remaining cards
+    guard = 0;
+    while (state.phase !== 'done' && guard < 40) {
+      guard += 1;
+      const cid = getCurrentLoopCardId(state)!;
+      state = applyLoopRating(state, cid, '5');
+    }
+
+    expect(state.phase).toBe('done');
+    expect(computeDeckLoopProgressPct(state)).toBe(100);
+  });
+
+  it('T-13: Both Rating 4 and Rating 5 require 2 consecutive hits, and EN->DE log replay ignores DE->EN logs deterministically', () => {
+    const ids = ['k1', 'k2', 'k3', 'k4', 'k5', 'k6'];
+
+    // Single Rating 5 must NOT clear k1 on its first exposure
+    let singleFiveState = createInitialDeckLoopState('five-check', ids, {}, CONFIDENCE_LOOP_CONFIG, 'en-de');
+    expect(getCurrentLoopCardId(singleFiveState)).toBe('k1');
+    singleFiveState = applyLoopRating(singleFiveState, 'k1', '5');
+    expect(singleFiveState.clearedIds).not.toContain('k1');
+    expect(singleFiveState.activePool).toContain('k1');
+    expect(singleFiveState.cardLoopMeta['k1'].consecutiveHighCount).toBe(1);
+
+    // Full EN->DE session replay ignores DE->EN logs in the same deck
+    const seq: Array<'1' | '2' | '3' | '4' | '5'> = ['2', '5', '4', '1', '5', '4', '5', '4'];
+    let liveEnDe = createInitialDeckLoopState('replay-en-de', ids, {}, CONFIDENCE_LOOP_CONFIG, 'en-de');
+    const mixedLogs: Pick<
+      ReviewLogEntry,
+      'cardId' | 'rating' | 'reviewIndex' | 'timestamp' | 'eventType' | 'direction'
+    >[] = [
+      // Distractor DE->EN log that must be ignored when replaying EN->DE
+      {
+        cardId: 'k1',
+        rating: '5',
+        reviewIndex: 0,
+        timestamp: new Date(1700000000000).toISOString(),
+        eventType: 'review',
+        direction: 'de-en',
+      },
+    ];
+
+    for (let idx = 0; idx < seq.length; idx += 1) {
+      const cardId = getCurrentLoopCardId(liveEnDe);
+      if (!cardId) break;
+      const rating = seq[idx];
+      liveEnDe = applyLoopRating(liveEnDe, cardId, rating);
+      mixedLogs.push({
+        cardId: getSrsStateKey(cardId, 'en-de'),
+        rating,
+        reviewIndex: idx + 1,
+        timestamp: new Date(1700000001000 + idx * 1000).toISOString(),
+        eventType: 'review',
+        direction: 'en-de',
+      });
+    }
+
+    const replayedEnDe = replayDeckLoopSession(
+      'replay-en-de',
+      ids,
+      {},
+      [...mixedLogs].reverse(),
+      CONFIDENCE_LOOP_CONFIG,
+      'en-de'
+    );
+    expect(replayedEnDe).toEqual(liveEnDe);
   });
 });
