@@ -57,17 +57,20 @@ import {
 import {
   FOX_POSE_CATALOG,
   FoxMascot,
-  FoxMascotPose,
 } from './components/FoxMascot';
 import { SlidingPillSwitcher } from './components/SlidingPillSwitcher';
 import { PWAInstallButton } from './components/PWAInstallButton';
 import { MascotMomentVisual } from './components/MascotMomentVisual';
 import { MilestoneInterludeCard } from './components/MilestoneInterludeCard';
 import {
+  MASCOT_MOMENT_CATALOG,
+  MASCOT_MOMENT_ORDER,
   MascotMomentCard,
+  MascotMomentPoseId,
   MilestoneThreshold,
   MILESTONE_THRESHOLDS,
   evaluateMilestoneTrigger,
+  getDailyTimeOfDayMomentPose,
   getUpcomingMomentSrcToPrefetch,
   loadMilestoneInterludesEnabled,
   prefetchMascotMoment,
@@ -76,6 +79,14 @@ import {
   selectDeckCompletionMoment,
   selectEmptyQueueMoment,
 } from './utils/mascotMoments';
+import {
+  APP_ICON_CHAPTERS,
+  APP_ICON_CHANGE_EVENT,
+  AppIconChapter,
+  AppIconChapterId,
+  applyTimeOfDayAppIcons,
+  getTimeOfDayIconSlot,
+} from './utils/appIconScheduler';
 
 const AnatomyDrawer = React.lazy(() =>
   import('./components/AnatomyDrawer').then((m) => ({
@@ -841,26 +852,89 @@ export default function App() {
   }, [navigateToView]);
 
   const brandTriadPose = brandClickSeq % 3;
-  const brandFoxPoses: ReadonlyArray<FoxMascotPose> = [
-    'aha',
-    'welcome',
-    'juggler',
-    'champion',
-    'studio',
-    'runner',
+  const brandFoxSlides: ReadonlyArray<{
+    src: string;
+    de: string;
+    en: string;
+  }> = [
+    { src: FOX_POSE_CATALOG.aha.src, de: 'Ach so!', en: 'Aha!' },
+    {
+      src: MASCOT_MOMENT_CATALOG['coffee-cards'].src,
+      de: 'Kaffee & Karten!',
+      en: 'Coffee & cards',
+    },
+    { src: FOX_POSE_CATALOG.welcome.src, de: 'Los geht’s!', en: 'Let’s dive in' },
+    {
+      src: MASCOT_MOMENT_CATALOG['study-peak'].src,
+      de: 'Hi! Bereit für Deutsch?',
+      en: 'Ready for German',
+    },
+    { src: FOX_POSE_CATALOG.juggler.src, de: 'Im Fokus-Loop!', en: 'In the groove' },
+    {
+      src: MASCOT_MOMENT_CATALOG['haus-card'].src,
+      de: 'Das Haus sitzt!',
+      en: 'Articles locked in',
+    },
+    {
+      src: MASCOT_MOMENT_CATALOG['eureka-flag'].src,
+      de: 'Ah-ha! Ja!',
+      en: 'Breakthrough',
+    },
+    { src: FOX_POSE_CATALOG.champion.src, de: 'Meisterhaft!', en: 'Champion mode' },
+    {
+      src: MASCOT_MOMENT_CATALOG['cozy-student'].src,
+      de: 'Voll im Flow!',
+      en: 'In the flow',
+    },
+    { src: FOX_POSE_CATALOG.studio.src, de: 'Schlau wie ein Fuchs!', en: 'Clever as a fox' },
+    {
+      src: MASCOT_MOMENT_CATALOG['triumph-ecstatic'].src,
+      de: 'Geschafft!!',
+      en: 'Nailed it',
+    },
+    { src: FOX_POSE_CATALOG.runner.src, de: 'Starkes Tempo!', en: 'Unstoppable streak' },
   ];
-  const activeBrandFoxPose =
-    brandFoxPoses[brandClickSeq % brandFoxPoses.length];
-  const brandAhaExpressions = [
-    { de: 'Ach so!', en: 'Aha!' },
-    { de: 'Los geht’s!', en: 'Let’s dive in' },
-    { de: 'Im Fokus-Loop!', en: 'In the groove' },
-    { de: 'Meisterhaft!', en: 'Champion mode' },
-    { de: 'Schlau wie ein Fuchs!', en: 'Clever as a fox' },
-    { de: 'Starkes Tempo!', en: 'Unstoppable streak' },
-  ];
-  const activeBrandExpression =
-    brandAhaExpressions[brandClickSeq % brandAhaExpressions.length];
+  const activeBrandSlide =
+    brandFoxSlides[brandClickSeq % brandFoxSlides.length];
+  const activeBrandExpression = activeBrandSlide;
+
+  // Overview Gallery filter (All 17 poses visible by default) & live 6-slot App Icon tracker
+  const [mascotGalleryFilter, setMascotGalleryFilter] = useState<
+    'all' | 'core' | 'moments'
+  >('all');
+  const [activeAppIconSlot, setActiveAppIconSlot] = useState<AppIconChapterId>(
+    () => getTimeOfDayIconSlot()
+  );
+  const [isAppIconManualPreview, setIsAppIconManualPreview] =
+    useState<boolean>(false);
+
+  useEffect(() => {
+    const handleIconChange = (event: Event) => {
+      const detail = (event as CustomEvent<AppIconChapter>).detail;
+      if (detail?.slot) {
+        setActiveAppIconSlot(detail.slot);
+      }
+    };
+    window.addEventListener(APP_ICON_CHANGE_EVENT, handleIconChange);
+    return () => {
+      window.removeEventListener(APP_ICON_CHANGE_EVENT, handleIconChange);
+    };
+  }, []);
+
+  const handleSelectAppIconPreview = useCallback((slot: AppIconChapterId) => {
+    triggerHapticFeedback(10);
+    applyTimeOfDayAppIcons(slot);
+    setActiveAppIconSlot(slot);
+    setIsAppIconManualPreview(slot !== getTimeOfDayIconSlot());
+  }, []);
+
+  const handleResetAppIconAuto = useCallback(() => {
+    triggerHapticFeedback(10);
+    const liveSlot = getTimeOfDayIconSlot();
+    applyTimeOfDayAppIcons(liveSlot);
+    setActiveAppIconSlot(liveSlot);
+    setIsAppIconManualPreview(false);
+  }, []);
 
   // Persistent Folders (1-level), Custom Decks & Deck Overrides for "All Decks" page
   const [folders, setFolders] = useState<DeckFolder[]>(
@@ -4271,21 +4345,51 @@ export default function App() {
                 <div className="flex-1 space-y-1 md:space-y-1.5">
                   <div className="flex items-center justify-between text-xs md:text-[13px] font-sans tabular-nums gap-2">
                     <span className="inline-flex items-center gap-1.5 font-semibold text-[var(--fg-primary)] truncate min-w-0">
-                      <FoxMascot
-                        pose={
-                          activeLoopState.phase === 'sweep'
-                            ? 'juggler'
-                            : activeLoopState.virtualClock === 0
-                              ? 'welcome'
-                              : recentRatingEcho === '4' ||
-                                  recentRatingEcho === '5'
-                                ? 'aha'
-                                : 'juggler'
-                        }
-                        size="xs"
-                        interactive
-                        speechPlacement="right"
-                      />
+                      {activeLoopState.phase === 'sweep' ? (
+                        <MascotMomentVisual
+                          poseId="cozy-student"
+                          size="xs"
+                          interactive
+                          speechPlacement="right"
+                        />
+                      ) : activeLoopState.virtualClock === 0 ? (
+                        <MascotMomentVisual
+                          poseId={getDailyTimeOfDayMomentPose()}
+                          size="xs"
+                          interactive
+                          speechPlacement="right"
+                        />
+                      ) : recentRatingEcho === '1' ||
+                        recentRatingEcho === '2' ? (
+                        <MascotMomentVisual
+                          poseId="determined-focus"
+                          size="xs"
+                          interactive
+                          speechPlacement="right"
+                        />
+                      ) : recentRatingEcho === '3' ? (
+                        <MascotMomentVisual
+                          poseId="cozy-nest"
+                          size="xs"
+                          interactive
+                          speechPlacement="right"
+                        />
+                      ) : recentRatingEcho === '4' ||
+                        recentRatingEcho === '5' ? (
+                        <MascotMomentVisual
+                          poseId="eureka-flag"
+                          size="xs"
+                          interactive
+                          speechPlacement="right"
+                        />
+                      ) : (
+                        <FoxMascot
+                          pose="juggler"
+                          size="xs"
+                          interactive
+                          speechPlacement="right"
+                        />
+                      )}
                       <span className="truncate">
                         {activeLoopState.currentSlotKind === 'interleave' ? (
                           <>
@@ -4419,6 +4523,8 @@ export default function App() {
                       poseId={emptyMoment.poseId}
                       size="lg"
                       priority
+                      interactive
+                      speechPlacement="top"
                       className="mx-auto"
                     />
                     <div className="space-y-1.5">
@@ -4484,6 +4590,8 @@ export default function App() {
                       poseId={completionMoment.poseId}
                       size="hero"
                       priority
+                      interactive
+                      speechPlacement="top"
                       className="mx-auto"
                     />
                     <div className="space-y-1.5">
@@ -5443,10 +5551,11 @@ export default function App() {
             <Card.Root className="p-5 space-y-4 surface-paper">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2.5">
-                  <FoxMascot
-                    pose="champion"
+                  <MascotMomentVisual
+                    poseId="triumph-ecstatic"
                     size="sm"
                     interactive
+                    showSparkles
                     speechPlacement="right"
                   />
                   <div>
@@ -5528,74 +5637,170 @@ export default function App() {
               </div>
             </Card.Root>
 
-            {/* Interactive Flashcard Fox Mascot Gallery (All 6 Poses & Situations) */}
+            {/* Interactive Flashcard Fox Mascot Gallery (All 17 Poses: 6 Core + 11 Daily & Milestone Moments) */}
             <Card.Root className="p-5 space-y-4 surface-paper">
-              <div className="flex items-center justify-between gap-3">
-                <div>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="min-w-0">
                   <h2 className="font-display text-sm font-bold text-[var(--fg-primary)]">
                     Der Flashcard-Fuchs · Dein Lernbegleiter
                   </h2>
-                  <p className="text-xs text-[var(--fg-secondary)]">
-                    Tippe auf eine Pose für Animation &amp; Spruch — jede Haltung begleitet eine Phase deines Lern-Loops
+                  <p className="text-xs text-[var(--fg-secondary)] mt-0.5">
+                    Tippe auf eine Pose für Animation &amp; Spruch — alle 17 Haltungen begleiten deinen Alltag &amp; Lern-Loop
                   </p>
                 </div>
-                <span className="text-xs font-sans font-semibold text-[var(--accent-secondary)] shrink-0">
-                  6 Posen · 800px Retina
-                </span>
+                <SlidingPillSwitcher
+                  options={[
+                    { id: 'all', label: 'Alle (17)' },
+                    { id: 'core', label: 'Kern-Loop (6)' },
+                    { id: 'moments', label: 'Alltag (11)' },
+                  ]}
+                  value={mascotGalleryFilter}
+                  onChange={setMascotGalleryFilter}
+                  ariaLabel="Fuchs-Posen filtern"
+                  size="sm"
+                />
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-                {(
-                  [
-                    {
-                      pose: 'welcome' as const,
-                      situation: 'Deck-Start & Begrüßung',
-                    },
-                    {
-                      pose: 'juggler' as const,
-                      situation: 'Fokus-Loop & Final Sweep',
-                    },
-                    {
-                      pose: 'aha' as const,
-                      situation: 'Ach-so!-Moment & Logo',
-                    },
-                    {
-                      pose: 'studio' as const,
-                      situation: 'Wort-Anatomie & Fokus frei',
-                    },
-                    {
-                      pose: 'runner' as const,
-                      situation: 'Tages-Serie & Tempo',
-                    },
-                    {
-                      pose: 'champion' as const,
-                      situation: 'Deck geschafft! & Meilenstein',
-                    },
-                  ] as const
-                ).map(({ pose, situation }) => {
-                  const meta = FOX_POSE_CATALOG[pose];
-                  return (
-                    <div
-                      key={pose}
-                      className="p-3 rounded-2xl surface-2 border flex flex-col items-center text-center gap-2"
-                    >
-                      <FoxMascot
-                        pose={pose}
-                        size="md"
-                        interactive
-                        speechPlacement="top"
-                      />
-                      <div className="space-y-0.5 min-w-0 w-full">
-                        <div className="font-display text-xs font-bold text-[var(--fg-primary)] truncate">
-                          {meta.germanTitle}
-                        </div>
-                        <div className="text-[11px] text-[var(--fg-secondary)] leading-tight">
-                          {situation}
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                {(mascotGalleryFilter === 'all' ||
+                  mascotGalleryFilter === 'core') &&
+                  (
+                    [
+                      {
+                        pose: 'welcome' as const,
+                        situation: 'Deck-Start & Begrüßung',
+                      },
+                      {
+                        pose: 'juggler' as const,
+                        situation: 'Fokus-Loop & Final Sweep',
+                      },
+                      {
+                        pose: 'aha' as const,
+                        situation: 'Ach-so!-Moment & Logo',
+                      },
+                      {
+                        pose: 'studio' as const,
+                        situation: 'Wort-Anatomie & Fokus frei',
+                      },
+                      {
+                        pose: 'runner' as const,
+                        situation: 'Tages-Serie & Tempo',
+                      },
+                      {
+                        pose: 'champion' as const,
+                        situation: 'Deck geschafft! & Meilenstein',
+                      },
+                    ] as const
+                  ).map(({ pose, situation }) => {
+                    const meta = FOX_POSE_CATALOG[pose];
+                    return (
+                      <div
+                        key={`core-${pose}`}
+                        className="p-3 rounded-2xl surface-2 border flex flex-col items-center text-center gap-2"
+                      >
+                        <FoxMascot
+                          pose={pose}
+                          size="md"
+                          interactive
+                          speechPlacement="top"
+                        />
+                        <div className="space-y-0.5 min-w-0 w-full">
+                          <div className="font-display text-xs font-bold text-[var(--fg-primary)] truncate">
+                            {meta.germanTitle}
+                          </div>
+                          <div className="text-[11px] text-[var(--fg-secondary)] leading-tight">
+                            {situation}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+
+                {(mascotGalleryFilter === 'all' ||
+                  mascotGalleryFilter === 'moments') &&
+                  MASCOT_MOMENT_ORDER.map((poseId: MascotMomentPoseId) => {
+                    const asset = MASCOT_MOMENT_CATALOG[poseId];
+                    return (
+                      <div
+                        key={`moment-${poseId}`}
+                        className="p-3 rounded-2xl surface-2 border flex flex-col items-center text-center gap-2"
+                      >
+                        <MascotMomentVisual
+                          poseId={poseId}
+                          size="md"
+                          interactive
+                          speechPlacement="top"
+                        />
+                        <div className="space-y-0.5 min-w-0 w-full">
+                          <div className="font-display text-xs font-bold text-[var(--fg-primary)] truncate">
+                            {asset.germanTitle}
+                          </div>
+                          <div className="text-[11px] text-[var(--fg-secondary)] leading-tight">
+                            {asset.situation}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+
+              {/* Dynamic 6-Chapter Daily App Icon Schedule & Live Browser Tab Preview */}
+              <div className="pt-4 border-t border-[var(--border-subtle)] space-y-3">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div className="min-w-0">
+                    <h3 className="font-display text-xs font-bold text-[var(--fg-primary)]">
+                      Tages-App-Icon · 6-Stufen-Uhr
+                    </h3>
+                    <p className="text-[11px] text-[var(--fg-secondary)]">
+                      Wechselt automatisch mit der Tageszeit · Tippe ein Kapitel an, um das Tab-Icon sofort zu testen
+                    </p>
+                  </div>
+                  {isAppIconManualPreview && (
+                    <button
+                      type="button"
+                      onClick={handleResetAppIconAuto}
+                      className="text-xs font-sans font-semibold text-[var(--intent-primary)] hover:underline whitespace-nowrap shrink-0 cursor-pointer"
+                    >
+                      Zurück auf Auto-Uhr
+                    </button>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+                  {APP_ICON_CHAPTERS.map((chapter) => {
+                    const isActive = chapter.slot === activeAppIconSlot;
+                    return (
+                      <button
+                        key={chapter.slot}
+                        type="button"
+                        onClick={() => handleSelectAppIconPreview(chapter.slot)}
+                        aria-pressed={isActive}
+                        className={`p-2 rounded-xl border text-left flex items-center gap-2 transition-colors cursor-pointer theme-focus ${
+                          isActive
+                            ? 'bg-[var(--intent-primary-soft)]/55 border-[var(--intent-primary-border)]'
+                            : 'surface-2 border-[var(--border-subtle)] hover:border-[var(--border-strong)]'
+                        }`}
+                      >
+                        <img
+                          src={chapter.icon192}
+                          alt={chapter.title}
+                          width={36}
+                          height={36}
+                          loading="lazy"
+                          className="w-9 h-9 rounded-lg object-cover shrink-0 border border-black/10 dark:border-white/10"
+                        />
+                        <div className="min-w-0">
+                          <div className="font-display text-[11px] font-bold text-[var(--fg-primary)] truncate">
+                            {chapter.shortLabel}
+                          </div>
+                          <div className="font-sans text-[10px] text-[var(--fg-muted)] tabular-nums truncate">
+                            {chapter.scheduleLabel}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </Card.Root>
 
@@ -5668,10 +5873,11 @@ export default function App() {
 
             {archiveCards.length === 0 ? (
               <Card.Root className="p-8 text-center space-y-3 surface-paper">
-                <FoxMascot
-                  pose="studio"
+                <MascotMomentVisual
+                  poseId="haus-card"
                   size="lg"
                   interactive
+                  speechPlacement="top"
                   className="mx-auto"
                 />
                 <div className="space-y-1">
@@ -5679,7 +5885,7 @@ export default function App() {
                     Keine passenden Wörter im Archiv
                   </h3>
                   <p className="text-xs text-[var(--fg-secondary)]">
-                    Der Studio-Fuchs hat für „{archiveSearchQuery}“ noch keinen Treffer gefunden.
+                    Der Wortschatz-Fuchs hat für „{archiveSearchQuery}“ noch keinen Treffer gefunden.
                   </p>
                 </div>
               </Card.Root>
@@ -5828,7 +6034,7 @@ export default function App() {
                     />
                   )}
                   <img
-                    src={FOX_POSE_CATALOG[activeBrandFoxPose].src}
+                    src={activeBrandSlide.src}
                     alt=""
                     referrerPolicy="no-referrer"
                     draggable={false}

@@ -2226,6 +2226,7 @@ html.dark .brand-lockup:hover {
   .brand-wordmark-text,
   .brand-letter,
   .fox-mascot-img,
+  .mascot-moment-cutout,
   .fox-sparkle-1,
   .fox-sparkle-2,
   .fox-sparkle-3,
@@ -2236,13 +2237,176 @@ html.dark .brand-lockup:hover {
 }
 
 /* ==================== TRANSPARENT MASCOT CUTOUTS & MILESTONE INTERLUDE ==================== */
+@keyframes foxMomentCoffee {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(-1deg) scale(1);
+  }
+  50% {
+    transform: translate3d(0, -3.5px, 0) rotate(1.6deg) scale(1.02);
+  }
+}
+
+@keyframes foxMomentPeek {
+  0%,
+  100% {
+    transform: translate3d(0, 1px, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(0, -4px, 0) scale(1.025);
+  }
+}
+
+@keyframes foxMomentHaus {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(-1.6deg);
+  }
+  50% {
+    transform: translate3d(0, -3px, 0) rotate(1.8deg);
+  }
+}
+
+@keyframes foxMomentEureka {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(-2deg) scale(1);
+  }
+  45% {
+    transform: translate3d(0, -4.5px, 0) rotate(2.4deg) scale(1.03);
+  }
+}
+
+@keyframes foxMomentMidnight {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(-1deg);
+  }
+  50% {
+    transform: translate3d(0, -3px, 0) rotate(1.2deg);
+  }
+}
+
+@keyframes foxMomentSleepy {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1, 1);
+  }
+  50% {
+    transform: translate3d(0, -2px, 0) scale(1.018, 0.992);
+  }
+}
+
+@keyframes foxMomentCozy {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(-1.4deg);
+  }
+  50% {
+    transform: translate3d(0, -3px, 0) rotate(1.4deg);
+  }
+}
+
+@keyframes foxMomentFocus {
+  0%,
+  100% {
+    transform: translate3d(-1px, 0, 0) rotate(-1.2deg);
+  }
+  50% {
+    transform: translate3d(1px, -2.5px, 0) rotate(1.2deg);
+  }
+}
+
+@keyframes foxMomentStudent {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(-1.5deg) scale(1);
+  }
+  50% {
+    transform: translate3d(0, -3.5px, 0) rotate(1.8deg) scale(1.02);
+  }
+}
+
+@keyframes foxMomentTriumph {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(-1.8deg) scale(1);
+  }
+  45% {
+    transform: translate3d(0, -5px, 0) rotate(2.2deg) scale(1.035);
+  }
+}
+
+@keyframes foxMomentRelieved {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  50% {
+    transform: translate3d(0, -2.5px, 0) rotate(1.5deg);
+  }
+}
+
+.fox-moment-coffee {
+  animation: foxMomentCoffee 3.8s ease-in-out infinite;
+}
+
+.fox-moment-peek {
+  animation: foxMomentPeek 3.1s ease-in-out infinite;
+}
+
+.fox-moment-haus {
+  animation: foxMomentHaus 3.5s ease-in-out infinite;
+}
+
+.fox-moment-eureka {
+  animation: foxMomentEureka 2.6s ease-in-out infinite;
+}
+
+.fox-moment-midnight {
+  animation: foxMomentMidnight 4.2s ease-in-out infinite;
+}
+
+.fox-moment-sleepy {
+  animation: foxMomentSleepy 4.6s ease-in-out infinite;
+}
+
+.fox-moment-cozy {
+  animation: foxMomentCozy 3.8s ease-in-out infinite;
+}
+
+.fox-moment-focus {
+  animation: foxMomentFocus 2.5s ease-in-out infinite;
+}
+
+.fox-moment-student {
+  animation: foxMomentStudent 3.3s ease-in-out infinite;
+}
+
+.fox-moment-triumph {
+  animation: foxMomentTriumph 2.3s ease-in-out infinite;
+}
+
+.fox-moment-relieved {
+  animation: foxMomentRelieved 3.6s ease-in-out infinite;
+}
+
 .mascot-moment-cutout {
-  filter: drop-shadow(0 8px 18px rgb(38 29 20 / 0.14));
-  transform: translateZ(0);
+  filter: drop-shadow(0 6px 14px rgb(38 29 20 / 0.14));
+  transition: transform 240ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  will-change: transform;
 }
 
 html.dark .mascot-moment-cutout {
-  filter: drop-shadow(0 10px 22px rgb(0 0 0 / 0.36));
+  filter: drop-shadow(0 8px 18px rgb(0 0 0 / 0.36));
+}
+
+.fox-mascot-stage:hover .mascot-moment-cutout:not(.is-fox-jumping) {
+  transform: translate3d(0, -3px, 0) scale(1.07) rotate(-2.5deg);
+}
+
+.mascot-moment-cutout.is-fox-jumping {
+  animation: foxInteractiveJump 540ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards !important;
 }
 
 @keyframes milestoneInterludeIn {

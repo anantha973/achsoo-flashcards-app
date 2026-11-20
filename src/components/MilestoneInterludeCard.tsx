@@ -60,8 +60,14 @@ export const MilestoneInterludeCard: React.FC<MilestoneInterludeCardProps> = ({
           </span>
         </p>
 
-        {/* Transparent Floating Fox Cutout */}
-        <MascotMomentVisual poseId={moment.poseId} size="lg" priority />
+        {/* Animated, Twinkling & Interactive Floating Fox Cutout */}
+        <MascotMomentVisual
+          poseId={moment.poseId}
+          size="lg"
+          interactive
+          speechPlacement="top"
+          priority
+        />
 
         {/* Display Headline & Encouraging Subline */}
         <div className="space-y-1.5">

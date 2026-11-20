@@ -164,23 +164,22 @@ export function applyTimeOfDayAppIcons(
 
   const head = document.head;
 
-  // 1. Update favicon
+  // 1. Update favicon (re-append link on change so Chrome/Safari immediately swap the tab icon)
   let faviconLink = document.getElementById('app-favicon') as HTMLLinkElement | null;
   if (!faviconLink) {
     faviconLink = document.querySelector('link[rel="icon"]') as HTMLLinkElement | null;
   }
-  if (!faviconLink) {
+  if (!faviconLink || faviconLink.getAttribute('href') !== assets.favicon) {
+    if (faviconLink) {
+      faviconLink.remove();
+    }
     faviconLink = document.createElement('link');
     faviconLink.id = 'app-favicon';
     faviconLink.rel = 'icon';
     faviconLink.type = 'image/png';
     faviconLink.setAttribute('sizes', '64x64');
-    head.appendChild(faviconLink);
-  }
-  if (faviconLink.getAttribute('href') !== assets.favicon) {
-    faviconLink.type = 'image/png';
-    faviconLink.setAttribute('sizes', '64x64');
     faviconLink.setAttribute('href', assets.favicon);
+    head.appendChild(faviconLink);
   }
 
   // 2. Update Apple Touch Icon
@@ -247,8 +246,17 @@ export function startTimeOfDayIconScheduler(): () => void {
   }
 
   let timerId: number | null = null;
+  let intervalId: number | null = null;
   let lastSlot = getTimeOfDayIconSlot();
   applyTimeOfDayAppIcons(lastSlot);
+
+  const syncSlotIfNeeded = () => {
+    const currentSlot = getTimeOfDayIconSlot();
+    if (currentSlot !== lastSlot) {
+      lastSlot = currentSlot;
+      applyTimeOfDayAppIcons(currentSlot);
+    }
+  };
 
   const scheduleNext = () => {
     if (timerId !== null) {
@@ -256,30 +264,29 @@ export function startTimeOfDayIconScheduler(): () => void {
     }
     const delayMs = getMsUntilNextIconBoundary();
     timerId = window.setTimeout(() => {
-      const nextSlot = getTimeOfDayIconSlot();
-      lastSlot = nextSlot;
-      applyTimeOfDayAppIcons(nextSlot);
+      syncSlotIfNeeded();
       scheduleNext();
     }, delayMs);
   };
 
   const handleVisibilityOrFocus = () => {
     if (document.visibilityState === 'hidden') return;
-    const currentSlot = getTimeOfDayIconSlot();
-    if (currentSlot !== lastSlot) {
-      lastSlot = currentSlot;
-      applyTimeOfDayAppIcons(currentSlot);
-    }
+    syncSlotIfNeeded();
     scheduleNext();
   };
 
   scheduleNext();
+  // Backup check every 5 minutes in case long timers are throttled by background tabs
+  intervalId = window.setInterval(syncSlotIfNeeded, 5 * 60 * 1000);
   document.addEventListener('visibilitychange', handleVisibilityOrFocus);
   window.addEventListener('focus', handleVisibilityOrFocus);
 
   return () => {
     if (timerId !== null) {
       window.clearTimeout(timerId);
+    }
+    if (intervalId !== null) {
+      window.clearInterval(intervalId);
     }
     document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
     window.removeEventListener('focus', handleVisibilityOrFocus);

@@ -18,6 +18,11 @@ export interface MascotMomentAsset {
   src: string;
   alt: string;
   label: string;
+  germanTitle: string;
+  situation: string;
+  animClass: string;
+  glowVar: string;
+  phrases: ReadonlyArray<{ de: string; en: string }>;
   width: number;
   height: number;
 }
@@ -41,6 +46,20 @@ export const MILESTONE_MIN_RATINGS_GAP = 2;
 
 const MILESTONE_PREF_KEY = 'achsoo_milestone_breaks_v1';
 
+export const MASCOT_MOMENT_ORDER: ReadonlyArray<MascotMomentPoseId> = [
+  'coffee-cards',
+  'study-peak',
+  'haus-card',
+  'eureka-flag',
+  'cozy-nest',
+  'determined-focus',
+  'cozy-student',
+  'triumph-ecstatic',
+  'relieved-satisfied',
+  'midnight-oil',
+  'study-sleepy',
+];
+
 export const MASCOT_MOMENT_CATALOG: Record<
   MascotMomentPoseId,
   MascotMomentAsset
@@ -50,6 +69,15 @@ export const MASCOT_MOMENT_CATALOG: Record<
     src: '/assets/mascot/moments/coffee-cards.webp',
     alt: 'Achsoo fox in a cozy beanie enjoying coffee with German flashcards',
     label: 'Coffee & Cards',
+    germanTitle: 'Kaffee & Karten',
+    situation: 'Morgen-Start · 25 %-Meilenstein',
+    animClass: 'fox-moment-coffee',
+    glowVar: 'var(--intent-warning-soft)',
+    phrases: [
+      { de: 'Guten Morgen!', en: 'Coffee & cards ready!' },
+      { de: 'Wach im Kopf!', en: 'Fresh morning recall!' },
+      { de: 'Erst Kaffee, dann Artikel!', en: 'Coffee first, then der/die/das!' },
+    ],
     width: 512,
     height: 512,
   },
@@ -58,6 +86,15 @@ export const MASCOT_MOMENT_CATALOG: Record<
     src: '/assets/mascot/moments/study-peak.webp',
     alt: 'Achsoo fox peeking cheerfully over a HI! DE German flashcard',
     label: 'Study Peak',
+    germanTitle: 'Hallo Deutsch!',
+    situation: 'Mittags-Check & Deck-Abschluss',
+    animClass: 'fox-moment-peek',
+    glowVar: 'var(--intent-primary-soft)',
+    phrases: [
+      { de: 'Hi! Bereit für Deutsch?', en: 'Hi! Ready for German?' },
+      { de: 'Lass uns üben!', en: 'Let’s practice together!' },
+      { de: 'Wort für Wort!', en: 'One card at a time!' },
+    ],
     width: 512,
     height: 512,
   },
@@ -66,6 +103,15 @@ export const MASCOT_MOMENT_CATALOG: Record<
     src: '/assets/mascot/moments/haus-card.webp',
     alt: 'Achsoo fox holding a German HAUS vocabulary flashcard with a checkmark',
     label: 'HAUS Card',
+    germanTitle: 'Das HAUS sitzt!',
+    situation: 'Nachmittag · Nomen & Wortschatz',
+    animClass: 'fox-moment-haus',
+    glowVar: 'var(--accent-secondary-soft)',
+    phrases: [
+      { de: 'Das Haus sitzt!', en: 'Noun gender nailed!' },
+      { de: 'Der, die, das — klar!', en: 'Articles locked in!' },
+      { de: 'Starker Wortschatz!', en: 'Solid vocabulary!' },
+    ],
     width: 512,
     height: 512,
   },
@@ -74,6 +120,15 @@ export const MASCOT_MOMENT_CATALOG: Record<
     src: '/assets/mascot/moments/eureka-flag.webp',
     alt: 'Achsoo fox waving a JA! flag celebrating an Ah-ha! German breakthrough',
     label: 'Eureka Flag',
+    germanTitle: 'Ah-ha! Ja-Flagge',
+    situation: '75 %-Endspurt & Durchbruch',
+    animClass: 'fox-moment-eureka',
+    glowVar: 'var(--intent-success-soft)',
+    phrases: [
+      { de: 'Ah-ha! Ja!', en: 'Yes, breakthrough!' },
+      { de: 'Fast am Ziel!', en: 'Almost at the finish!' },
+      { de: 'Endspurt läuft!', en: 'Final stretch!' },
+    ],
     width: 512,
     height: 512,
   },
@@ -82,6 +137,15 @@ export const MASCOT_MOMENT_CATALOG: Record<
     src: '/assets/mascot/moments/midnight-oil.webp',
     alt: 'Achsoo fox under a patchwork blanket studying flashcards by flashlight',
     label: 'Midnight Oil',
+    germanTitle: 'Nachteulen-Fuchs',
+    situation: 'Spätabends · Lernen vor dem Schlafen',
+    animClass: 'fox-moment-midnight',
+    glowVar: 'var(--accent-secondary-soft)',
+    phrases: [
+      { de: 'Nachteulen-Modus!', en: 'Burning the midnight oil!' },
+      { de: 'Noch eine Runde!', en: 'One more cozy round!' },
+      { de: 'Schlaf festigt Wörter!', en: 'Sleep locks in memory!' },
+    ],
     width: 512,
     height: 512,
   },
@@ -90,6 +154,15 @@ export const MASCOT_MOMENT_CATALOG: Record<
     src: '/assets/mascot/moments/study-sleepy.webp',
     alt: 'Achsoo fox napping peacefully on a stack of flashcards under stars',
     label: 'Study Sleepy',
+    germanTitle: 'Schlummer-Fuchs',
+    situation: 'Feierabend · Nach dem späten Deck',
+    animClass: 'fox-moment-sleepy',
+    glowVar: 'var(--intent-primary-soft)',
+    phrases: [
+      { de: 'Gut gemacht… zzz', en: 'Well done… time to rest' },
+      { de: 'Träum auf Deutsch!', en: 'Dream in German!' },
+      { de: 'Bis morgen!', en: 'See you tomorrow!' },
+    ],
     width: 512,
     height: 512,
   },
@@ -98,6 +171,15 @@ export const MASCOT_MOMENT_CATALOG: Record<
     src: '/assets/mascot/moments/cozy-nest.webp',
     alt: 'Achsoo fox in a warm terracotta scarf studying next to a colorful flashcard box',
     label: 'Cozy Study Nest',
+    germanTitle: 'Gemütliches Lern-Nest',
+    situation: 'Abend-Runde · 25 %-Meilenstein',
+    animClass: 'fox-moment-cozy',
+    glowVar: 'var(--intent-warning-soft)',
+    phrases: [
+      { de: 'Schön gemütlich!', en: 'Cozy study nest!' },
+      { de: 'Karteikasten bereit!', en: 'Card box ready!' },
+      { de: 'Ganz entspannt!', en: 'Calm, steady focus!' },
+    ],
     width: 512,
     height: 512,
   },
@@ -106,6 +188,15 @@ export const MASCOT_MOMENT_CATALOG: Record<
     src: '/assets/mascot/moments/determined-focus.webp',
     alt: 'Achsoo fox focused intensely while taking study notes with a pencil',
     label: 'Determined Focus',
+    germanTitle: 'Voller Fokus',
+    situation: 'Fokus-Loop & knifflige 50 %-Halbzeit',
+    animClass: 'fox-moment-focus',
+    glowVar: 'var(--intent-danger-soft)',
+    phrases: [
+      { de: 'Volle Konzentration!', en: 'Locked in!' },
+      { de: 'Die knacken wir!', en: 'We’ll crack these tricky ones!' },
+      { de: 'Dranbleiben!', en: 'Keep pushing!' },
+    ],
     width: 512,
     height: 512,
   },
@@ -114,6 +205,15 @@ export const MASCOT_MOMENT_CATALOG: Record<
     src: '/assets/mascot/moments/cozy-student.webp',
     alt: 'Achsoo fox smiling in a blue duffle coat and yellow scarf holding study cards',
     label: 'Cozy Student',
+    germanTitle: 'Lern-Flow',
+    situation: '50 %-Halbzeit im Flow & Überblick',
+    animClass: 'fox-moment-student',
+    glowVar: 'var(--intent-primary-soft)',
+    phrases: [
+      { de: 'Voll im Flow!', en: 'Cruising in the flow!' },
+      { de: 'Halbzeit geschafft!', en: 'Halfway there!' },
+      { de: 'Macht richtig Spaß!', en: 'Learning feels great!' },
+    ],
     width: 512,
     height: 512,
   },
@@ -122,6 +222,15 @@ export const MASCOT_MOMENT_CATALOG: Record<
     src: '/assets/mascot/moments/triumph-ecstatic.webp',
     alt: 'Achsoo fox cheering ecstatically with a glowing checkmark card and flying cards',
     label: 'Triumph Ecstatic',
+    germanTitle: 'Jubel-Triumph!',
+    situation: '100 % Deck-Meister & Erfolge',
+    animClass: 'fox-moment-triumph',
+    glowVar: 'var(--intent-success-soft)',
+    phrases: [
+      { de: 'Geschafft!!', en: 'Nailed it!!' },
+      { de: '100 % gemeistert!', en: '100% mastered!' },
+      { de: 'Großartig!', en: 'Outstanding recall!' },
+    ],
     width: 512,
     height: 512,
   },
@@ -130,10 +239,30 @@ export const MASCOT_MOMENT_CATALOG: Record<
     src: '/assets/mascot/moments/relieved-satisfied.webp',
     alt: 'Achsoo fox smiling in relief wiping its brow over a closed star notebook',
     label: 'Relieved & Satisfied',
+    germanTitle: 'Puh, geschafft!',
+    situation: 'Durchgekämpft & Fokus-Loop frei',
+    animClass: 'fox-moment-relieved',
+    glowVar: 'var(--intent-success-soft)',
+    phrases: [
+      { de: 'Puh, geschafft!', en: 'Whew, all clear!' },
+      { de: 'Ausdauer zahlt sich aus!', en: 'Persistence paid off!' },
+      { de: 'Alles erledigt!', en: 'Everything’s in order!' },
+    ],
     width: 512,
     height: 512,
   },
 };
+
+export function getDailyTimeOfDayMomentPose(
+  localHour: number = new Date().getHours()
+): MascotMomentPoseId {
+  if (localHour >= 5 && localHour < 9) return 'coffee-cards';
+  if (localHour >= 9 && localHour < 13) return 'study-peak';
+  if (localHour >= 13 && localHour < 17) return 'haus-card';
+  if (localHour >= 17 && localHour < 21) return 'cozy-nest';
+  if (localHour >= 21) return 'midnight-oil';
+  return 'study-sleepy';
+}
 
 export function loadMilestoneInterludesEnabled(): boolean {
   if (typeof window === 'undefined') return true;
