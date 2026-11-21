@@ -32,11 +32,7 @@ import {
   formatNounLemma,
 } from '../data/vocabData';
 import { MascotMomentVisual } from './MascotMomentVisual';
-import {
-  MASCOT_MOMENT_CATALOG,
-  MASCOT_MOMENT_ORDER,
-  getDailyTimeOfDayMomentPose,
-} from '../utils/mascotMoments';
+import { getDailyTimeOfDayMomentPose } from '../utils/mascotMoments';
 import {
   ASSIGNABLE_ICONS,
   CustomDeckRecord,
@@ -1787,65 +1783,6 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
                 )}
               </div>
             )}
-
-            {/* 6. CALM DAILY COMPANION STRIP: Scroll-through Mascot Moments */}
-            {(() => {
-              const dailyMomentPose = getDailyTimeOfDayMomentPose();
-              return (
-                <section
-                  aria-label="Tages-Begleiter Fuchs-Posen"
-                  className="surface-paper border p-4 space-y-3"
-                >
-                  <div className="flex items-baseline justify-between gap-2">
-                    <div className="min-w-0">
-                      <h2 className="font-display text-[13.5px] font-bold text-[var(--fg-primary)]">
-                        Dein Fuchs durch den Tag
-                      </h2>
-                      <p className="font-sans text-[11.5px] text-[var(--fg-secondary)]">
-                        Tippe auf eine Pose für Animation &amp; deutschen Spruch
-                      </p>
-                    </div>
-                    <span className="font-sans text-[11px] font-medium text-[var(--fg-muted)] whitespace-nowrap shrink-0">
-                      {MASCOT_MOMENT_ORDER.length} Momente
-                    </span>
-                  </div>
-
-                  <div className="flex items-stretch gap-2.5 overflow-x-auto pb-1.5 snap-x snap-mandatory">
-                    {MASCOT_MOMENT_ORDER.map((poseId) => {
-                      const asset = MASCOT_MOMENT_CATALOG[poseId];
-                      const isCurrentTimeSlot = poseId === dailyMomentPose;
-                      return (
-                        <div
-                          key={poseId}
-                          className={`snap-start shrink-0 w-[132px] p-2.5 rounded-2xl border flex flex-col items-center text-center gap-1.5 transition-colors ${
-                            isCurrentTimeSlot
-                              ? 'bg-[var(--intent-primary-soft)]/45 border-[var(--intent-primary-border)]'
-                              : 'surface-2 border-[var(--border-subtle)]'
-                          }`}
-                        >
-                          <MascotMomentVisual
-                            poseId={poseId}
-                            size="md"
-                            interactive
-                            speechPlacement="top"
-                          />
-                          <div className="w-full min-w-0 space-y-0.5">
-                            <div className="font-display text-[11.5px] font-bold text-[var(--fg-primary)] truncate">
-                              {asset.germanTitle}
-                            </div>
-                            <div className="font-sans text-[10.5px] leading-tight text-[var(--fg-secondary)] line-clamp-2">
-                              {isCurrentTimeSlot
-                                ? `Jetzt aktiv · ${asset.situation}`
-                                : asset.situation}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </section>
-              );
-            })()}
           </div>
         )}
 

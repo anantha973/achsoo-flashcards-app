@@ -9,11 +9,13 @@
     <meta property="og:description" content="Responsive German Vocabulary &amp; Grammar Flashcards web application with Spaced Repetition (SRS), native de-DE audio pronunciation, and grammatical breakdowns across A1–B1 levels." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="theme-color" content="#FAF8F5" id="meta-theme-color" />
-    <meta name="color-scheme" content="light dark" id="meta-color-scheme" />
+    <meta name="theme-color" content="#171412" media="(prefers-color-scheme: dark)" data-boot-theme-color="true" />
+    <meta name="theme-color" content="#FAF8F5" media="(prefers-color-scheme: light)" data-boot-theme-color="true" />
+    <meta name="theme-color" content="#171412" id="meta-theme-color" />
+    <meta name="color-scheme" content="dark light" id="meta-color-scheme" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="default" id="meta-apple-status-bar" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" id="meta-apple-status-bar" />
     <meta name="apple-mobile-web-app-title" content="Achsoo" />
     <link id="app-favicon" rel="icon" type="image/png" sizes="64x64" href="/icons/favicon-midday.png" />
     <link id="app-apple-touch-icon" rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon-midday.png" />
@@ -90,6 +92,11 @@
           };
           var resolvedBg = metaColorMap[themeId + ':' + colorMode] || (colorMode === 'dark' ? '#171412' : '#FAF8F5');
           root.style.backgroundColor = resolvedBg;
+          // Remove media-scoped fallbacks once exact user theme is resolved so mobile Chrome locks onto resolvedBg
+          var bootMetas = document.querySelectorAll('meta[data-boot-theme-color="true"]');
+          for (var i = 0; i < bootMetas.length; i++) {
+            bootMetas[i].parentNode && bootMetas[i].parentNode.removeChild(bootMetas[i]);
+          }
           var metaEl = document.getElementById('meta-theme-color');
           if (metaEl) {
             metaEl.setAttribute('content', resolvedBg);
@@ -102,6 +109,12 @@
           if (appleStatusBarEl) {
             appleStatusBarEl.setAttribute('content', colorMode === 'dark' ? 'black-translucent' : 'default');
           }
+          document.addEventListener('DOMContentLoaded', function () {
+            if (document.body) {
+              document.body.style.backgroundColor = resolvedBg;
+              document.body.style.colorScheme = colorMode;
+            }
+          });
         } catch (e) {}
       })();
     </script>

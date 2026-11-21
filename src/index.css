@@ -807,6 +807,8 @@
     -webkit-text-size-adjust: 100%;
     background-color: var(--bg-canvas);
     min-height: 100%;
+    min-height: 100lvh;
+    height: 100%;
   }
 
   ::selection {
@@ -830,7 +832,10 @@
 
   body {
     position: relative;
+    margin: 0;
+    min-height: 100%;
     min-height: 100dvh;
+    min-height: 100lvh;
     font-family: var(--font-body);
     background-color: var(--bg-canvas);
     color: var(--fg-primary);
@@ -841,6 +846,13 @@
     -moz-osx-font-smoothing: grayscale;
     -webkit-tap-highlight-color: transparent;
     transition: background-color 200ms var(--ease), color 200ms var(--ease);
+  }
+
+  #root {
+    min-height: 100%;
+    min-height: 100dvh;
+    min-height: 100lvh;
+    background-color: var(--bg-canvas);
   }
 
   /* Theme Personality Canvas Backdrop (Addendum §D) */
@@ -1050,6 +1062,28 @@
 /* ==========================================================================
  * FLUID PADDING (SCALED BY --density) & CLAMP() TYPOGRAPHY
  * ========================================================================== */
+.app-viewport-shell {
+  min-height: 100%;
+  min-height: 100dvh;
+  min-height: 100lvh;
+}
+
+.mobile-bottom-nav {
+  background-color: var(--surface-1);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.mobile-bottom-nav::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: max(env(safe-area-inset-bottom, 0px), 64px);
+  background-color: var(--surface-1);
+  pointer-events: none;
+}
+
 .study-main-shell {
   padding-top: 0.625rem;
   padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px));

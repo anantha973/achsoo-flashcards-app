@@ -1418,10 +1418,27 @@ export function applyThemePreferencesToDom(
       META_THEME_COLORS[`${prefs.themeId}:${prefs.colorMode}`] ||
       (prefs.colorMode === 'dark' ? '#171412' : '#FAF8F5');
     root.style.backgroundColor = resolvedThemeColor;
+    if (document.body) {
+      document.body.style.backgroundColor = resolvedThemeColor;
+      document.body.style.colorScheme = prefs.colorMode;
+    }
 
-    const metaEl = document.getElementById('meta-theme-color');
-    if (metaEl) {
-      metaEl.setAttribute('content', resolvedThemeColor);
+    document
+      .querySelectorAll('meta[data-boot-theme-color="true"]')
+      .forEach((node) => node.remove());
+
+    let metaEl = document.getElementById(
+      'meta-theme-color'
+    ) as HTMLMetaElement | null;
+    if (!metaEl || metaEl.getAttribute('content') !== resolvedThemeColor) {
+      if (metaEl) {
+        metaEl.remove();
+      }
+      metaEl = document.createElement('meta');
+      metaEl.id = 'meta-theme-color';
+      metaEl.name = 'theme-color';
+      metaEl.content = resolvedThemeColor;
+      document.head.appendChild(metaEl);
     }
 
     const colorSchemeEl = document.getElementById('meta-color-scheme');

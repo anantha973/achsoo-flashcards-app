@@ -64,7 +64,6 @@ import { MascotMomentVisual } from './components/MascotMomentVisual';
 import { MilestoneInterludeCard } from './components/MilestoneInterludeCard';
 import {
   MASCOT_MOMENT_CATALOG,
-  MASCOT_MOMENT_ORDER,
   MascotMomentCard,
   MascotMomentPoseId,
   MilestoneThreshold,
@@ -898,10 +897,10 @@ export default function App() {
     brandFoxSlides[brandClickSeq % brandFoxSlides.length];
   const activeBrandExpression = activeBrandSlide;
 
-  // Overview Gallery filter (All 17 poses visible by default) & live 6-slot App Icon tracker
-  const [mascotGalleryFilter, setMascotGalleryFilter] = useState<
-    'all' | 'core' | 'moments'
-  >('all');
+  // Overview Gallery visual category (3 curated moods, no "Alle" dump) & live 6-slot App Icon tracker
+  const [mascotGalleryCategory, setMascotGalleryCategory] = useState<
+    'focus' | 'celebrate' | 'cozy'
+  >('focus');
   const [activeAppIconSlot, setActiveAppIconSlot] = useState<AppIconChapterId>(
     () => getTimeOfDayIconSlot()
   );
@@ -5637,7 +5636,7 @@ export default function App() {
               </div>
             </Card.Root>
 
-            {/* Interactive Flashcard Fox Mascot Gallery (All 17 Poses: 6 Core + 11 Daily & Milestone Moments) */}
+            {/* Interactive Flashcard Fox Mascot Gallery (3 Visually Curated Mood Categories) */}
             <Card.Root className="p-5 space-y-4 surface-paper">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="min-w-0">
@@ -5645,104 +5644,192 @@ export default function App() {
                     Der Flashcard-Fuchs · Dein Lernbegleiter
                   </h2>
                   <p className="text-xs text-[var(--fg-secondary)] mt-0.5">
-                    Tippe auf eine Pose für Animation &amp; Spruch — alle 17 Haltungen begleiten deinen Alltag &amp; Lern-Loop
+                    Tippe auf eine Pose für Animation &amp; Spruch — geordnet nach Lern-Stimmung
                   </p>
                 </div>
                 <SlidingPillSwitcher
                   options={[
-                    { id: 'all', label: 'Alle (17)' },
-                    { id: 'core', label: 'Kern-Loop (6)' },
-                    { id: 'moments', label: 'Alltag (11)' },
+                    { id: 'focus', label: 'Lernen & Fokus' },
+                    { id: 'celebrate', label: 'Erfolge & Aha!' },
+                    { id: 'cozy', label: 'Gemütlich & Nacht' },
                   ]}
-                  value={mascotGalleryFilter}
-                  onChange={setMascotGalleryFilter}
-                  ariaLabel="Fuchs-Posen filtern"
+                  value={mascotGalleryCategory}
+                  onChange={setMascotGalleryCategory}
+                  ariaLabel="Fuchs-Stimmung wählen"
                   size="sm"
                 />
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
-                {(mascotGalleryFilter === 'all' ||
-                  mascotGalleryFilter === 'core') &&
-                  (
-                    [
-                      {
-                        pose: 'welcome' as const,
-                        situation: 'Deck-Start & Begrüßung',
-                      },
-                      {
-                        pose: 'juggler' as const,
-                        situation: 'Fokus-Loop & Final Sweep',
-                      },
-                      {
-                        pose: 'aha' as const,
-                        situation: 'Ach-so!-Moment & Logo',
-                      },
-                      {
-                        pose: 'studio' as const,
-                        situation: 'Wort-Anatomie & Fokus frei',
-                      },
-                      {
-                        pose: 'runner' as const,
-                        situation: 'Tages-Serie & Tempo',
-                      },
-                      {
-                        pose: 'champion' as const,
-                        situation: 'Deck geschafft! & Meilenstein',
-                      },
-                    ] as const
-                  ).map(({ pose, situation }) => {
-                    const meta = FOX_POSE_CATALOG[pose];
-                    return (
-                      <div
-                        key={`core-${pose}`}
-                        className="p-3 rounded-2xl surface-2 border flex flex-col items-center text-center gap-2"
-                      >
-                        <FoxMascot
-                          pose={pose}
-                          size="md"
-                          interactive
-                          speechPlacement="top"
-                        />
-                        <div className="space-y-0.5 min-w-0 w-full">
-                          <div className="font-display text-xs font-bold text-[var(--fg-primary)] truncate">
-                            {meta.germanTitle}
-                          </div>
-                          <div className="text-[11px] text-[var(--fg-secondary)] leading-tight">
-                            {situation}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
+              {(() => {
+                type GalleryEntry =
+                  | {
+                      kind: 'core';
+                      pose: 'welcome' | 'juggler' | 'aha' | 'studio' | 'runner' | 'champion';
+                      situation: string;
+                    }
+                  | {
+                      kind: 'moment';
+                      poseId: MascotMomentPoseId;
+                      situation: string;
+                    };
 
-                {(mascotGalleryFilter === 'all' ||
-                  mascotGalleryFilter === 'moments') &&
-                  MASCOT_MOMENT_ORDER.map((poseId: MascotMomentPoseId) => {
-                    const asset = MASCOT_MOMENT_CATALOG[poseId];
-                    return (
-                      <div
-                        key={`moment-${poseId}`}
-                        className="p-3 rounded-2xl surface-2 border flex flex-col items-center text-center gap-2"
-                      >
-                        <MascotMomentVisual
-                          poseId={poseId}
-                          size="md"
-                          interactive
-                          speechPlacement="top"
-                        />
-                        <div className="space-y-0.5 min-w-0 w-full">
-                          <div className="font-display text-xs font-bold text-[var(--fg-primary)] truncate">
-                            {asset.germanTitle}
+                const CATEGORY_ENTRIES: Record<
+                  'focus' | 'celebrate' | 'cozy',
+                  ReadonlyArray<GalleryEntry>
+                > = {
+                  focus: [
+                    {
+                      kind: 'moment',
+                      poseId: 'study-peak',
+                      situation: 'Mittags-Check · HI! DE',
+                    },
+                    {
+                      kind: 'core',
+                      pose: 'welcome',
+                      situation: 'Deck-Start & Begrüßung',
+                    },
+                    {
+                      kind: 'moment',
+                      poseId: 'haus-card',
+                      situation: 'Nomen & Artikel sitzen',
+                    },
+                    {
+                      kind: 'core',
+                      pose: 'studio',
+                      situation: 'Wort-Anatomie & Regeln',
+                    },
+                    {
+                      kind: 'moment',
+                      poseId: 'determined-focus',
+                      situation: 'Fokus-Loop & knifflige Karten',
+                    },
+                    {
+                      kind: 'core',
+                      pose: 'juggler',
+                      situation: 'Aktiv im Karten-Loop',
+                    },
+                  ],
+                  celebrate: [
+                    {
+                      kind: 'core',
+                      pose: 'aha',
+                      situation: 'Ach-so!-Moment & Logo',
+                    },
+                    {
+                      kind: 'moment',
+                      poseId: 'eureka-flag',
+                      situation: '75 %-Endspurt · Durchbruch',
+                    },
+                    {
+                      kind: 'core',
+                      pose: 'runner',
+                      situation: 'Tages-Serie & Lerntempo',
+                    },
+                    {
+                      kind: 'moment',
+                      poseId: 'triumph-ecstatic',
+                      situation: '100 % Deck-Meister',
+                    },
+                    {
+                      kind: 'core',
+                      pose: 'champion',
+                      situation: 'Meilenstein & Konfetti',
+                    },
+                    {
+                      kind: 'moment',
+                      poseId: 'relieved-satisfied',
+                      situation: 'Geschafft & entspannt',
+                    },
+                  ],
+                  cozy: [
+                    {
+                      kind: 'moment',
+                      poseId: 'coffee-cards',
+                      situation: 'Morgen-Kaffee & erste Karten',
+                    },
+                    {
+                      kind: 'moment',
+                      poseId: 'cozy-nest',
+                      situation: 'Schal & Karteikasten',
+                    },
+                    {
+                      kind: 'moment',
+                      poseId: 'cozy-student',
+                      situation: 'Herbst-Flow & Halbzeit',
+                    },
+                    {
+                      kind: 'moment',
+                      poseId: 'midnight-oil',
+                      situation: 'Spätabends unter der Decke',
+                    },
+                    {
+                      kind: 'moment',
+                      poseId: 'study-sleepy',
+                      situation: 'Feierabend · Träum auf Deutsch',
+                    },
+                  ],
+                };
+
+                const activeEntries = CATEGORY_ENTRIES[mascotGalleryCategory];
+                const gridColsClass =
+                  activeEntries.length === 5
+                    ? 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-5'
+                    : 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-6';
+
+                return (
+                  <div className={`grid ${gridColsClass} gap-3`}>
+                    {activeEntries.map((entry) => {
+                      if (entry.kind === 'core') {
+                        const meta = FOX_POSE_CATALOG[entry.pose];
+                        return (
+                          <div
+                            key={`core-${entry.pose}`}
+                            className="p-3 rounded-2xl surface-2 border flex flex-col items-center text-center gap-2"
+                          >
+                            <FoxMascot
+                              pose={entry.pose}
+                              size="md"
+                              interactive
+                              speechPlacement="top"
+                            />
+                            <div className="space-y-0.5 min-w-0 w-full">
+                              <div className="font-display text-xs font-bold text-[var(--fg-primary)] truncate">
+                                {meta.germanTitle}
+                              </div>
+                              <div className="text-[11px] text-[var(--fg-secondary)] leading-tight">
+                                {entry.situation}
+                              </div>
+                            </div>
                           </div>
-                          <div className="text-[11px] text-[var(--fg-secondary)] leading-tight">
-                            {asset.situation}
+                        );
+                      }
+
+                      const asset = MASCOT_MOMENT_CATALOG[entry.poseId];
+                      return (
+                        <div
+                          key={`moment-${entry.poseId}`}
+                          className="p-3 rounded-2xl surface-2 border flex flex-col items-center text-center gap-2"
+                        >
+                          <MascotMomentVisual
+                            poseId={entry.poseId}
+                            size="md"
+                            interactive
+                            speechPlacement="top"
+                          />
+                          <div className="space-y-0.5 min-w-0 w-full">
+                            <div className="font-display text-xs font-bold text-[var(--fg-primary)] truncate">
+                              {asset.germanTitle}
+                            </div>
+                            <div className="text-[11px] text-[var(--fg-secondary)] leading-tight">
+                              {entry.situation}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    );
-                  })}
-              </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
 
               {/* Dynamic 6-Chapter Daily App Icon Schedule & Live Browser Tab Preview */}
               <div className="pt-4 border-t border-[var(--border-subtle)] space-y-3">
@@ -6009,7 +6096,7 @@ export default function App() {
   );
 
   return (
-    <div className="min-h-[100dvh] flex flex-col bg-[var(--bg-canvas)] text-[var(--fg-primary)] transition-colors duration-200">
+    <div className="app-viewport-shell flex flex-col bg-[var(--bg-canvas)] text-[var(--fg-primary)] transition-colors duration-200">
       {/* ==================== TOP APP BAR (3-Zone Contract, Hidden in Zen Mode) ==================== */}
       {!isZenSessionActive && (
         <header className="sticky top-0 z-30 pt-[env(safe-area-inset-top,0px)] bg-[var(--surface-1)]/90 backdrop-blur-xl border-b border-[var(--border-subtle)]">
@@ -6212,7 +6299,7 @@ export default function App() {
       {!isZenSessionActive && (
         <nav
           aria-label="Mobile Navigation"
-          className="fixed bottom-0 left-0 right-0 z-40 md:hidden bg-[var(--surface-1)]/95 backdrop-blur-xl border-t border-[var(--border-subtle)] pb-[env(safe-area-inset-bottom,0px)]"
+          className="mobile-bottom-nav fixed bottom-0 left-0 right-0 z-40 md:hidden bg-[var(--surface-1)] border-t border-[var(--border-subtle)]"
         >
           <div className="relative h-[64px] grid grid-cols-4 items-center px-2">
             {/* Smooth sliding top indicator pill across the 4 tabs */}
