@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { triggerHapticFeedback } from '../utils/srsEngine';
 
 interface UseSheetSwipeDismissOptions {
   isOpen: boolean;
@@ -133,7 +132,6 @@ export function useSheetSwipeDismiss({
       setIsDragging(false);
 
       if (dy >= threshold || (dy >= 42 && velocity >= 0.45)) {
-        triggerHapticFeedback(10);
         setDragY(0);
         onDismiss();
       } else {

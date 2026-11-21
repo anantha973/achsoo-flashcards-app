@@ -56,7 +56,6 @@ import {
   formatConfidenceBadge,
   getCardSrsForDirection,
   isCardLowConfidence,
-  triggerHapticFeedback,
 } from '../utils/srsEngine';
 import { SlidingPillSwitcher } from './SlidingPillSwitcher';
 
@@ -337,7 +336,6 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
   }, [isNewMenuOpen, isSortMenuOpen]);
 
   const handleSelectSortOption = (next: DeckSortOption) => {
-    triggerHapticFeedback(6);
     setSortOption(next);
     saveDeckSortOption(next);
     setIsSortMenuOpen(false);
@@ -346,7 +344,6 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
   // Navigate between sub-screens with 220ms push/pop transition
   const navigateSubScreen = useCallback(
     (next: DeckSubScreen, direction: 'push' | 'pop') => {
-      triggerHapticFeedback(8);
       setSubScreenDragX(0);
       setIsSubScreenSwiping(false);
       setSubScreenNavDir(direction);
@@ -742,7 +739,6 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
 
   const handleSetDeckStudyDirection = useCallback(
     (deckId: string, nextDirection: DeckStudyDirection) => {
-      triggerHapticFeedback(8);
       const isCustom = customDecks.some((d) => d.id === deckId);
       if (isCustom) {
         onUpdateCustomDecks(
@@ -785,7 +781,6 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
     const trimmedName = editorName.trim();
     if (!trimmedName) return;
 
-    triggerHapticFeedback(12);
     saveLastPickerChoice({ icon: editorIcon, tint: editorTint });
 
     if (editorState.mode === 'create-folder') {
@@ -876,7 +871,6 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
     deckId: string,
     targetFolderId: string | null
   ) => {
-    triggerHapticFeedback(10);
     const isCustom = customDecks.some((d) => d.id === deckId);
     if (isCustom) {
       onUpdateCustomDecks(
@@ -900,7 +894,6 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
 
   // Delete a deck
   const handleDeleteDeck = (deckId: string) => {
-    triggerHapticFeedback(14);
     const isCustom = customDecks.some((d) => d.id === deckId);
     if (isCustom) {
       onUpdateCustomDecks(customDecks.filter((d) => d.id !== deckId));
@@ -924,7 +917,6 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
 
   // Delete Folder option 1: "Nur Ordner löschen (Decks bleiben)"
   const handleDeleteFolderKeepDecks = (folder: DeckFolder) => {
-    triggerHapticFeedback(12);
     const nextCustom = customDecks.map((d) =>
       d.folderId === folder.id ? { ...d, folderId: null } : d
     );
@@ -948,7 +940,6 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
 
   // Delete Folder option 2: "Ordner und Decks löschen"
   const handleDeleteFolderAndDecks = (folder: DeckFolder) => {
-    triggerHapticFeedback(16);
     const nextCustom = customDecks.filter((d) => d.folderId !== folder.id);
     const nextOverrides: Record<string, DeckMetaOverride> = {
       ...deckOverrides,
@@ -1037,7 +1028,6 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
             window.clearTimeout(longPressTimerRef.current);
           }
           longPressTimerRef.current = window.setTimeout(() => {
-            triggerHapticFeedback(16);
             setActionDeckId(deck.id);
           }, 500);
         }}
@@ -1155,7 +1145,6 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              triggerHapticFeedback(8);
               setActionDeckId(deck.id);
             }}
             aria-label={`More actions for ${deck.title}`}
@@ -1273,7 +1262,6 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              triggerHapticFeedback(8);
               setActionFolderId(folder.id);
             }}
             aria-label={`Folder options for ${folder.name}`}
@@ -1430,7 +1418,6 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    triggerHapticFeedback(8);
                     setIsFilterSheetOpen(true);
                   }}
                   aria-label="Filter decks by CEFR level or grammar archetype"
@@ -1452,7 +1439,6 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      triggerHapticFeedback(8);
                       setIsSortMenuOpen(false);
                       setIsNewMenuOpen((prev) => !prev);
                     }}
@@ -1549,7 +1535,6 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
                   ]}
                   value={activeChip}
                   onChange={(nextChip) => {
-                    triggerHapticFeedback(6);
                     setActiveChip(nextChip);
                   }}
                   ariaLabel="Decks view filter"
@@ -1563,7 +1548,6 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      triggerHapticFeedback(6);
                       setIsNewMenuOpen(false);
                       setIsSortMenuOpen((prev) => !prev);
                     }}
@@ -2966,7 +2950,6 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
                           type="button"
                           aria-pressed={editorDirection === 'de-en'}
                           onClick={() => {
-                            triggerHapticFeedback(6);
                             setEditorDirection('de-en');
                           }}
                           className={`min-h-[44px] px-3 py-2 rounded-[var(--radius-control)] border text-left transition-all cursor-pointer theme-focus ${
@@ -2986,7 +2969,6 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
                           type="button"
                           aria-pressed={editorDirection === 'en-de'}
                           onClick={() => {
-                            triggerHapticFeedback(6);
                             setEditorDirection('en-de');
                           }}
                           className={`min-h-[44px] px-3 py-2 rounded-[var(--radius-control)] border text-left transition-all cursor-pointer theme-focus ${
@@ -3019,7 +3001,6 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
                             key={swatch.id}
                             type="button"
                             onClick={() => {
-                              triggerHapticFeedback(6);
                               setEditorTint(swatch.id);
                             }}
                             title={swatch.label}
@@ -3114,7 +3095,6 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
                                     key={entry.id}
                                     type="button"
                                     onClick={() => {
-                                      triggerHapticFeedback(6);
                                       setEditorIcon(entry.id);
                                       setEditorUseTextTile(false);
                                       setHasManualIconPick(true);

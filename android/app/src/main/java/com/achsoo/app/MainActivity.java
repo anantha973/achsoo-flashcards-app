@@ -11,6 +11,9 @@ import com.getcapacitor.BridgeActivity;
 public class MainActivity extends BridgeActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        // Register AchsooNativePlugin before BridgeActivity initializes Capacitor
+        registerPlugin(AchsooNativePlugin.class);
+
         super.onCreate(savedInstanceState);
 
         Window window = getWindow();
@@ -21,5 +24,23 @@ public class MainActivity extends BridgeActivity {
                 window.setStatusBarContrastEnforced(false);
             }
         }
+
+        AchsooReminderScheduler.ensureChannel(this);
+        AchsooIconManager.scheduleNextIconBoundaryAlarm(this);
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        AchsooIconManager.setAppInForeground(true);
+    }
+
+    @Override
+    public void onStop() {
+        super.onStop();
+        AchsooIconManager.setAppInForeground(false);
+        // Safely apply the active time-of-day launcher icon when the user backgrounds the app
+        AchsooIconManager.applyTargetIconIfSafe(this, false);
+        AchsooIconManager.scheduleNextIconBoundaryAlarm(this);
     }
 }

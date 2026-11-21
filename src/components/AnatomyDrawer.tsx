@@ -15,7 +15,6 @@ import {
   stripLeadingGermanArticles,
 } from '../data/vocabData';
 import { useSheetSwipeDismiss } from '../hooks/useMobileGestures';
-import { triggerHapticFeedback } from '../utils/srsEngine';
 import { Button } from './HeroPrimitives';
 import { FoxMascot } from './FoxMascot';
 import { PillOption, SlidingPillSwitcher } from './SlidingPillSwitcher';
@@ -460,7 +459,6 @@ export const AnatomyDrawer: React.FC<AnatomyDrawerProps> = ({
             ? Math.min(primaryTabs.length - 1, idx + 1)
             : Math.max(0, idx - 1);
         if (nextIdx !== idx) {
-          triggerHapticFeedback(8);
           handleSelectPrimaryTab(primaryTabs[nextIdx].id);
         }
       }
@@ -502,7 +500,6 @@ export const AnatomyDrawer: React.FC<AnatomyDrawerProps> = ({
         state.accum += Math.abs(e.deltaY);
         if (state.accum >= 135) {
           state.accum = 0;
-          triggerHapticFeedback(8);
           onClose();
         }
       } else if (e.deltaY > 0) {

@@ -3,7 +3,6 @@ import {
   MASCOT_MOMENT_CATALOG,
   MascotMomentPoseId,
 } from '../utils/mascotMoments';
-import { triggerHapticFeedback } from '../utils/srsEngine';
 
 export type MascotMomentSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl' | 'hero';
 
@@ -100,7 +99,6 @@ export const MascotMomentVisual: React.FC<MascotMomentVisualProps> = ({
     (e: React.MouseEvent | React.KeyboardEvent) => {
       if (!interactive) return;
       e.stopPropagation();
-      triggerHapticFeedback(12);
 
       setClickSeq((prev) => prev + 1);
       setPhraseIndex((prev) => prev + 1);

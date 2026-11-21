@@ -22,7 +22,8 @@ import {
 } from './confidenceLoopEngine';
 import {
   syncNativeSystemBars,
-  triggerNativeHaptic,
+  triggerBubbleHaptic,
+  type BubbleHapticStyle,
 } from './nativeAndroid';
 import {
   generateUuid,
@@ -138,18 +139,11 @@ export interface VelocityPoint {
   mastered: number;
 }
 
-export function triggerHapticFeedback(pattern: number | number[] = 10): void {
+export function triggerHapticFeedback(
+  style: BubbleHapticStyle = 'tick'
+): void {
   try {
-    if (triggerNativeHaptic(pattern)) {
-      return;
-    }
-    if (
-      typeof window !== 'undefined' &&
-      typeof navigator !== 'undefined' &&
-      typeof navigator.vibrate === 'function'
-    ) {
-      navigator.vibrate(pattern);
-    }
+    triggerBubbleHaptic(style);
   } catch {
     // Ignore on unsupported devices or restricted contexts
   }

@@ -87,9 +87,19 @@ import {
   getTimeOfDayIconSlot,
 } from './utils/appIconScheduler';
 import {
+  type ReminderPreferences,
   isNativeAndroidApp,
+  loadDynamicIconAutoPreference,
+  loadLastStudyTimestamp,
+  loadReminderPreferences,
+  recordLastStudyTimestamp,
   registerAndroidBackButton,
+  saveDynamicIconAutoPreference,
+  saveReminderPreferences,
+  syncNativeDynamicIcon,
+  syncNativeStudyReminders,
 } from './utils/nativeAndroid';
+import { AndroidExperienceCard } from './components/AndroidExperienceCard';
 
 const AnatomyDrawer = React.lazy(() =>
   import('./components/AnatomyDrawer').then((m) => ({
@@ -570,7 +580,6 @@ export default function App() {
   }, [isThemePopoverOpen]);
 
   const selectThemeEntity = useCallback((nextThemeId: ThemeId) => {
-    triggerHapticFeedback(10);
     setThemePrefs((prev) => {
       const next: ThemePreferences = { ...prev, themeId: nextThemeId };
       applyThemePreferencesToDom(next, true);
@@ -586,7 +595,6 @@ export default function App() {
   }, []);
 
   const setColorMode = useCallback((nextMode: ColorMode) => {
-    triggerHapticFeedback(8);
     setThemePrefs((prev) => {
       if (prev.colorMode === nextMode) return prev;
       const next: ThemePreferences = { ...prev, colorMode: nextMode };
@@ -826,7 +834,6 @@ export default function App() {
   }, []);
 
   const handleBrandClick = useCallback(() => {
-    triggerHapticFeedback(12);
     setBrandClickSeq((prev) => prev + 1);
     setIsBrandClicking(false);
     window.requestAnimationFrame(() => {
@@ -908,8 +915,15 @@ export default function App() {
   const [activeAppIconSlot, setActiveAppIconSlot] = useState<AppIconChapterId>(
     () => getTimeOfDayIconSlot()
   );
-  const [isAppIconManualPreview, setIsAppIconManualPreview] =
-    useState<boolean>(false);
+  const [isAppIconManualPreview, setIsAppIconManualPreview] = useState<boolean>(
+    () => !loadDynamicIconAutoPreference()
+  );
+  const [reminderPrefs, setReminderPrefs] = useState<ReminderPreferences>(() =>
+    loadReminderPreferences()
+  );
+  const [lastStudyMs, setLastStudyMs] = useState<number>(() =>
+    loadLastStudyTimestamp()
+  );
 
   useEffect(() => {
     const handleIconChange = (event: Event) => {
@@ -924,19 +938,46 @@ export default function App() {
     };
   }, []);
 
+  // Arm native Android 6-slot dynamic icon schedule on startup
+  useEffect(() => {
+    if (!isNativeAndroidApp()) return;
+    const autoEnabled = loadDynamicIconAutoPreference();
+    void syncNativeDynamicIcon({
+      autoEnabled,
+      manualSlot: activeAppIconSlot,
+      applyNow: false,
+    });
+  }, []);
+
+  const handleUpdateReminderPrefs = useCallback((next: ReminderPreferences) => {
+    setReminderPrefs(next);
+    saveReminderPreferences(next);
+  }, []);
+
   const handleSelectAppIconPreview = useCallback((slot: AppIconChapterId) => {
-    triggerHapticFeedback(10);
     applyTimeOfDayAppIcons(slot);
     setActiveAppIconSlot(slot);
-    setIsAppIconManualPreview(slot !== getTimeOfDayIconSlot());
+    const isManual = slot !== getTimeOfDayIconSlot();
+    setIsAppIconManualPreview(isManual);
+    saveDynamicIconAutoPreference(!isManual);
+    void syncNativeDynamicIcon({
+      autoEnabled: !isManual,
+      manualSlot: slot,
+      applyNow: false,
+    });
   }, []);
 
   const handleResetAppIconAuto = useCallback(() => {
-    triggerHapticFeedback(10);
     const liveSlot = getTimeOfDayIconSlot();
     applyTimeOfDayAppIcons(liveSlot);
     setActiveAppIconSlot(liveSlot);
     setIsAppIconManualPreview(false);
+    saveDynamicIconAutoPreference(true);
+    void syncNativeDynamicIcon({
+      autoEnabled: true,
+      manualSlot: liveSlot,
+      applyNow: false,
+    });
   }, []);
 
   // Persistent Folders (1-level), Custom Decks & Deck Overrides for "All Decks" page
@@ -1122,13 +1163,11 @@ export default function App() {
   >({});
 
   const handleDismissMilestone = useCallback(() => {
-    triggerHapticFeedback(8);
     setActiveMilestone(null);
     cardShownAtRef.current = performance.now();
   }, []);
 
   const handleToggleMilestoneInterludes = useCallback(() => {
-    triggerHapticFeedback(8);
     setMilestoneInterludesEnabled((prev) => {
       const next = !prev;
       saveMilestoneInterludesEnabled(next);
@@ -1555,6 +1594,29 @@ export default function App() {
     () => getLast7DaysVelocityData(cards, srsMap, stats),
     [cards, srsMap, stats]
   );
+
+  // Sync smart offline Android fox reminders whenever study stats or reminder toggles change
+  useEffect(() => {
+    if (!isNativeAndroidApp()) return;
+    const dueCount = Math.max(0, cards.length - summaryMetrics.masteredCount);
+    const timer = window.setTimeout(() => {
+      void syncNativeStudyReminders(reminderPrefs, {
+        streakDays: stats.streakDays,
+        reviewedToday: stats.totalReviewsToday,
+        dueCount,
+        lastStudyMs,
+        dailyGoalMet: stats.totalReviewsToday >= 10,
+      });
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [
+    cards.length,
+    lastStudyMs,
+    reminderPrefs,
+    stats.streakDays,
+    stats.totalReviewsToday,
+    summaryMetrics.masteredCount,
+  ]);
 
   const cardsById = useMemo(
     () => new Map(cards.map((c) => [c.id, c])),
@@ -2085,7 +2147,6 @@ export default function App() {
 
   const triggerBlockedNextFeedback = useCallback(() => {
     clearCardMotionTimers();
-    triggerHapticFeedback([12, 28, 12]);
     setCardMotion('is-blocked-next');
     cardMotionTimersRef.current.idleTimer = window.setTimeout(() => {
       setCardMotion('idle');
@@ -2117,13 +2178,11 @@ export default function App() {
     if (studyDeck.length === 0 || isRatingTransitionRef.current) return;
     const prevStep = stepTrailPrev(activeTrail, studyDeck);
     if (!prevStep) {
-      triggerHapticFeedback(6);
       return;
     }
     clearRateFirstHint();
     clearCardMotionTimers();
     isRatingTransitionRef.current = true;
-    triggerHapticFeedback(8);
     setDetailCard(null);
     setCardMotion('is-exiting-prev');
     const targetSessionKey = activeSessionKey;
@@ -2161,7 +2220,6 @@ export default function App() {
     clearRateFirstHint();
     clearCardMotionTimers();
     isRatingTransitionRef.current = true;
-    triggerHapticFeedback(8);
     setDetailCard(null);
     setCardMotion('is-exiting-next');
     const targetSessionKey = activeSessionKey;
@@ -2191,7 +2249,6 @@ export default function App() {
   ]);
 
   const handleFlipCard = useCallback(() => {
-    triggerHapticFeedback(12);
     setIsBackExpanded(false);
     setIsFlipped((prev) => !prev);
   }, []);
@@ -2203,16 +2260,11 @@ export default function App() {
       clearRateFirstHint();
       clearCardMotionTimers();
 
-      const hapticMap: Record<RatingKey, number | number[]> = {
-        '1': [20, 40, 20],
-        '2': [16, 20],
-        '3': 15,
-        '4': 18,
-        '5': [12, 30, 18],
-      };
-      triggerHapticFeedback(hapticMap[rating]);
+      // Single crisp Gboard-style micro-bubble tick on card rating selection
+      triggerHapticFeedback('tick');
 
       const now = new Date();
+      setLastStudyMs(recordLastStudyTimestamp(now.getTime()));
       const targetDeckId = activeDeckObj.id;
       const targetDirection = activeStudyDirection;
       const targetSessionKey = activeSessionKey;
@@ -2417,6 +2469,7 @@ export default function App() {
             }
             ratingsSinceMilestoneByDeckRef.current[targetSessionKey] = 0;
             const recentAvg = updatedSummary.sum / updatedSummary.count;
+            triggerHapticFeedback('confirm');
             setActiveMilestone(
               selectCheckpointMoment({
                 threshold: triggeredThreshold,
@@ -2430,6 +2483,12 @@ export default function App() {
               ratingsGap;
           }
         } else {
+          if (
+            nextLoopStateForDeck.phase === 'done' &&
+            prevLoopSnapshot.phase !== 'done'
+          ) {
+            triggerHapticFeedback('confirm');
+          }
           setActiveMilestone(null);
         }
 
@@ -2472,7 +2531,6 @@ export default function App() {
         prevIdx !== -1 && nextIdx !== -1 && nextIdx < prevIdx
           ? 'is-entering-prev'
           : 'is-entering-next';
-      triggerHapticFeedback(6);
       let restoredCardIdx = 0;
       const nextDeckCards =
         nextIdx >= 0 ? enrichedDecks[nextIdx].cards : cards;
@@ -2543,7 +2601,6 @@ export default function App() {
     });
     if (!undone.undoneEntry) return;
     stopActiveAudio();
-    triggerHapticFeedback(14);
     clearRateFirstHint();
     clearRatingFeedback();
     const baseUndoneCardId = parseSrsStateKey(
@@ -2630,7 +2687,6 @@ export default function App() {
         longPressAudioTimerRef.current = window.setTimeout(() => {
           if (cardTouchRef.current && cardTouchRef.current.axis === 'none') {
             cardTouchRef.current.suppressClick = true;
-            triggerHapticFeedback([10, 25, 10]);
             handlePlayAudio(
               currentCard.spokenText,
               isFlipped ? 'back-lemma' : 'front-lemma'
@@ -2782,19 +2838,16 @@ export default function App() {
             if (dy < 0) {
               handleFlipCard();
             } else if (currentCard && !isEnToDe) {
-              triggerHapticFeedback(8);
               handlePlayAudio(currentCard.spokenText, 'front-lemma');
             }
           } else {
             if (dy < 0) {
-              triggerHapticFeedback(10);
               if (!isBackExpanded) {
                 setIsBackExpanded(true);
               } else if (currentCard) {
                 setDetailCard(currentCard);
               }
             } else {
-              triggerHapticFeedback(8);
               if (isBackExpanded) {
                 setIsBackExpanded(false);
               } else {
@@ -2896,7 +2949,6 @@ export default function App() {
         const idx = ORDERED_VIEWS.indexOf(activeView);
         const nextIdx = dx < 0 ? idx + 1 : idx - 1;
         if (nextIdx >= 0 && nextIdx < ORDERED_VIEWS.length) {
-          triggerHapticFeedback(8);
           navigateToView(ORDERED_VIEWS[nextIdx]);
         }
       }
@@ -3149,11 +3201,9 @@ export default function App() {
         handleFlipCard();
       } else if (!detailCard && isFlipped && e.key === 'ArrowUp') {
         e.preventDefault();
-        triggerHapticFeedback(8);
         setIsBackExpanded(true);
       } else if (!detailCard && isFlipped && e.key === 'ArrowDown') {
         e.preventDefault();
-        triggerHapticFeedback(8);
         setIsBackExpanded(false);
       } else if (
         (e.metaKey || e.ctrlKey) &&
@@ -3169,12 +3219,10 @@ export default function App() {
         !detailCard
       ) {
         e.preventDefault();
-        triggerHapticFeedback(10);
         setIsZenMode((prev) => !prev);
       } else if (e.key.toLowerCase() === 'd' && currentCard) {
         if (isEnToDe && !isFlipped && !detailCard) return;
         e.preventDefault();
-        triggerHapticFeedback(10);
         setDetailCard((prev) => (prev ? null : currentCard));
       } else if (!detailCard && e.key === '1') {
         e.preventDefault();
@@ -3310,7 +3358,6 @@ export default function App() {
 
   const handleResetDeckSrs = useCallback(
     (cardIds: string[], deckId?: string, direction?: DeckStudyDirection) => {
-      triggerHapticFeedback(12);
       const targetDirection: DeckStudyDirection =
         direction ??
         (deckId
@@ -4100,7 +4147,6 @@ export default function App() {
       <button
         type="button"
         onClick={() => {
-          triggerHapticFeedback(8);
           setIsThemePopoverOpen((prev) => !prev);
         }}
         aria-expanded={isThemePopoverOpen}
@@ -4334,7 +4380,6 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => {
-                      triggerHapticFeedback(10);
                       setIsZenMode(true);
                     }}
                     title="Enter Distraction-Free Zen Session Mode [Z]"
@@ -4897,12 +4942,10 @@ export default function App() {
                           if (e.deltaY > 8) {
                             if (!isBackExpanded) {
                               backWheelCooldownRef.current = now + 260;
-                              triggerHapticFeedback(8);
                               setIsBackExpanded(true);
                             }
                           } else if (e.deltaY < -8) {
                             backWheelCooldownRef.current = now + 300;
-                            triggerHapticFeedback(8);
                             if (isBackExpanded) {
                               setIsBackExpanded(false);
                             } else {
@@ -4946,7 +4989,6 @@ export default function App() {
                                       type="button"
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        triggerHapticFeedback(10);
                                         setDetailCard(currentCard);
                                       }}
                                       className="min-h-[40px] md:min-h-[44px] -ml-1.5 inline-flex items-center px-2.5 py-1.5 rounded-[var(--radius-control)] text-[14px] md:text-[15px] font-semibold text-[var(--accent-secondary)] hover:opacity-80 active:scale-95 transition-all cursor-pointer theme-focus"
@@ -5064,7 +5106,6 @@ export default function App() {
                                     aria-label="Expand forms and example sentence"
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      triggerHapticFeedback(10);
                                       setIsBackExpanded(true);
                                     }}
                                     onKeyDown={(e) => {
@@ -5115,7 +5156,6 @@ export default function App() {
                                   tabIndex={isBackExpanded ? 0 : -1}
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    triggerHapticFeedback(8);
                                     setIsBackExpanded(false);
                                   }}
                                   onKeyDown={(e) => {
@@ -5268,7 +5308,6 @@ export default function App() {
                                     type="button"
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      triggerHapticFeedback(10);
                                       setDetailCard(currentCard);
                                     }}
                                     className="min-h-[40px] md:min-h-[44px] inline-flex items-center gap-1 py-1.5 px-2.5 -mr-1 rounded-[var(--radius-control)] text-[14px] md:text-[15px] font-semibold text-[var(--accent-secondary)] hover:opacity-80 transition-all active:scale-95 cursor-pointer theme-focus"
@@ -5888,7 +5927,9 @@ export default function App() {
                       Tages-App-Icon · 6-Stufen-Uhr
                     </h3>
                     <p className="text-[11px] text-[var(--fg-secondary)]">
-                      Wechselt automatisch mit der Tageszeit · Tippe ein Kapitel an, um das Tab-Icon sofort zu testen
+                      {isAppIconManualPreview
+                        ? 'Fest gewählt · wird beim Verlassen der App auf dein Android-Homescreen-Icon übernommen'
+                        : 'Wechselt automatisch mit deiner lokalen Uhrzeit (05 / 09 / 13 / 17 / 21 / 00 Uhr) · tippe ein Kapitel zum Fixieren'}
                     </p>
                   </div>
                   {isAppIconManualPreview && (
@@ -5939,6 +5980,14 @@ export default function App() {
                 </div>
               </div>
             </Card.Root>
+
+            {/* Smart Offline Fox Study Reminders (Android Notifications & Controls) */}
+            <AndroidExperienceCard
+              reminderPrefs={reminderPrefs}
+              onUpdateReminderPrefs={handleUpdateReminderPrefs}
+              streakDays={stats.streakDays}
+              reviewedToday={stats.totalReviewsToday}
+            />
 
             {/* Quick Utilities */}
             <Card.Root className="p-5 flex items-center justify-between gap-4 surface-paper">

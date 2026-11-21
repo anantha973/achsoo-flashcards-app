@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { triggerHapticFeedback } from '../utils/srsEngine';
 
 export type FoxMascotPose =
   | 'aha'
@@ -209,7 +208,6 @@ export const FoxMascot: React.FC<FoxMascotProps> = ({
     (e: React.MouseEvent | React.KeyboardEvent) => {
       if (!interactive) return;
       e.stopPropagation();
-      triggerHapticFeedback(12);
 
       let nextPose = currentPose;
       if (cyclePosesOnClick) {
