@@ -86,6 +86,10 @@ import {
   applyTimeOfDayAppIcons,
   getTimeOfDayIconSlot,
 } from './utils/appIconScheduler';
+import {
+  isNativeAndroidApp,
+  registerAndroidBackButton,
+} from './utils/nativeAndroid';
 
 const AnatomyDrawer = React.lazy(() =>
   import('./components/AnatomyDrawer').then((m) => ({
@@ -2948,8 +2952,53 @@ export default function App() {
     detailCard,
   };
 
+  const stepBackInApp = useCallback((): boolean => {
+    const s = backStackStateRef.current;
+    if (s.isThemePopoverOpen) {
+      setIsThemePopoverOpen(false);
+      return true;
+    }
+    if (s.detailCard) {
+      setDetailCard(null);
+      return true;
+    }
+    if (s.isAddModalOpen) {
+      setIsAddModalOpen(false);
+      return true;
+    }
+    if (s.activeView === 'decks' && closeDecksTopSheetRef.current?.()) {
+      return true;
+    }
+    if (s.activeView === 'study' && s.isZenMode) {
+      setIsZenMode(false);
+      return true;
+    }
+    if (s.activeView === 'decks' && s.decksSubScreen.type === 'deck-detail') {
+      setDecksSubScreen(
+        s.decksSubScreen.returnFolderId
+          ? { type: 'folder', folderId: s.decksSubScreen.returnFolderId }
+          : { type: 'root' }
+      );
+      return true;
+    }
+    if (s.activeView === 'decks' && s.decksSubScreen.type === 'folder') {
+      setDecksSubScreen({ type: 'root' });
+      return true;
+    }
+    if (s.activeView !== 'study') {
+      navigateToView('study', 'backward');
+      return true;
+    }
+    return false;
+  }, [navigateToView]);
+
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (!isNativeAndroidApp()) return;
+    return registerAndroidBackButton(stepBackInApp);
+  }, [stepBackInApp]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || isNativeAndroidApp()) return;
     const currentState = window.history.state;
     if (!currentState || typeof currentState.achsooDepth !== 'number') {
       window.history.replaceState({ achsooDepth: 0 }, '');
@@ -2960,7 +3009,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (typeof window === 'undefined' || isNativeAndroidApp()) return;
     if (desiredHistoryDepth > syncedHistoryDepthRef.current) {
       while (syncedHistoryDepthRef.current < desiredHistoryDepth) {
         syncedHistoryDepthRef.current += 1;
@@ -2978,7 +3027,7 @@ export default function App() {
   }, [desiredHistoryDepth]);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (typeof window === 'undefined' || isNativeAndroidApp()) return;
     const handlePopState = (e: PopStateEvent) => {
       const browserDepth =
         e.state && typeof e.state.achsooDepth === 'number'
@@ -6099,7 +6148,7 @@ export default function App() {
     <div className="app-viewport-shell flex flex-col bg-[var(--bg-canvas)] text-[var(--fg-primary)] transition-colors duration-200">
       {/* ==================== TOP APP BAR (3-Zone Contract, Hidden in Zen Mode) ==================== */}
       {!isZenSessionActive && (
-        <header className="sticky top-0 z-30 pt-[env(safe-area-inset-top,0px)] bg-[var(--surface-1)]/90 backdrop-blur-xl border-b border-[var(--border-subtle)]">
+        <header className="sticky top-0 z-30 pt-[var(--safe-area-inset-top,env(safe-area-inset-top,0px))] bg-[var(--surface-1)]/90 backdrop-blur-xl border-b border-[var(--border-subtle)]">
           <div className="max-w-5xl mx-auto h-14 flex items-center justify-between gap-3 sm:gap-6 px-3.5 sm:px-6">
             {/* Zone 1: Interactive Flashcard Fox Mascot Emblem + Animated Wordmark */}
             <div className="relative flex items-center shrink-0">

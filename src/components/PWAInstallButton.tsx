@@ -7,6 +7,7 @@ import {
   AppIconChapterId,
   getTimeOfDayIconSlot,
 } from '../utils/appIconScheduler';
+import { isNativeAndroidApp } from '../utils/nativeAndroid';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt(): Promise<void>;
@@ -23,6 +24,7 @@ export function usePWAInstall() {
     if (typeof window === 'undefined') return;
 
     const standalone =
+      isNativeAndroidApp() ||
       window.matchMedia('(display-mode: standalone)').matches ||
       (window.navigator as Navigator & { standalone?: boolean }).standalone ===
         true;

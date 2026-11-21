@@ -3,11 +3,16 @@ import {registerSW} from 'virtual:pwa-register';
 import App from './App.tsx';
 import './index.css';
 import {startTimeOfDayIconScheduler} from './utils/appIconScheduler';
+import {hideNativeSplashScreen, isNativeAndroidApp} from './utils/nativeAndroid';
 
-startTimeOfDayIconScheduler();
+const isNativeApp = isNativeAndroidApp();
+
+if (!isNativeApp) {
+  startTimeOfDayIconScheduler();
+}
 
 if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
-  if (import.meta.env.PROD) {
+  if (import.meta.env.PROD && !isNativeApp) {
     let hasActiveController = Boolean(navigator.serviceWorker.controller);
     let hasReloadedForUpdate = false;
 
@@ -45,3 +50,9 @@ if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
 }
 
 createRoot(document.getElementById('root')!).render(<App />);
+
+if (isNativeApp && typeof window !== 'undefined') {
+  window.requestAnimationFrame(() => {
+    void hideNativeSplashScreen();
+  });
+}

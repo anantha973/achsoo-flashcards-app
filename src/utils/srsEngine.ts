@@ -21,6 +21,10 @@ import {
   stripDirectionSuffix,
 } from './confidenceLoopEngine';
 import {
+  syncNativeSystemBars,
+  triggerNativeHaptic,
+} from './nativeAndroid';
+import {
   generateUuid,
   getOrCreateDeviceId,
   idbAppendReviewLogAndState,
@@ -136,6 +140,9 @@ export interface VelocityPoint {
 
 export function triggerHapticFeedback(pattern: number | number[] = 10): void {
   try {
+    if (triggerNativeHaptic(pattern)) {
+      return;
+    }
     if (
       typeof window !== 'undefined' &&
       typeof navigator !== 'undefined' &&
@@ -1453,6 +1460,8 @@ export function applyThemePreferencesToDom(
         prefs.colorMode === 'dark' ? 'black-translucent' : 'default'
       );
     }
+
+    void syncNativeSystemBars(prefs.colorMode, resolvedThemeColor);
 
     try {
       localStorage.setItem(THEME_V2_STORAGE_KEY, JSON.stringify(prefs));

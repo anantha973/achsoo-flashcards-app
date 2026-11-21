@@ -1070,7 +1070,7 @@
 
 .mobile-bottom-nav {
   background-color: var(--surface-1);
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
 }
 
 .mobile-bottom-nav::after {
@@ -1079,14 +1079,14 @@
   left: 0;
   right: 0;
   top: 100%;
-  height: max(env(safe-area-inset-bottom, 0px), 64px);
+  height: max(var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)), 64px);
   background-color: var(--surface-1);
   pointer-events: none;
 }
 
 .study-main-shell {
   padding-top: 0.625rem;
-  padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(80px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
 }
 
 @media (min-width: 768px) {

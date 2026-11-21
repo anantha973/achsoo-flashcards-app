@@ -6,3 +6,15 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Android / Capacitor build artifacts (keep android/ source project tracked)
+android/.gradle/
+android/build/
+android/app/build/
+android/app/src/main/assets/public/
+android/capacitor-cordova-android-plugins/
+android/local.properties
+*.keystore
+*.jks
+artifacts/
+
