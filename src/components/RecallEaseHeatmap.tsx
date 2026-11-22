@@ -4,6 +4,7 @@ import {
   Compass,
   GitCommitHorizontal,
   Link2,
+  Lock,
   MessageSquareQuote,
   Play,
   Sparkles,
@@ -21,7 +22,7 @@ import {
   createDefaultSrsState,
   isCardNew,
 } from '../utils/srsEngine';
-import { Button, Card } from './HeroPrimitives';
+import { Button, Card, ProgressBar } from './HeroPrimitives';
 import { SlidingPillSwitcher } from './SlidingPillSwitcher';
 
 interface RecallEaseHeatmapProps {
@@ -30,6 +31,7 @@ interface RecallEaseHeatmapProps {
   themeId: ThemeId;
   colorMode: ColorMode;
   onSelectArchetypeDeck: (category: CardCategory) => void;
+  onSelectA2Deck?: () => void;
 }
 
 type HeatmapMode = 'confidence' | 'mastery';
@@ -114,7 +116,9 @@ const ARCHETYPE_ROWS: {
   },
 ];
 
-const CEFR_COLS: (CefrLevel | 'ALL')[] = ['A1', 'A2', 'B1', 'ALL'];
+// A1 removed per user workflow — focused on A2 -> B1 progression
+const CEFR_COLS: (CefrLevel | 'ALL')[] = ['A2', 'B1', 'ALL'];
+const B1_UNLOCK_THRESHOLD_PCT = 90;
 
 function getConfidenceTier(
   cell: HeatmapCellData,
@@ -204,7 +208,6 @@ function describeDonutArc(
   outerR: number
 ): string {
   const sweep = endAngle - startAngle;
-  // Full-circle ring fallback (SVG single arc cannot draw exact 2*PI from start === end)
   if (sweep >= Math.PI * 2 - 0.001) {
     return [
       `M 0 ${-outerR}`,
@@ -310,6 +313,7 @@ export const RecallEaseHeatmap: React.FC<RecallEaseHeatmapProps> = ({
   cards,
   srsMap,
   onSelectArchetypeDeck,
+  onSelectA2Deck,
 }) => {
   const [mode, setMode] = useState<HeatmapMode>('confidence');
   const [selectedKey, setSelectedKey] = useState<{
@@ -317,10 +321,28 @@ export const RecallEaseHeatmap: React.FC<RecallEaseHeatmapProps> = ({
     cefr: CefrLevel | 'ALL';
   } | null>(null);
 
-  const { matrixData, hardestReviewedCell, firstActiveCell } = useMemo(() => {
-    // Single O(N) pass to bucket cards by category:cefr and category:ALL
+  const {
+    matrixData,
+    hardestReviewedCell,
+    firstActiveCell,
+    a2MasteredCount,
+    a2TotalCount,
+    a2MasteryPct,
+    isB1Locked,
+  } = useMemo(() => {
     const buckets = new Map<string, VocabCard[]>();
+    let a2Total = 0;
+    let a2Mastered = 0;
+
     for (const c of cards) {
+      if (c.cefr === 'A2') {
+        a2Total += 1;
+        const st = srsMap[c.id] || createDefaultSrsState(c.id);
+        if (st.mastered === true || (st.confidence || 0) >= 4) {
+          a2Mastered += 1;
+        }
+      }
+
       const exactKey = `${c.category}:${c.cefr}`;
       const allKey = `${c.category}:ALL`;
       let exactList = buckets.get(exactKey);
@@ -337,6 +359,10 @@ export const RecallEaseHeatmap: React.FC<RecallEaseHeatmapProps> = ({
       }
       allList.push(c);
     }
+
+    const a2Pct =
+      a2Total > 0 ? Math.round((a2Mastered / a2Total) * 100) : 0;
+    const b1Locked = a2Total > 0 && a2Pct < B1_UNLOCK_THRESHOLD_PCT;
 
     const cells: HeatmapCellData[] = [];
 
@@ -356,7 +382,7 @@ export const RecallEaseHeatmap: React.FC<RecallEaseHeatmapProps> = ({
           const st = srsMap[c.id] || createDefaultSrsState(c.id);
           const conf = st.confidence || 0;
           totalConfidenceSum += conf;
-          if (conf >= 4) masteredCount += 1;
+          if (st.mastered === true || conf >= 4) masteredCount += 1;
 
           if (!isCardNew(st) && conf > 0) {
             reviewedCount += 1;
@@ -427,6 +453,10 @@ export const RecallEaseHeatmap: React.FC<RecallEaseHeatmapProps> = ({
       matrixData: cells,
       hardestReviewedCell: sortedReviewed[0] || null,
       firstActiveCell: firstNonEmpty,
+      a2MasteredCount: a2Mastered,
+      a2TotalCount: a2Total,
+      a2MasteryPct: a2Pct,
+      isB1Locked: b1Locked,
     };
   }, [cards, srsMap]);
 
@@ -436,11 +466,16 @@ export const RecallEaseHeatmap: React.FC<RecallEaseHeatmapProps> = ({
         (c) =>
           c.category === selectedKey.category && c.cefr === selectedKey.cefr
       );
-      if (found && found.cardCount > 0) return found;
+      if (found && (found.cardCount > 0 || (found.cefr === 'B1' && isB1Locked))) {
+        return found;
+      }
     }
     return hardestReviewedCell || firstActiveCell;
-  }, [selectedKey, matrixData, hardestReviewedCell, firstActiveCell]);
+  }, [selectedKey, matrixData, hardestReviewedCell, firstActiveCell, isB1Locked]);
 
+  const isActiveCellLockedB1 = Boolean(
+    activeCell && activeCell.cefr === 'B1' && isB1Locked
+  );
   const activeTier = activeCell ? getConfidenceTier(activeCell, mode) : 'new';
   const activeTierMeta = TIER_STYLES[activeTier];
   const activeRowMeta = activeCell
@@ -470,8 +505,8 @@ export const RecallEaseHeatmap: React.FC<RecallEaseHeatmapProps> = ({
             </h2>
             <p className="text-xs text-[var(--fg-secondary)] leading-snug">
               {mode === 'confidence'
-                ? 'Vertrauen je Bereich & CEFR-Stufe'
-                : 'Anteil sicherer Karten je Bereich & CEFR-Stufe'}
+                ? 'Vertrauen je Bereich & CEFR-Stufe (A2–B1)'
+                : 'Anteil sicherer Karten je Bereich & CEFR-Stufe (A2–B1)'}
             </p>
           </div>
         </div>
@@ -489,7 +524,7 @@ export const RecallEaseHeatmap: React.FC<RecallEaseHeatmapProps> = ({
         />
       </div>
 
-      {/* Tactile Responsive CSS Grid Matrix */}
+      {/* Tactile Responsive CSS Grid Matrix (3 Columns: A2, B1, Gesamt) */}
       <div
         role="grid"
         aria-label="Grammatik-Heatmap nach Kategorie und CEFR-Stufe"
@@ -497,7 +532,7 @@ export const RecallEaseHeatmap: React.FC<RecallEaseHeatmapProps> = ({
       >
         <div
           role="row"
-          className="grid grid-cols-[minmax(74px,0.92fr)_repeat(3,minmax(0,1fr))_minmax(0,1fr)] sm:grid-cols-[minmax(156px,1.28fr)_repeat(3,minmax(0,1fr))_minmax(0,1.04fr)] gap-1.5 sm:gap-2 items-center pb-0.5"
+          className="grid grid-cols-[minmax(88px,1.05fr)_repeat(2,minmax(0,1fr))_minmax(0,1fr)] sm:grid-cols-[minmax(164px,1.35fr)_repeat(2,minmax(0,1fr))_minmax(0,1.04fr)] gap-1.5 sm:gap-2 items-center pb-0.5"
         >
           <div
             role="columnheader"
@@ -505,29 +540,41 @@ export const RecallEaseHeatmap: React.FC<RecallEaseHeatmapProps> = ({
           >
             Bereich
           </div>
-          {CEFR_COLS.map((col) => (
-            <div
-              key={col}
-              role="columnheader"
-              className={`text-center text-[11px] font-medium ${
-                col === 'ALL'
-                  ? 'text-[var(--fg-primary)] font-semibold ml-0.5 sm:ml-1.5'
-                  : 'text-[var(--fg-secondary)]'
-              }`}
-            >
-              {col === 'ALL' ? (
-                <span>
-                  <span className="sm:hidden">Gesamt</span>
-                  <span className="hidden sm:inline">Ø Gesamt</span>
-                </span>
-              ) : (
-                <span>
-                  <span className="sm:hidden">{col}</span>
-                  <span className="hidden sm:inline">CEFR {col}</span>
-                </span>
-              )}
-            </div>
-          ))}
+          {CEFR_COLS.map((col) => {
+            const lockedHeader = col === 'B1' && isB1Locked;
+            return (
+              <div
+                key={col}
+                role="columnheader"
+                title={lockedHeader ? 'Freischaltung ab 90% A2' : undefined}
+                className={`text-center text-[11px] font-medium ${
+                  col === 'ALL'
+                    ? 'text-[var(--fg-primary)] font-semibold ml-0.5 sm:ml-1.5'
+                    : lockedHeader
+                    ? 'text-[var(--fg-muted)]'
+                    : 'text-[var(--fg-secondary)]'
+                }`}
+              >
+                {col === 'ALL' ? (
+                  <span>
+                    <span className="sm:hidden">Gesamt</span>
+                    <span className="hidden sm:inline">Ø Gesamt</span>
+                  </span>
+                ) : lockedHeader ? (
+                  <span className="inline-flex items-center justify-center gap-1">
+                    <Lock className="w-3 h-3 shrink-0" aria-hidden="true" />
+                    <span className="sm:hidden">{col}</span>
+                    <span className="hidden sm:inline">CEFR {col}</span>
+                  </span>
+                ) : (
+                  <span>
+                    <span className="sm:hidden">{col}</span>
+                    <span className="hidden sm:inline">CEFR {col}</span>
+                  </span>
+                )}
+              </div>
+            );
+          })}
         </div>
 
         {ARCHETYPE_ROWS.map((row) => {
@@ -538,7 +585,7 @@ export const RecallEaseHeatmap: React.FC<RecallEaseHeatmapProps> = ({
             <div
               key={row.id}
               role="row"
-              className="grid grid-cols-[minmax(74px,0.92fr)_repeat(3,minmax(0,1fr))_minmax(0,1fr)] sm:grid-cols-[minmax(156px,1.28fr)_repeat(3,minmax(0,1fr))_minmax(0,1.04fr)] gap-1.5 sm:gap-2 items-center"
+              className="grid grid-cols-[minmax(88px,1.05fr)_repeat(2,minmax(0,1fr))_minmax(0,1fr)] sm:grid-cols-[minmax(164px,1.35fr)_repeat(2,minmax(0,1fr))_minmax(0,1.04fr)] gap-1.5 sm:gap-2 items-center"
             >
               <button
                 type="button"
@@ -577,12 +624,13 @@ export const RecallEaseHeatmap: React.FC<RecallEaseHeatmapProps> = ({
                 const cell = cellLookup.get(`${row.id}:${col}`);
                 if (!cell) return null;
 
+                const isLockedTile = col === 'B1' && isB1Locked;
                 const tier = getConfidenceTier(cell, mode);
                 const meta = TIER_STYLES[tier];
                 const isSelected =
                   activeCell?.category === cell.category &&
                   activeCell?.cefr === cell.cefr;
-                const isDisabled = cell.cardCount === 0;
+                const isDisabled = !isLockedTile && cell.cardCount === 0;
                 const isSummary = col === 'ALL';
 
                 const fillPct =
@@ -602,15 +650,22 @@ export const RecallEaseHeatmap: React.FC<RecallEaseHeatmapProps> = ({
                       role="gridcell"
                       disabled={isDisabled}
                       aria-selected={isSelected}
-                      aria-label={`${row.label} ${
-                        col === 'ALL' ? 'Gesamt' : col
-                      }: ${
-                        cell.cardCount === 0
-                          ? 'Keine Karten'
-                          : cell.reviewedCount === 0
-                          ? `${cell.cardCount} neue Karten`
-                          : `Vertrauen ${cell.confidencePct}%, ${cell.reviewedCount} von ${cell.cardCount} geübt`
-                      }`}
+                      title={
+                        isLockedTile ? 'Freischaltung ab 90% A2' : undefined
+                      }
+                      aria-label={
+                        isLockedTile
+                          ? `${row.label} B1 gesperrt: Freischaltung ab 90% A2`
+                          : `${row.label} ${
+                              col === 'ALL' ? 'Gesamt' : col
+                            }: ${
+                              cell.cardCount === 0
+                                ? 'Keine Karten'
+                                : cell.reviewedCount === 0
+                                ? `${cell.cardCount} neue Karten`
+                                : `Vertrauen ${cell.confidencePct}%, ${cell.reviewedCount} von ${cell.cardCount} geübt`
+                            }`
+                      }
                       onClick={() =>
                         setSelectedKey({
                           category: cell.category,
@@ -626,18 +681,30 @@ export const RecallEaseHeatmap: React.FC<RecallEaseHeatmapProps> = ({
                           : undefined
                       }
                       className={`group relative w-full h-[46px] sm:h-[50px] px-1 sm:px-2.5 radius-control flex flex-col items-center justify-center transition-[background-color,border-color,box-shadow,transform,filter] duration-200 theme-focus ${
-                        meta.bgStyle
-                      } ${
-                        isSelected
-                          ? 'border border-transparent'
-                          : meta.borderStyle
-                      } ${
-                        isDisabled
-                          ? 'cursor-default opacity-50'
-                          : 'cursor-pointer hover:brightness-[0.98] dark:hover:brightness-110 active:scale-[0.98]'
+                        isLockedTile
+                          ? 'bg-[var(--surface-2)]/45 border border-dashed border-[var(--border-subtle)] text-[var(--fg-muted)] cursor-pointer hover:bg-[var(--surface-2)]/70'
+                          : `${meta.bgStyle} ${
+                              isSelected
+                                ? 'border border-transparent'
+                                : meta.borderStyle
+                            } ${
+                              isDisabled
+                                ? 'cursor-default opacity-50'
+                                : 'cursor-pointer hover:brightness-[0.98] dark:hover:brightness-110 active:scale-[0.98]'
+                            }`
                       }`}
                     >
-                      {cell.cardCount === 0 ? (
+                      {isLockedTile ? (
+                        <div className="flex flex-col items-center justify-center leading-none">
+                          <Lock
+                            className="w-3.5 h-3.5 text-[var(--fg-muted)]"
+                            aria-hidden="true"
+                          />
+                          <span className="mt-1 text-[9px] font-medium text-[var(--fg-muted)] hidden sm:inline">
+                            ab 90% A2
+                          </span>
+                        </div>
+                      ) : cell.cardCount === 0 ? (
                         <span className="text-xs text-[var(--fg-muted)]">·</span>
                       ) : cell.reviewedCount === 0 ? (
                         <div className="flex flex-col items-center justify-center leading-none">
@@ -724,7 +791,7 @@ export const RecallEaseHeatmap: React.FC<RecallEaseHeatmapProps> = ({
         })}
       </div>
 
-      {/* Compact 5-Step Scale Legend */}
+      {/* Compact 5-Step Scale Legend + B1 Lock Note */}
       <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5 text-[11px] text-[var(--fg-secondary)]">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
           <span className="inline-flex items-center gap-1.5">
@@ -749,13 +816,67 @@ export const RecallEaseHeatmap: React.FC<RecallEaseHeatmapProps> = ({
           </span>
         </div>
 
-        <span className="text-[11px] text-[var(--fg-muted)]">
-          Kachel antippen für Details
+        <span className="text-[11px] text-[var(--fg-muted)] inline-flex items-center gap-1">
+          {isB1Locked ? (
+            <>
+              <Lock className="w-3 h-3 shrink-0" aria-hidden="true" />
+              <span>B1: Freischaltung ab 90% A2</span>
+            </>
+          ) : (
+            <span>Kachel antippen für Details</span>
+          )}
         </span>
       </div>
 
       {/* Diagnostic Inspector Card */}
-      {activeCell && (
+      {activeCell && isActiveCellLockedB1 ? (
+        <div className="p-3.5 sm:p-4 radius-card surface-2 border border-dashed border-[var(--border-strong)] flex flex-col md:flex-row md:items-center justify-between gap-3.5">
+          <div className="flex items-start gap-3 min-w-0 flex-1">
+            <div className="w-10 h-10 radius-control surface-1 border border-[var(--border-subtle)] flex items-center justify-center text-[var(--fg-muted)] shrink-0">
+              <Lock className="w-4 h-4" />
+            </div>
+            <div className="space-y-1.5 min-w-0 flex-1">
+              <div className="flex items-baseline gap-x-2 gap-y-0.5 flex-wrap">
+                <span className="font-display text-sm font-bold text-[var(--fg-primary)]">
+                  {activeCell.categoryLabel} · Niveau B1
+                </span>
+                <span className="text-[var(--fg-muted)] text-xs" aria-hidden="true">
+                  ·
+                </span>
+                <span className="text-xs font-medium text-[var(--fg-secondary)]">
+                  Freischaltung ab 90% A2
+                </span>
+              </div>
+              <div className="text-xs text-[var(--fg-secondary)] font-sans tabular-nums">
+                Aktueller A2-Fortschritt:{' '}
+                <strong className="font-semibold text-[var(--fg-primary)]">
+                  {a2MasteredCount}/{a2TotalCount} A2-Karten ({a2MasteryPct}%)
+                </strong>
+              </div>
+              <div className="max-w-xs">
+                <ProgressBar
+                  value={Math.min(100, Math.round((a2MasteryPct / B1_UNLOCK_THRESHOLD_PCT) * 100))}
+                  intent="primary"
+                  size="sm"
+                  label="A2 Freischaltungsfortschritt für B1"
+                />
+              </div>
+            </div>
+          </div>
+
+          {onSelectA2Deck && (
+            <Button
+              intent="primary"
+              size="sm"
+              className="w-full md:w-auto md:shrink-0"
+              onClick={onSelectA2Deck}
+            >
+              <Play className="w-3.5 h-3.5 fill-current shrink-0" />
+              <span>A2 weiter üben</span>
+            </Button>
+          )}
+        </div>
+      ) : activeCell ? (
         <div className="p-3.5 sm:p-4 radius-card surface-2 border flex flex-col md:flex-row md:items-center justify-between gap-3.5">
           <div className="flex items-center gap-3.5 min-w-0">
             <CellBreakdownDonut
@@ -775,7 +896,7 @@ export const RecallEaseHeatmap: React.FC<RecallEaseHeatmapProps> = ({
                 </span>
                 <span className="text-xs font-semibold text-[var(--accent-secondary)]">
                   {activeCell.cefr === 'ALL'
-                    ? 'Alle Niveaus (A1–B1)'
+                    ? 'Alle Niveaus (A2–B1)'
                     : `Niveau ${activeCell.cefr}`}
                 </span>
                 <span className="text-[var(--fg-muted)] text-xs" aria-hidden="true">
@@ -862,7 +983,7 @@ export const RecallEaseHeatmap: React.FC<RecallEaseHeatmapProps> = ({
             </Button>
           </div>
         </div>
-      )}
+      ) : null}
     </Card.Root>
   );
 };

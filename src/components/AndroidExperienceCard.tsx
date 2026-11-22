@@ -1,5 +1,13 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Bell, BellRing, Clock3, Flame, Moon, Sun } from 'lucide-react';
+import {
+  Bell,
+  BellRing,
+  ChevronDown,
+  Clock3,
+  Flame,
+  Moon,
+  Sun,
+} from 'lucide-react';
 import { Card } from './HeroPrimitives';
 import {
   getNativeNotificationPermission,
@@ -69,6 +77,7 @@ export const AndroidExperienceCard: React.FC<AndroidExperienceCardProps> = ({
   reviewedToday,
 }) => {
   const isNative = isNativeAndroidApp();
+  const [isExpanded, setIsExpanded] = useState(false);
   const [permissionStatus, setPermissionStatus] =
     useState<NotificationPermissionStatus>(isNative ? 'prompt' : 'unsupported');
   const [testPoseIdx, setTestPoseIdx] = useState(0);
@@ -158,139 +167,186 @@ export const AndroidExperienceCard: React.FC<AndroidExperienceCardProps> = ({
   }, [isNative, isSendingTest, permissionStatus, testPoseIdx]);
 
   const slotsDisabled = !reminderPrefs.enabled;
+  const activeScheduleCount = [
+    reminderPrefs.morningEnabled,
+    reminderPrefs.eveningEnabled,
+    reminderPrefs.inactivityEnabled,
+  ].filter(Boolean).length;
 
   return (
-    <Card.Root className="p-5 surface-paper space-y-4">
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <Bell className="w-4 h-4 text-[var(--intent-primary)] shrink-0" />
-            <h3 className="font-display text-sm font-bold text-[var(--fg-primary)]">
-              Smart Fox Study Reminders
-            </h3>
-          </div>
-          <p className="text-xs text-[var(--fg-secondary)] mt-1 leading-relaxed">
-            Calm offline nudges with fox illustrations — automatically paused whenever you study and quiet from{' '}
-            <span className="tabular-nums font-medium text-[var(--fg-primary)]">
-              22:30 – 07:30
-            </span>
-            .
-          </p>
-        </div>
-
-        <ToggleSwitch
-          checked={reminderPrefs.enabled}
-          label="Toggle all smart fox study reminders"
-          onChange={handleToggleMaster}
-        />
-      </div>
-
-      <div className="divide-y divide-[var(--border-subtle)] border-t border-[var(--border-subtle)]">
-        {/* Morning practice */}
-        <div className="py-3 flex items-center justify-between gap-3 min-h-[48px]">
-          <div className="flex items-start gap-2.5 min-w-0">
-            <Sun className="w-4 h-4 text-[var(--fg-muted)] mt-0.5 shrink-0" />
-            <div className="min-w-0">
-              <div className="font-display text-xs font-bold text-[var(--fg-primary)]">
-                Morning Practice ·{' '}
-                <span className="tabular-nums font-medium text-[var(--fg-secondary)]">
-                  08:30
-                </span>
-              </div>
-              <div className="text-[11px] text-[var(--fg-muted)] mt-0.5">
-                Coffee &amp; Cards fox · skipped if you already reviewed today
-              </div>
-            </div>
-          </div>
-          <ToggleSwitch
-            checked={reminderPrefs.morningEnabled}
-            disabled={slotsDisabled}
-            label="Toggle morning practice reminder"
-            onChange={() => handleToggleSlot('morningEnabled')}
-          />
-        </div>
-
-        {/* Evening & Streak Rescue */}
-        <div className="py-3 flex items-center justify-between gap-3 min-h-[48px]">
-          <div className="flex items-start gap-2.5 min-w-0">
-            <Flame className="w-4 h-4 text-[var(--fg-muted)] mt-0.5 shrink-0" />
-            <div className="min-w-0">
-              <div className="font-display text-xs font-bold text-[var(--fg-primary)]">
-                Evening &amp; Streak Rescue ·{' '}
-                <span className="tabular-nums font-medium text-[var(--fg-secondary)]">
-                  20:00
-                </span>
-              </div>
-              <div className="text-[11px] text-[var(--fg-muted)] mt-0.5">
-                {streakDays > 0 && reviewedToday === 0
-                  ? `Lantern fox protects your ${streakDays}-day streak before midnight`
-                  : 'Cozy evening wind-down · switches to Streak Rescue when needed'}
-              </div>
-            </div>
-          </div>
-          <ToggleSwitch
-            checked={reminderPrefs.eveningEnabled}
-            disabled={slotsDisabled}
-            label="Toggle evening and streak rescue reminder"
-            onChange={() => handleToggleSlot('eveningEnabled')}
-          />
-        </div>
-
-        {/* 16h & 24h Inactivity Nudges */}
-        <div className="py-3 flex items-center justify-between gap-3 min-h-[48px]">
-          <div className="flex items-start gap-2.5 min-w-0">
-            <Clock3 className="w-4 h-4 text-[var(--fg-muted)] mt-0.5 shrink-0" />
-            <div className="min-w-0">
-              <div className="font-display text-xs font-bold text-[var(--fg-primary)]">
-                Inactivity Nudges ·{' '}
-                <span className="tabular-nums font-medium text-[var(--fg-secondary)]">
-                  16h &amp; 24h
-                </span>
-              </div>
-              <div className="text-[11px] text-[var(--fg-muted)] mt-0.5">
-                HI! DE &amp; Sleepy fox · resets after every session and respects quiet hours
-              </div>
-            </div>
-          </div>
-          <ToggleSwitch
-            checked={reminderPrefs.inactivityEnabled}
-            disabled={slotsDisabled}
-            label="Toggle 16-hour and 24-hour inactivity nudges"
-            onChange={() => handleToggleSlot('inactivityEnabled')}
-          />
-        </div>
-      </div>
-
-      <div className="pt-1 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-1.5 text-[11px] text-[var(--fg-muted)]">
-          <Moon className="w-3.5 h-3.5 shrink-0" />
-          <span>
-            {isNative
-              ? permissionStatus === 'granted'
-                ? 'Android notifications active'
-                : permissionStatus === 'denied'
-                  ? 'Blocked in Android Settings'
-                  : 'Tap test or toggle to grant permission'
-              : 'Active automatically in the Android APK'}
-          </span>
-        </div>
-
+    <Card.Root className="p-4 sm:p-5 surface-paper">
+      {/* Compact Header Row: Expandable Summary + Subtle Dev Test Icon + Master Switch */}
+      <div className="flex items-center justify-between gap-3">
         <button
           type="button"
-          onClick={handleSendTest}
-          disabled={isSendingTest}
-          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-sans font-semibold surface-2 border border-[var(--border-subtle)] text-[var(--fg-primary)] hover:border-[var(--border-strong)] transition-colors cursor-pointer whitespace-nowrap shrink-0 min-h-[40px] theme-focus"
+          onClick={() => setIsExpanded((prev) => !prev)}
+          aria-expanded={isExpanded}
+          aria-controls="fox-reminder-schedules"
+          className="flex-1 min-w-0 text-left flex items-center gap-2.5 group cursor-pointer theme-focus rounded-xl py-0.5 -my-0.5"
         >
-          <BellRing className="w-3.5 h-3.5 text-[var(--intent-primary)]" />
-          <span>Send Test Fox Notification</span>
+          <Bell className="w-4 h-4 text-[var(--intent-primary)] shrink-0" />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5">
+              <h3 className="font-display text-sm font-bold text-[var(--fg-primary)] truncate">
+                Smart Fox Study Reminders
+              </h3>
+              <ChevronDown
+                className={`w-3.5 h-3.5 text-[var(--fg-muted)] group-hover:text-[var(--fg-primary)] shrink-0 transition-transform duration-250 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+                  isExpanded ? 'rotate-180' : ''
+                }`}
+                aria-hidden="true"
+              />
+            </div>
+            <p className="text-xs text-[var(--fg-secondary)] mt-0.5 truncate tabular-nums">
+              {reminderPrefs.enabled
+                ? `${activeScheduleCount} of 3 schedules active · Quiet 22:30 – 07:30`
+                : 'Paused · Quiet hours 22:30 – 07:30'}
+            </p>
+          </div>
         </button>
+
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={handleSendTest}
+            disabled={isSendingTest}
+            title="Send test fox notification"
+            aria-label="Send test fox notification"
+            className="w-8 h-8 rounded-lg surface-2 border border-[var(--border-subtle)] text-[var(--fg-muted)] hover:text-[var(--intent-primary)] hover:border-[var(--border-strong)] transition-colors duration-200 flex items-center justify-center cursor-pointer disabled:opacity-50 theme-focus"
+          >
+            <BellRing
+              className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                isSendingTest ? 'scale-90' : ''
+              }`}
+            />
+          </button>
+
+          <ToggleSwitch
+            checked={reminderPrefs.enabled}
+            label="Toggle all smart fox study reminders"
+            onChange={handleToggleMaster}
+          />
+        </div>
       </div>
 
-      {statusMessage && (
-        <p className="text-xs text-[var(--fg-secondary)] pt-1 border-t border-[var(--border-subtle)] leading-relaxed">
-          {statusMessage}
-        </p>
-      )}
+      {/* Smooth Collapsible Dropdown Drawer for the 3 Sub-Reminders */}
+      <div
+        id="fox-reminder-schedules"
+        className={`grid transition-[grid-template-rows,opacity] duration-250 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+          isExpanded
+            ? 'grid-rows-[1fr] opacity-100'
+            : 'grid-rows-[0fr] opacity-0 pointer-events-none'
+        }`}
+        aria-hidden={!isExpanded}
+      >
+        <div className="overflow-hidden">
+          <div className="pt-3.5 mt-3.5 border-t border-[var(--border-subtle)] space-y-1">
+            <div className="divide-y divide-[var(--border-subtle)]">
+              {/* Morning practice */}
+              <div className="py-2.5 flex items-center justify-between gap-3 min-h-[48px]">
+                <div className="flex items-start gap-2.5 min-w-0">
+                  <Sun className="w-4 h-4 text-[var(--fg-muted)] mt-0.5 shrink-0" />
+                  <div className="min-w-0">
+                    <div className="font-display text-xs font-bold text-[var(--fg-primary)]">
+                      Morning Practice ·{' '}
+                      <span className="tabular-nums font-medium text-[var(--fg-secondary)]">
+                        08:30
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-[var(--fg-muted)] mt-0.5">
+                      Coffee &amp; Cards fox · skipped if you already reviewed today
+                    </div>
+                  </div>
+                </div>
+                <ToggleSwitch
+                  checked={reminderPrefs.morningEnabled}
+                  disabled={slotsDisabled}
+                  label="Toggle morning practice reminder"
+                  onChange={() => handleToggleSlot('morningEnabled')}
+                />
+              </div>
+
+              {/* Evening & Streak Rescue */}
+              <div className="py-2.5 flex items-center justify-between gap-3 min-h-[48px]">
+                <div className="flex items-start gap-2.5 min-w-0">
+                  <Flame className="w-4 h-4 text-[var(--fg-muted)] mt-0.5 shrink-0" />
+                  <div className="min-w-0">
+                    <div className="font-display text-xs font-bold text-[var(--fg-primary)]">
+                      Evening &amp; Streak Rescue ·{' '}
+                      <span className="tabular-nums font-medium text-[var(--fg-secondary)]">
+                        20:00
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-[var(--fg-muted)] mt-0.5">
+                      {streakDays > 0 && reviewedToday === 0
+                        ? `Lantern fox protects your ${streakDays}-day streak before midnight`
+                        : 'Cozy evening wind-down · switches to Streak Rescue when needed'}
+                    </div>
+                  </div>
+                </div>
+                <ToggleSwitch
+                  checked={reminderPrefs.eveningEnabled}
+                  disabled={slotsDisabled}
+                  label="Toggle evening and streak rescue reminder"
+                  onChange={() => handleToggleSlot('eveningEnabled')}
+                />
+              </div>
+
+              {/* 16h & 24h Inactivity Nudges */}
+              <div className="py-2.5 flex items-center justify-between gap-3 min-h-[48px]">
+                <div className="flex items-start gap-2.5 min-w-0">
+                  <Clock3 className="w-4 h-4 text-[var(--fg-muted)] mt-0.5 shrink-0" />
+                  <div className="min-w-0">
+                    <div className="font-display text-xs font-bold text-[var(--fg-primary)]">
+                      Inactivity Nudges ·{' '}
+                      <span className="tabular-nums font-medium text-[var(--fg-secondary)]">
+                        16h &amp; 24h
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-[var(--fg-muted)] mt-0.5">
+                      HI! DE &amp; Sleepy fox · resets after every session and respects quiet hours
+                    </div>
+                  </div>
+                </div>
+                <ToggleSwitch
+                  checked={reminderPrefs.inactivityEnabled}
+                  disabled={slotsDisabled}
+                  label="Toggle 16-hour and 24-hour inactivity nudges"
+                  onChange={() => handleToggleSlot('inactivityEnabled')}
+                />
+              </div>
+            </div>
+
+            <div className="pt-2 flex items-center gap-1.5 text-[11px] text-[var(--fg-muted)]">
+              <Moon className="w-3.5 h-3.5 shrink-0" />
+              <span>
+                {isNative
+                  ? permissionStatus === 'granted'
+                    ? 'Android notifications active · automatically paused when you study'
+                    : permissionStatus === 'denied'
+                      ? 'Blocked in Android Settings'
+                      : 'Tap toggle to allow Android fox reminders'
+                  : 'Active automatically in the Android APK'}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Smooth Status Feedback Reveal (e.g. after tapping dev test bell icon) */}
+      <div
+        className={`grid transition-[grid-template-rows,opacity] duration-250 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+          statusMessage
+            ? 'grid-rows-[1fr] opacity-100'
+            : 'grid-rows-[0fr] opacity-0 pointer-events-none'
+        }`}
+      >
+        <div className="overflow-hidden">
+          <p className="text-xs text-[var(--fg-secondary)] pt-3 mt-3 border-t border-[var(--border-subtle)] leading-relaxed">
+            {statusMessage || '\u00A0'}
+          </p>
+        </div>
+      </div>
     </Card.Root>
   );
 };

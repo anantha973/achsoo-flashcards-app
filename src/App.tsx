@@ -117,6 +117,11 @@ const LearningVelocityChart = React.lazy(() =>
     default: m.LearningVelocityChart,
   }))
 );
+const MasteredArchetypeDonut = React.lazy(() =>
+  import('./components/MasteredArchetypeDonut').then((m) => ({
+    default: m.MasteredArchetypeDonut,
+  }))
+);
 import { useSheetSwipeDismiss } from './hooks/useMobileGestures';
 import {
   CustomDeckRecord,
@@ -214,7 +219,6 @@ type DeckId =
   | 'preposition'
   | 'conn'
   | 'phrase'
-  | 'cefr-a1'
   | 'cefr-a2'
   | 'cefr-b1';
 
@@ -227,7 +231,6 @@ const BUILT_IN_DECK_IDS: ReadonlySet<string> = new Set<string>([
   'preposition',
   'conn',
   'phrase',
-  'cefr-a1',
   'cefr-a2',
   'cefr-b1',
 ]);
@@ -253,6 +256,8 @@ interface AchievementMilestone {
   target: number;
   unit: string;
   unlocked: boolean;
+  locked?: boolean;
+  lockNote?: string;
   progressPct: number;
   icon: React.ComponentType<{ className?: string }>;
   accentClass: string;
@@ -1272,16 +1277,16 @@ export default function App() {
   const [newExampleDe, setNewExampleDe] = useState<string>('');
   const [newExampleEn, setNewExampleEn] = useState<string>('');
 
-  // All 11 Curated Decks (2 Smart + 6 Grammar Archetypes + 3 CEFR Levels)
+  // All 10 Curated Decks (2 Smart + 6 Grammar Archetypes + 2 CEFR Levels: A2 & B1)
   const deckDefinitions: DeckDefinition[] = useMemo(
     () => [
       {
         id: 'all',
         title: 'Complete Core Wortschatz',
         shortTitle: 'All Cards',
-        subtitle: 'All 6 German grammar archetypes (A1–B1)',
+        subtitle: 'All 6 German grammar archetypes (A2–B1)',
         categoryGroup: 'smart',
-        levelTag: 'A1–B1',
+        levelTag: 'A2–B1',
         icon: Layers,
         iconBg: 'bg-[var(--intent-primary-soft)] text-[var(--intent-primary)]',
         intent: 'primary',
@@ -1370,18 +1375,6 @@ export default function App() {
         iconBg: 'bg-[var(--intent-danger-soft)] text-[var(--intent-danger)]',
         intent: 'danger',
         predicate: (c) => c.category === 'phrase',
-      },
-      {
-        id: 'cefr-a1',
-        title: 'CEFR A1 Foundation',
-        shortTitle: 'Level A1',
-        subtitle: 'Essential everyday German vocabulary',
-        categoryGroup: 'level',
-        levelTag: 'A1',
-        icon: GraduationCap,
-        iconBg: 'bg-[var(--intent-success-soft)] text-[var(--intent-success)]',
-        intent: 'success',
-        predicate: (c) => c.cefr === 'A1',
       },
       {
         id: 'cefr-a2',
@@ -1494,21 +1487,25 @@ export default function App() {
     let totalConfidence = 0;
     let masteredVerbs = 0;
     let masteredNouns = 0;
+    let masteredA2 = 0;
     let masteredB1 = 0;
     let totalVerbs = 0;
     let totalNouns = 0;
+    let totalA2 = 0;
     let totalB1 = 0;
 
     for (const card of cards) {
       const state = srsMap[card.id] || createDefaultSrsState(card.id);
       if (card.category === 'verb') totalVerbs += 1;
       if (card.category === 'noun') totalNouns += 1;
+      if (card.cefr === 'A2') totalA2 += 1;
       if (card.cefr === 'B1') totalB1 += 1;
 
       if (state.mastered || state.confidence >= 4) {
         masteredCount += 1;
         if (card.category === 'verb') masteredVerbs += 1;
         if (card.category === 'noun') masteredNouns += 1;
+        if (card.cefr === 'A2') masteredA2 += 1;
         if (card.cefr === 'B1') masteredB1 += 1;
       }
       if (isCardLowConfidence(state)) lowConfidenceCount += 1;
@@ -1522,6 +1519,9 @@ export default function App() {
     const masteryPct = Math.round(
       (masteredCount / Math.max(1, cards.length)) * 100
     );
+    const a2MasteryPct =
+      totalA2 > 0 ? Math.round((masteredA2 / totalA2) * 100) : 0;
+    const isB1Locked = totalA2 > 0 && a2MasteryPct < 90;
     const avgConfidencePct = computeConfidenceMasteryPct(
       cards.map((c) => c.id),
       srsMap
@@ -1542,12 +1542,16 @@ export default function App() {
       totalVerbs,
       masteredNouns,
       totalNouns,
+      masteredA2,
+      totalA2,
+      a2MasteryPct,
+      isB1Locked,
       masteredB1,
       totalB1,
     };
   }, [cards, srsMap]);
 
-  // Personal Study Achievements & Milestones
+  // Personal Study Achievements & Milestones (6-card balanced grid: A2 mastery gates B1)
   const achievements: AchievementMilestone[] = useMemo(() => {
     const items: Omit<AchievementMilestone, 'unlocked' | 'progressPct'>[] = [
       {
@@ -1595,26 +1599,36 @@ export default function App() {
         intent: 'primary',
       },
       {
-        id: 'b1-pioneer',
-        title: 'B1 Exam Pioneer',
-        subtitle: 'Master all CEFR B1 threshold vocabulary cards',
-        current: summaryMetrics.masteredB1,
-        target: Math.max(1, summaryMetrics.totalB1),
-        unit: 'B1 cards',
-        icon: GraduationCap,
-        accentClass: 'bg-[var(--intent-danger-soft)] text-[var(--intent-danger)]',
-        intent: 'danger',
-      },
-      {
-        id: 'wortschatz-scholar',
-        title: 'Core Wortschatz Scholar',
-        subtitle: 'Master 20 German vocabulary & grammar cards',
-        current: Math.min(20, summaryMetrics.masteredCount),
-        target: 20,
-        unit: 'mastered',
+        id: 'a2-meister',
+        title: 'A2 Wortschatz Meister',
+        subtitle: 'Master all CEFR A2 German vocabulary cards',
+        current: summaryMetrics.masteredA2,
+        target: Math.max(1, summaryMetrics.totalA2),
+        unit: 'A2 cards',
         icon: Trophy,
         accentClass: 'bg-[var(--intent-success-soft)] text-[var(--intent-success)]',
         intent: 'success',
+      },
+      {
+        id: 'b1-pioneer',
+        title: 'B1 Exam Pioneer',
+        subtitle: summaryMetrics.isB1Locked
+          ? 'Unlocks once A2 mastery reaches 90%'
+          : 'Master all CEFR B1 threshold vocabulary cards',
+        current: summaryMetrics.isB1Locked
+          ? summaryMetrics.a2MasteryPct
+          : summaryMetrics.masteredB1,
+        target: summaryMetrics.isB1Locked
+          ? 90
+          : Math.max(1, summaryMetrics.totalB1),
+        unit: summaryMetrics.isB1Locked ? '% A2' : 'B1 cards',
+        locked: summaryMetrics.isB1Locked,
+        lockNote: summaryMetrics.isB1Locked ? 'Freischaltung ab 90% A2' : undefined,
+        icon: GraduationCap,
+        accentClass: summaryMetrics.isB1Locked
+          ? 'surface-1 border border-[var(--border-subtle)] text-[var(--fg-muted)]'
+          : 'bg-[var(--intent-danger-soft)] text-[var(--intent-danger)]',
+        intent: 'danger',
       },
     ];
 
@@ -1625,7 +1639,7 @@ export default function App() {
       );
       return {
         ...item,
-        unlocked: item.current >= item.target,
+        unlocked: !item.locked && item.current >= item.target,
         progressPct,
       };
     });
@@ -1696,12 +1710,6 @@ export default function App() {
         iconId: 'MessageSquare',
         tint: 'plum',
         archetypeFilter: 'phrase',
-      },
-      'cefr-a1': {
-        iconId: 'GraduationCap',
-        tint: 'sage',
-        defaultTextTile: 'A1',
-        cefrFilter: 'A1',
       },
       'cefr-a2': {
         iconId: 'BookMarked',
@@ -5610,7 +5618,7 @@ export default function App() {
               </Card.Root>
             </section>
 
-            {/* Recall Ease Heatmap across Grammar Archetypes & CEFR Levels */}
+            {/* Recall Ease Heatmap across Grammar Archetypes & CEFR Levels (A2–B1) */}
             <Suspense
               fallback={
                 <div className="h-64 rounded-[var(--radius-card)] surface-paper border animate-pulse" />
@@ -5624,50 +5632,38 @@ export default function App() {
                 onSelectArchetypeDeck={(category) =>
                   launchDeckStudy(category, false)
                 }
+                onSelectA2Deck={() => launchDeckStudy('cefr-a2', false)}
               />
             </Suspense>
 
-            {/* Learning Velocity Chart */}
-            <Card.Root className="p-5 space-y-4 surface-paper">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2.5">
-                  <FoxMascot
-                    pose="runner"
-                    size="sm"
-                    interactive
-                    speechPlacement="right"
-                  />
-                  <div>
-                    <h2 className="font-display text-sm font-bold text-[var(--fg-primary)]">
-                      Learning Velocity
-                    </h2>
-                    <p className="text-xs text-[var(--fg-secondary)]">
-                      Cumulative German cards mastered over the last 7 days
-                    </p>
-                  </div>
-                </div>
+            {/* Learning Velocity Chart (Daily Activity BarChart / Total Mastered LineChart) */}
+            <Suspense
+              fallback={
+                <div className="h-72 rounded-[var(--radius-card)] surface-paper border animate-pulse" />
+              }
+            >
+              <LearningVelocityChart
+                velocityData={velocityData}
+                masteredCount={summaryMetrics.masteredCount}
+                isAnimationActive={!isExiting}
+              />
+            </Suspense>
 
-                <div className="text-right font-sans tabular-nums">
-                  <div className="text-sm font-bold text-[var(--accent-secondary)]">
-                    {summaryMetrics.masteredCount} mastered
-                  </div>
-                  <div className="text-[11px] text-[var(--fg-muted)]">
-                    7-day trend
-                  </div>
-                </div>
-              </div>
-
-              <Suspense
-                fallback={
-                  <div className="h-56 w-full pt-2 rounded-[var(--radius-control)] surface-2 animate-pulse" />
+            {/* Mastered Vocabulary Archetype Breakdown (Donut / Pie Chart) */}
+            <Suspense
+              fallback={
+                <div className="h-64 rounded-[var(--radius-card)] surface-paper border animate-pulse" />
+              }
+            >
+              <MasteredArchetypeDonut
+                cards={cards}
+                srsMap={srsMap}
+                isAnimationActive={!isExiting}
+                onSelectArchetypeDeck={(category) =>
+                  launchDeckStudy(category, false)
                 }
-              >
-                <LearningVelocityChart
-                  velocityData={velocityData}
-                  isAnimationActive={!isExiting}
-                />
-              </Suspense>
-            </Card.Root>
+              />
+            </Suspense>
 
             {/* Personal Milestones */}
             <Card.Root className="p-5 space-y-4 surface-paper">
@@ -5701,9 +5697,12 @@ export default function App() {
                   return (
                     <div
                       key={ach.id}
+                      title={ach.lockNote}
                       className={`p-4 rounded-2xl border transition-all flex flex-col justify-between gap-3 ${
                         ach.unlocked
                           ? 'bg-[var(--intent-warning-soft)] border-[var(--intent-warning-border)]'
+                          : ach.locked
+                          ? 'surface-2/60 border-dashed border-[var(--border-strong)] opacity-85'
                           : 'surface-2 border'
                       }`}
                     >
@@ -5712,14 +5711,18 @@ export default function App() {
                           <div
                             className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${ach.accentClass}`}
                           >
-                            <IconComponent className="w-5 h-5" />
+                            {ach.locked ? (
+                              <Lock className="w-4 h-4" />
+                            ) : (
+                              <IconComponent className="w-5 h-5" />
+                            )}
                           </div>
                           <div className="min-w-0">
                             <h3 className="font-display text-xs font-bold text-[var(--fg-primary)] truncate">
                               {ach.title}
                             </h3>
                             <p className="text-[11px] text-[var(--fg-secondary)] line-clamp-2 mt-0.5">
-                              {ach.subtitle}
+                              {ach.lockNote || ach.subtitle}
                             </p>
                           </div>
                         </div>
@@ -5734,21 +5737,25 @@ export default function App() {
                       <div className="space-y-1.5">
                         <div className="flex items-center justify-between text-[11px] font-sans tabular-nums">
                           <span className="text-[var(--fg-secondary)]">
-                            {ach.current} / {ach.target} {ach.unit}
+                            {ach.locked
+                              ? `A2 ${ach.current}% / ${ach.target}%`
+                              : `${ach.current} / ${ach.target} ${ach.unit}`}
                           </span>
                           <span
                             className={
                               ach.unlocked
                                 ? 'font-bold text-[var(--intent-warning)]'
+                                : ach.locked
+                                ? 'font-medium text-[var(--fg-muted)]'
                                 : 'font-semibold text-[var(--fg-primary)]'
                             }
                           >
-                            {ach.progressPct}%
+                            {ach.locked ? 'Gesperrt' : `${ach.progressPct}%`}
                           </span>
                         </div>
                         <ProgressBar
                           value={ach.progressPct}
-                          intent={ach.intent}
+                          intent={ach.locked ? 'primary' : ach.intent}
                           size="sm"
                           label={ach.title}
                         />

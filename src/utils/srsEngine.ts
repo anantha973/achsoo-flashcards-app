@@ -137,6 +137,7 @@ export interface VelocityPoint {
   dayLabel: string;
   fullDateLabel: string;
   mastered: number;
+  reviews: number;
 }
 
 export function triggerHapticFeedback(
@@ -1296,6 +1297,7 @@ export function getLast7DaysVelocityData(
   }
 
   const history = stats.dailyMasteredHistory || {};
+  const reviewsHistory = stats.dailyReviewsHistory || {};
 
   const weekdayFormatter = new Intl.DateTimeFormat('en-US', {
     weekday: 'short',
@@ -1322,11 +1324,19 @@ export function getLast7DaysVelocityData(
       ? Math.max(currentMasteredCount, runningCarry)
       : runningCarry;
 
+    const reviewsCount =
+      typeof reviewsHistory[key] === 'number'
+        ? reviewsHistory[key]
+        : isToday
+        ? stats.totalReviewsToday || 0
+        : 0;
+
     points.push({
       dateKey: key,
       dayLabel: isToday ? 'Today' : weekdayFormatter.format(d),
       fullDateLabel: fullDateFormatter.format(d),
       mastered: recordedVal,
+      reviews: reviewsCount,
     });
   }
 

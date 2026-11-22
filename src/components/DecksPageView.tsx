@@ -2714,8 +2714,8 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
               <div className="font-sans text-[12px] font-semibold text-[var(--fg-secondary)]">
                 CEFR Levels
               </div>
-              <div className="grid grid-cols-4 gap-2">
-                {(['ALL', 'A1', 'A2', 'B1'] as const).map((lvl) => {
+              <div className="grid grid-cols-3 gap-2">
+                {(['ALL', 'A2', 'B1'] as const).map((lvl) => {
                   const active = filterCefr === lvl;
                   return (
                     <button
