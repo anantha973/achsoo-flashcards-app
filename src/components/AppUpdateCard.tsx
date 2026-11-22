@@ -21,7 +21,6 @@ import {
   installReadyNativeUpdate,
   isNativeAndroidApp,
   isValidGitHubRepoSlug,
-  saveConfiguredGitHubRepo,
   triggerBubbleHaptic,
 } from '../utils/nativeAndroid';
 
@@ -43,19 +42,13 @@ function formatMegabytes(bytes: number): string {
 export const AppUpdateCard: React.FC = () => {
   const isNative = isNativeAndroidApp();
   const buildFallback = getBuildTimeAppVersion();
+  const repo = getConfiguredGitHubRepo();
 
   const [installedInfo, setInstalledInfo] = useState<InstalledAppVersionInfo>({
     versionCode: buildFallback.versionCode,
     versionName: buildFallback.versionName,
     hasReadyUpdate: false,
   });
-  const [repo, setRepo] = useState<string>(() => getConfiguredGitHubRepo());
-  const [isEditingRepo, setIsEditingRepo] = useState<boolean>(
-    () => !getConfiguredGitHubRepo()
-  );
-  const [repoDraft, setRepoDraft] = useState<string>(() =>
-    getConfiguredGitHubRepo()
-  );
 
   const [phase, setPhase] = useState<UpdateUiPhase>('idle');
   const [updateInfo, setUpdateInfo] = useState<GitHubUpdateCheckResult | null>(
@@ -86,33 +79,12 @@ export const AppUpdateCard: React.FC = () => {
     return () => removeListener();
   }, []);
 
-  const handleSaveRepo = useCallback(
-    (e: React.FormEvent) => {
-      e.preventDefault();
-      const saved = saveConfiguredGitHubRepo(repoDraft);
-      if (!saved) {
-        setPhase('error');
-        setStatusMessage(
-          'Enter your public repository in owner/repo format (for example, username/achsoo).'
-        );
-        return;
-      }
-      setRepo(saved);
-      setRepoDraft(saved);
-      setIsEditingRepo(false);
-      setStatusMessage(null);
-      if (phase === 'error') setPhase('idle');
-    },
-    [phase, repoDraft]
-  );
-
   const handleCheckForUpdate = useCallback(async () => {
     const activeRepo = repo.trim();
     if (!isValidGitHubRepoSlug(activeRepo)) {
-      setIsEditingRepo(true);
       setPhase('error');
       setStatusMessage(
-        'Enter your public GitHub repository (owner/repo) once to check for updates.'
+        'Automatic update checks are active in installed Android releases.'
       );
       return;
     }
@@ -134,7 +106,7 @@ export const AppUpdateCard: React.FC = () => {
       } else {
         setPhase('up-to-date');
         setStatusMessage(
-          `You're on the latest version (v${result.currentVersionName} · Build ${result.currentVersionCode}).`
+          `You're on the latest version (v${result.currentVersionName}).`
         );
       }
     } catch (err) {
@@ -142,7 +114,7 @@ export const AppUpdateCard: React.FC = () => {
       setStatusMessage(
         err instanceof Error
           ? err.message
-          : 'Could not reach GitHub Releases. Check your connection and try again.'
+          : 'Could not check for updates. Check your connection and try again.'
       );
     }
   }, [repo]);
@@ -180,7 +152,7 @@ export const AppUpdateCard: React.FC = () => {
       } else {
         setPhase('installing');
         setStatusMessage(
-          'Android installer opened — tap Update to apply the new version without losing your study data.'
+          'Android installer opened — tap Update to apply the new version.'
         );
       }
     } catch (err) {
@@ -237,27 +209,7 @@ export const AppUpdateCard: React.FC = () => {
             Installed{' '}
             <span className="font-semibold text-[var(--fg-primary)] tabular-nums">
               v{installedInfo.versionName}
-            </span>{' '}
-            ·{' '}
-            <span className="tabular-nums text-[var(--fg-muted)]">
-              Build {installedInfo.versionCode}
             </span>
-            {repo ? (
-              <>
-                {' '}
-                ·{' '}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setRepoDraft(repo);
-                    setIsEditingRepo((prev) => !prev);
-                  }}
-                  className="text-[var(--fg-muted)] hover:text-[var(--fg-primary)] underline decoration-dotted underline-offset-2 cursor-pointer"
-                >
-                  {repo}
-                </button>
-              </>
-            ) : null}
           </p>
         </div>
 
@@ -278,37 +230,13 @@ export const AppUpdateCard: React.FC = () => {
         </button>
       </div>
 
-      {/* Optional one-time repository config when not yet injected by GitHub Actions */}
-      {isEditingRepo && (
-        <form
-          onSubmit={handleSaveRepo}
-          className="pt-3 border-t border-[var(--border-subtle)] flex flex-col sm:flex-row items-stretch sm:items-center gap-2"
-        >
-          <input
-            type="text"
-            value={repoDraft}
-            onChange={(e) => setRepoDraft(e.target.value)}
-            placeholder="owner/repo (e.g. yourname/achsoo)"
-            aria-label="GitHub repository in owner/repo format"
-            className="flex-1 min-h-[42px] px-3 rounded-xl surface-2 border border-[var(--border-subtle)] text-xs text-[var(--fg-primary)] placeholder:text-[var(--fg-muted)] theme-focus"
-          />
-          <button
-            type="submit"
-            className="min-h-[42px] px-4 rounded-xl text-xs font-sans font-semibold bg-[var(--intent-primary)] text-white hover:opacity-95 transition-opacity cursor-pointer whitespace-nowrap shrink-0"
-          >
-            Save Repo
-          </button>
-        </form>
-      )}
-
       {/* Available Update Banner */}
       {phase === 'available' && updateInfo && (
         <div className="pt-3 border-t border-[var(--border-subtle)] space-y-3">
           <div className="space-y-1">
             <div className="flex items-center justify-between gap-2 text-xs">
               <span className="font-display font-bold text-[var(--fg-primary)] tabular-nums">
-                Update available · v{updateInfo.latestVersionName} (Build{' '}
-                {updateInfo.latestVersionCode})
+                Update available · v{updateInfo.latestVersionName}
               </span>
               {updateInfo.apkSizeBytes > 0 && (
                 <span className="text-[11px] text-[var(--fg-muted)] tabular-nums shrink-0">
@@ -327,9 +255,7 @@ export const AppUpdateCard: React.FC = () => {
             <div className="flex items-center gap-1.5 text-[11px] text-[var(--fg-muted)]">
               <ShieldCheck className="w-3.5 h-3.5 text-[var(--intent-success)] shrink-0" />
               <span>
-                {updateInfo.sha256
-                  ? 'SHA-256 verified · GitHub Releases'
-                  : 'Direct download · GitHub Releases'}
+                {updateInfo.sha256 ? 'Verified package' : 'Ready to download'}
               </span>
             </div>
 
@@ -364,7 +290,7 @@ export const AppUpdateCard: React.FC = () => {
             <span className="font-medium text-[var(--fg-primary)]">
               {downloadProgress.progress >= 100
                 ? 'Verifying package integrity...'
-                : 'Downloading Achsoo.apk...'}
+                : 'Downloading update...'}
             </span>
             <span className="tabular-nums text-[var(--fg-secondary)] font-semibold">
               {downloadProgress.progress}%

@@ -17,7 +17,6 @@ import {
   ChevronUp,
   Clock,
   Compass,
-  Download,
   Eye,
   Flame,
   GitBranch,
@@ -181,7 +180,6 @@ import {
   loadStudyStats,
   loadThemePreferences,
   parseSrsStateKey,
-  resetAllSrsProgress,
   resetCardsSrsProgress,
   saveCustomCard,
   saveSrsMap,
@@ -3501,41 +3499,6 @@ export default function App() {
     ]
   );
 
-  const handleResetProgress = () => {
-    const fresh = resetAllSrsProgress(cards);
-    clearStudyDeckTrail();
-    clearRateFirstHint();
-    clearRatingFeedback();
-    loopUndoStackRef.current = {};
-    shownMilestonesByDeckRef.current = {};
-    deckSessionRatingsRef.current = {};
-    ratingsSinceMilestoneByDeckRef.current = {};
-    setLoopStatesByDeck({});
-    setStudyTrailsByDeck({});
-    reshuffleAllCards();
-    setSrsMap(fresh);
-    setStats(loadStudyStats());
-    setCurrentIndex(0);
-    setIsFlipped(false);
-    setSessionReviewedCount(0);
-  };
-
-  const handleDownloadStandaloneHtml = async () => {
-    const { generateStandaloneVanillaHtml } = await import(
-      './utils/standaloneExporter'
-    );
-    const htmlContent = generateStandaloneVanillaHtml();
-    const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'achsoo-standalone.html';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  };
-
   const handleCreateCustomCard = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newLemma.trim() || !newTranslation.trim()) return;
@@ -6063,39 +6026,6 @@ export default function App() {
 
             {/* One-Tap GitHub Release Updater (Android APK Download & In-Place Install) */}
             <AppUpdateCard />
-
-            {/* Quick Utilities */}
-            <Card.Root className="p-5 flex items-center justify-between gap-4 surface-paper">
-              <div>
-                <div className="font-display text-xs font-bold text-[var(--fg-primary)]">
-                  Local Storage &amp; Offline HTML Export
-                </div>
-                <div className="text-xs text-[var(--fg-secondary)] mt-0.5 font-sans tabular-nums">
-                  {stats.totalReviewsToday} reviews completed today
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <Button
-                  intent="secondary"
-                  size="icon"
-                  onClick={handleDownloadStandaloneHtml}
-                  aria-label="Export standalone HTML5 file"
-                  title="Export standalone HTML5 file"
-                >
-                  <Download className="w-4 h-4" />
-                </Button>
-                <Button
-                  intent="danger"
-                  size="icon"
-                  onClick={handleResetProgress}
-                  aria-label="Reset SRS progress"
-                  title="Reset SRS progress"
-                >
-                  <RotateCcw className="w-4 h-4" />
-                </Button>
-              </div>
-            </Card.Root>
           </div>
         )}
 
