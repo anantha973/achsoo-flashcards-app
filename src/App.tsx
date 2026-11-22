@@ -5659,9 +5659,6 @@ export default function App() {
                 cards={cards}
                 srsMap={srsMap}
                 isAnimationActive={!isExiting}
-                onSelectArchetypeDeck={(category) =>
-                  launchDeckStudy(category, false)
-                }
               />
             </Suspense>
 

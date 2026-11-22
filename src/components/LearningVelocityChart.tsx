@@ -100,6 +100,7 @@ export const LearningVelocityChart: React.FC<LearningVelocityChartProps> = ({
           {mode === 'daily' ? (
             <BarChart
               data={velocityData}
+              accessibilityLayer={false}
               margin={{ top: 8, right: 12, left: -20, bottom: 0 }}
             >
               <CartesianGrid
@@ -157,6 +158,7 @@ export const LearningVelocityChart: React.FC<LearningVelocityChartProps> = ({
           ) : (
             <LineChart
               data={velocityData}
+              accessibilityLayer={false}
               margin={{ top: 8, right: 12, left: -20, bottom: 0 }}
             >
               <CartesianGrid

@@ -2458,3 +2458,18 @@ html.dark .mascot-moment-cutout {
   animation: milestoneInterludeIn 170ms cubic-bezier(0.16, 1, 0.3, 1) both;
   will-change: transform, opacity;
 }
+
+/* Suppress browser/Android WebView focus outlines around Recharts SVGs, bars, and donut slices */
+.recharts-wrapper,
+.recharts-wrapper *,
+.recharts-surface,
+.recharts-layer,
+.recharts-sector,
+.recharts-rectangle,
+.recharts-wrapper:focus,
+.recharts-wrapper *:focus,
+.recharts-wrapper *:focus-visible {
+  outline: none !important;
+  -webkit-tap-highlight-color: transparent;
+}
+
