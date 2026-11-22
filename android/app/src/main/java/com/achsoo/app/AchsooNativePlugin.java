@@ -15,11 +15,15 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
 
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
 /**
- * Custom Capacitor bridge for Achsoo's native Android polish:
+ * Custom Capacitor bridge for Achsoo's native Android features:
  * 1. Crisp Gboard-style micro-actuator "bubble" haptics (CLOCK_TICK / KEYBOARD_TAP / CONFIRM)
  * 2. Smart offline fox notifications with runtime Android 13+ permission handling
  * 3. Safe 6-slot dynamic time-of-day launcher icon management
+ * 4. One-tap GitHub Releases APK self-updater with SHA-256 verification
  */
 @CapacitorPlugin(
     name = "AchsooNative",
@@ -31,6 +35,13 @@ import com.getcapacitor.annotation.PermissionCallback;
     }
 )
 public class AchsooNativePlugin extends Plugin {
+    private final ExecutorService ioExecutor = Executors.newSingleThreadExecutor();
+
+    @Override
+    protected void handleOnDestroy() {
+        super.handleOnDestroy();
+        ioExecutor.shutdownNow();
+    }
 
     @PluginMethod
     public void triggerBubbleHaptic(PluginCall call) {
@@ -52,10 +63,8 @@ public class AchsooNativePlugin extends Plugin {
             } else if ("back".equals(style)) {
                 feedbackConstant = HapticFeedbackConstants.KEYBOARD_TAP;
             } else {
-                // Default crisp Gboard-style soft micro-bubble tick
                 feedbackConstant = HapticFeedbackConstants.CLOCK_TICK;
             }
-            // Respects system touch-feedback setting; never triggers buzzy vibration motor bursts
             view.performHapticFeedback(feedbackConstant);
         });
 
@@ -177,7 +186,6 @@ public class AchsooNativePlugin extends Plugin {
         Context context = getContext();
         AchsooIconManager.savePreferences(context, autoEnabled, manualSlot);
 
-        // Only apply immediately if explicitly requested; otherwise switches cleanly on app background (onStop)
         if (applyNow) {
             AchsooIconManager.applyTargetIconIfSafe(context, true);
         }
@@ -199,5 +207,88 @@ public class AchsooNativePlugin extends Plugin {
         ret.put("targetSlot", AchsooIconManager.getTargetSlot(context));
         ret.put("currentClockSlot", AchsooIconManager.getCurrentClockSlot());
         call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void getInstalledAppVersion(PluginCall call) {
+        Context context = getContext();
+        AchsooAppUpdater.InstalledVersion version = AchsooAppUpdater.getInstalledVersion(context);
+        JSObject ret = new JSObject();
+        ret.put("versionCode", version.versionCode);
+        ret.put("versionName", version.versionName);
+        ret.put("hasReadyUpdate", AchsooAppUpdater.hasCachedApk(context));
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void checkForGitHubUpdate(PluginCall call) {
+        final String repo = call.getString("repo", "");
+        final Context appContext = getContext().getApplicationContext();
+
+        ioExecutor.execute(() -> {
+            try {
+                AchsooAppUpdater.UpdateCheckResult res = AchsooAppUpdater.checkForUpdate(appContext, repo);
+                JSObject ret = new JSObject();
+                ret.put("updateAvailable", res.updateAvailable);
+                ret.put("currentVersionCode", res.currentVersionCode);
+                ret.put("currentVersionName", res.currentVersionName);
+                ret.put("latestVersionCode", res.latestVersionCode);
+                ret.put("latestVersionName", res.latestVersionName);
+                ret.put("tagName", res.tagName);
+                ret.put("publishedAt", res.publishedAt);
+                ret.put("apkUrl", res.apkUrl);
+                ret.put("apkSizeBytes", res.apkSizeBytes);
+                ret.put("sha256", res.sha256);
+                ret.put("releaseNotes", res.releaseNotes);
+                ret.put("signedRelease", res.signedRelease);
+                call.resolve(ret);
+            } catch (Exception e) {
+                call.reject(e.getMessage() != null ? e.getMessage() : "Unable to check GitHub Releases.");
+            }
+        });
+    }
+
+    @PluginMethod
+    public void downloadAndInstallUpdate(PluginCall call) {
+        final String apkUrl = call.getString("apkUrl", "");
+        final String expectedSha256 = call.getString("expectedSha256", "");
+        final Context appContext = getContext().getApplicationContext();
+
+        ioExecutor.execute(() -> {
+            try {
+                AchsooAppUpdater.downloadAndVerifyApk(
+                    appContext,
+                    apkUrl,
+                    expectedSha256,
+                    (percent, downloadedBytes, totalBytes) -> {
+                        JSObject progress = new JSObject();
+                        progress.put("progress", percent);
+                        progress.put("downloadedBytes", downloadedBytes);
+                        progress.put("totalBytes", totalBytes);
+                        notifyListeners("updateDownloadProgress", progress);
+                    }
+                );
+
+                String installStatus = AchsooAppUpdater.launchCachedApkInstaller(appContext);
+                JSObject ret = new JSObject();
+                ret.put("status", installStatus);
+                call.resolve(ret);
+            } catch (Exception e) {
+                call.reject(e.getMessage() != null ? e.getMessage() : "Update download failed.");
+            }
+        });
+    }
+
+    @PluginMethod
+    public void installReadyUpdate(PluginCall call) {
+        Context appContext = getContext().getApplicationContext();
+        try {
+            String status = AchsooAppUpdater.launchCachedApkInstaller(appContext);
+            JSObject ret = new JSObject();
+            ret.put("status", status);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage() != null ? e.getMessage() : "Could not launch Android installer.");
+        }
     }
 }

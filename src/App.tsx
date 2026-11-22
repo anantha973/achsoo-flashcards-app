@@ -4,6 +4,7 @@
  */
 
 import React, { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Award,
   BookMarked,
@@ -100,6 +101,7 @@ import {
   syncNativeStudyReminders,
 } from './utils/nativeAndroid';
 import { AndroidExperienceCard } from './components/AndroidExperienceCard';
+import { AppUpdateCard } from './components/AppUpdateCard';
 
 const AnatomyDrawer = React.lazy(() =>
   import('./components/AnatomyDrawer').then((m) => ({
@@ -474,16 +476,45 @@ export default function App() {
     'closed'
   );
   const themePopoverRef = useRef<HTMLDivElement | null>(null);
+  const themeTriggerBtnRef = useRef<HTMLButtonElement | null>(null);
+  const themePopoverPanelRef = useRef<HTMLDivElement | null>(null);
   const themeCloseTimerRef = useRef<number | null>(null);
   const themeOptionBtnRefs = useRef<Record<string, HTMLButtonElement | null>>(
     {}
   );
+  const [themePopoverPos, setThemePopoverPos] = useState<{
+    top: number;
+    right: number;
+    maxHeight: number;
+    isMobile: boolean;
+  } | null>(null);
   const [themeOptionIndicator, setThemeOptionIndicator] = useState<{
     top: number;
     height: number;
   }>({ top: 0, height: 0 });
   const [themeOptionCanAnimate, setThemeOptionCanAnimate] =
     useState<boolean>(false);
+
+  const updateThemePopoverPosition = useCallback(() => {
+    const trigger = themeTriggerBtnRef.current;
+    if (!trigger) return;
+    const rect = trigger.getBoundingClientRect();
+    const viewportW = window.innerWidth;
+    const viewportH = window.innerHeight;
+    const isMobile = viewportW < 640;
+    const top = Math.max(12, Math.round(rect.bottom + 10));
+    const right = Math.max(12, Math.round(viewportW - rect.right));
+    const maxHeight = Math.max(220, Math.round(viewportH - top - 16));
+    setThemePopoverPos((prev) =>
+      prev &&
+      prev.top === top &&
+      prev.right === right &&
+      prev.maxHeight === maxHeight &&
+      prev.isMobile === isMobile
+        ? prev
+        : { top, right, maxHeight, isMobile }
+    );
+  }, []);
 
   useEffect(() => {
     applyThemePreferencesToDom(themePrefs, false);
@@ -555,14 +586,31 @@ export default function App() {
     }
   }, [isThemePopoverMounted, themeOptionIndicator.height, themeOptionCanAnimate]);
 
+  // Keep theme popover anchored below the live palette button rect across safe-area insets
+  useLayoutEffect(() => {
+    if (!isThemePopoverMounted) return;
+    updateThemePopoverPosition();
+    window.addEventListener('resize', updateThemePopoverPosition);
+    window.addEventListener('orientationchange', updateThemePopoverPosition);
+    window.addEventListener('scroll', updateThemePopoverPosition, true);
+    return () => {
+      window.removeEventListener('resize', updateThemePopoverPosition);
+      window.removeEventListener('orientationchange', updateThemePopoverPosition);
+      window.removeEventListener('scroll', updateThemePopoverPosition, true);
+    };
+  }, [isThemePopoverMounted, updateThemePopoverPosition]);
+
   // Close anchored theme popover when clicking outside or pressing Escape
   useEffect(() => {
     if (!isThemePopoverOpen) return;
-    const handlePointerDown = (e: MouseEvent) => {
-      if (
-        themePopoverRef.current &&
-        !themePopoverRef.current.contains(e.target as Node)
-      ) {
+    const handlePointerDown = (e: PointerEvent) => {
+      const target = e.target as Node;
+      const insideTrigger =
+        themePopoverRef.current && themePopoverRef.current.contains(target);
+      const insidePanel =
+        themePopoverPanelRef.current &&
+        themePopoverPanelRef.current.contains(target);
+      if (!insideTrigger && !insidePanel) {
         setIsThemePopoverOpen(false);
       }
     };
@@ -571,10 +619,10 @@ export default function App() {
         setIsThemePopoverOpen(false);
       }
     };
-    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('pointerdown', handlePointerDown);
     document.addEventListener('keydown', handleKeyDown);
     return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('pointerdown', handlePointerDown);
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [isThemePopoverOpen]);
@@ -4145,8 +4193,10 @@ export default function App() {
     <div ref={themePopoverRef} className="relative flex items-center gap-1.5">
       {/* 1. Theme Entity Selector Button (Opens Anchored Popover) */}
       <button
+        ref={themeTriggerBtnRef}
         type="button"
         onClick={() => {
+          updateThemePopoverPosition();
           setIsThemePopoverOpen((prev) => !prev);
         }}
         aria-expanded={isThemePopoverOpen}
@@ -4164,14 +4214,35 @@ export default function App() {
         />
       </button>
 
-      {/* Anchored Theme Popover Window (Viewport-safe on mobile, right-anchored on sm+) */}
-      {isThemePopoverMounted && (
-        <div
-          role="dialog"
-          aria-label="Choose visual theme"
-          data-state={themePopoverState}
-          className="fixed left-3 right-3 top-[62px] mx-auto w-auto max-w-[380px] sm:mx-0 sm:left-auto sm:right-0 sm:top-[calc(100%+8px)] sm:absolute sm:w-88 z-50 p-3 surface-overlay border space-y-2.5 popover-panel"
-        >
+      {/* Anchored Theme Popover Window (Portaled to body & positioned cleanly below trigger) */}
+      {isThemePopoverMounted &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            ref={themePopoverPanelRef}
+            role="dialog"
+            aria-label="Choose visual theme"
+            data-state={themePopoverState}
+            style={
+              themePopoverPos
+                ? themePopoverPos.isMobile
+                  ? {
+                      top: `${themePopoverPos.top}px`,
+                      maxHeight: `${themePopoverPos.maxHeight}px`,
+                    }
+                  : {
+                      top: `${themePopoverPos.top}px`,
+                      right: `${themePopoverPos.right}px`,
+                      maxHeight: `${themePopoverPos.maxHeight}px`,
+                    }
+                : undefined
+            }
+            className={`fixed z-[70] p-3 surface-overlay border space-y-2.5 popover-panel overflow-y-auto overscroll-contain ${
+              themePopoverPos?.isMobile ?? true
+                ? 'left-3 right-3 mx-auto w-auto max-w-[380px]'
+                : 'w-88'
+            }`}
+          >
           <div className="flex items-center justify-between gap-2 px-1 pb-1.5 border-b border-[var(--border-subtle)]">
             <div className="min-w-0">
               <div className="font-display text-xs font-bold text-[var(--fg-primary)]">
@@ -4331,8 +4402,9 @@ export default function App() {
               />
             </button>
           </div>
-        </div>
-      )}
+        </div>,
+          document.body
+        )}
     </div>
   );
 
@@ -5988,6 +6060,9 @@ export default function App() {
               streakDays={stats.streakDays}
               reviewedToday={stats.totalReviewsToday}
             />
+
+            {/* One-Tap GitHub Release Updater (Android APK Download & In-Place Install) */}
+            <AppUpdateCard />
 
             {/* Quick Utilities */}
             <Card.Root className="p-5 flex items-center justify-between gap-4 surface-paper">
