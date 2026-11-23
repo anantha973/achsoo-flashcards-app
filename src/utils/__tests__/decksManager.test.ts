@@ -1,8 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_A2_CUSTOM_DECKS } from '../../data/defaultDecks';
+import {
+  DEFAULT_A2_CUSTOM_DECKS,
+  DEFAULT_BUILTIN_CUSTOM_DECKS,
+  DEFAULT_CONVERSATIONAL_DECKS,
+} from '../../data/defaultDecks';
+import { CONVERSATIONAL_CHUNK_CARDS } from '../../data/conversationalChunksData';
 import { INITIAL_CARDS, dedupeGermanArticles, formatNounLemma, stripLeadingGermanArticles } from '../../data/vocabData';
 import {
   A2_NETZWERK_FOLDER_ID,
+  ALLTAG_GESPRAECHE_FOLDER_ID,
   ARCHIVE_FOLDER_ID,
   CustomDeckRecord,
   DeckFolder,
@@ -47,10 +53,15 @@ describe('decksManager multi-device A2 Netzwerk workspace sync', () => {
 
     expect(healed.changed).toBe(true);
     expect(healed.folders.some((f) => f.id === A2_NETZWERK_FOLDER_ID)).toBe(true);
+    expect(healed.folders.some((f) => f.id === ALLTAG_GESPRAECHE_FOLDER_ID)).toBe(true);
     expect(healed.folders.some((f) => f.id === ARCHIVE_FOLDER_ID)).toBe(true);
-    expect(healed.customDecks.length).toBe(DEFAULT_A2_CUSTOM_DECKS.length);
+    expect(healed.customDecks.length).toBe(DEFAULT_BUILTIN_CUSTOM_DECKS.length);
     for (const deck of healed.customDecks) {
-      expect(deck.folderId).toBe(A2_NETZWERK_FOLDER_ID);
+      if (deck.id.startsWith('a2-deck-')) {
+        expect(deck.folderId).toBe(A2_NETZWERK_FOLDER_ID);
+      } else if (deck.id.startsWith('chat-deck-')) {
+        expect(deck.folderId).toBe(ALLTAG_GESPRAECHE_FOLDER_ID);
+      }
     }
 
     expect(
@@ -117,10 +128,58 @@ describe('decksManager multi-device A2 Netzwerk workspace sync', () => {
     expect(migrated.folders.some((f) => f.id === A2_NETZWERK_FOLDER_ID)).toBe(
       true
     );
+    expect(migrated.folders.some((f) => f.id === ALLTAG_GESPRAECHE_FOLDER_ID)).toBe(
+      true
+    );
     expect(
       migrated.customDecks.filter((d) => d.folderId === A2_NETZWERK_FOLDER_ID)
         .length
     ).toBe(DEFAULT_A2_CUSTOM_DECKS.length);
+    expect(
+      migrated.customDecks.filter(
+        (d) => d.folderId === ALLTAG_GESPRAECHE_FOLDER_ID
+      ).length
+    ).toBe(DEFAULT_CONVERSATIONAL_DECKS.length);
+  });
+});
+
+describe('curated A1-A2 conversational chunks deck collection', () => {
+  it('registers all 64 unique A1-A2 phrase cards across 4 themed mini-decks with clean anonymized 2-line exchanges', () => {
+    expect(CONVERSATIONAL_CHUNK_CARDS.length).toBe(64);
+    expect(DEFAULT_CONVERSATIONAL_DECKS.length).toBe(4);
+
+    const cardIdSet = new Set(INITIAL_CARDS.map((c) => c.id));
+    const deckCardIds = DEFAULT_CONVERSATIONAL_DECKS.flatMap((d) => d.cardIds);
+    expect(deckCardIds.length).toBe(64);
+    expect(new Set(deckCardIds).size).toBe(64);
+
+    const forbiddenNames = /\b(?:Matt|Vivian|Hetti|Oscar|Oskar|Cabo|Magdeburg)\b/i;
+    const forbiddenSlang = /\b(?:safe|cringe|idk|niceu|yesu|oopsie|vibes|oldschool|cardio|dudes|naps|tea spillen)\b/i;
+
+    for (const card of CONVERSATIONAL_CHUNK_CARDS) {
+      expect(cardIdSet.has(card.id)).toBe(true);
+      expect(card.category).toBe('phrase');
+      expect(['A1', 'A2']).toContain(card.cefr);
+      expect(card.exampleDe.includes('\n')).toBe(true);
+      expect(card.exampleEn.includes('\n')).toBe(true);
+      expect(card.highlightTarget).toBeTruthy();
+      expect(
+        card.exampleDe.toLowerCase().includes(card.highlightTarget!.toLowerCase())
+      ).toBe(true);
+      expect(card.phraseDetails?.miniDialog).toBeDefined();
+
+      const fullText = [
+        card.lemma,
+        card.exampleDe,
+        card.exampleEn,
+        card.phraseDetails?.miniDialog.speakerA,
+        card.phraseDetails?.miniDialog.speakerB,
+        card.phraseDetails?.miniDialog.promptDe,
+        card.phraseDetails?.miniDialog.replyDe,
+      ].join(' ');
+      expect(forbiddenNames.test(fullText)).toBe(false);
+      expect(forbiddenSlang.test(fullText)).toBe(false);
+    }
   });
 });
 

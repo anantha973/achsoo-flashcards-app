@@ -5283,7 +5283,7 @@ export default function App() {
                                   >
                                     <div className="space-y-1 md:space-y-1.5 min-w-0">
                                       <p
-                                        className={`font-sans font-normal text-[var(--fg-secondary)] text-pretty ${getFluidSentenceClass(
+                                        className={`font-sans font-normal text-[var(--fg-secondary)] text-pretty whitespace-pre-line ${getFluidSentenceClass(
                                           currentCard.exampleDe
                                         )}`}
                                       >
@@ -5292,7 +5292,7 @@ export default function App() {
                                           currentCard.highlightTarget
                                         )}
                                       </p>
-                                      <p className="font-sans text-xs sm:text-[13px] md:text-[15px] text-[var(--fg-muted)] leading-snug text-pretty">
+                                      <p className="font-sans text-xs sm:text-[13px] md:text-[15px] text-[var(--fg-muted)] leading-snug text-pretty whitespace-pre-line">
                                         {currentCard.exampleEn}
                                       </p>
                                     </div>

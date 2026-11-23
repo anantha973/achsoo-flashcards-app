@@ -1,4 +1,5 @@
 import { RAW_CARDS_DATA } from './cardsData';
+import { CONVERSATIONAL_CHUNK_CARDS } from './conversationalChunksData';
 
 export type CefrLevel = 'A1' | 'A2' | 'B1';
 export type CardCategory =
@@ -407,8 +408,10 @@ export function validateAndNormalizeContentCards(
   return result;
 }
 
-export const INITIAL_CARDS: VocabCard[] =
-  validateAndNormalizeContentCards(RAW_CARDS_DATA);
+export const INITIAL_CARDS: VocabCard[] = validateAndNormalizeContentCards([
+  ...RAW_CARDS_DATA,
+  ...CONVERSATIONAL_CHUNK_CARDS,
+]);
 
 export const INITIAL_CARD_ID_SET: ReadonlySet<string> = new Set(
   INITIAL_CARDS.map((c) => c.id)

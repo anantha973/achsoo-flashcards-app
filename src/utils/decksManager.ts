@@ -44,7 +44,11 @@ import {
   normalizeRatingKey,
   RatingKey,
 } from '../data/vocabData';
-import { DEFAULT_A2_CUSTOM_DECKS } from '../data/defaultDecks';
+import {
+  DEFAULT_A2_CUSTOM_DECKS,
+  DEFAULT_BUILTIN_CUSTOM_DECKS,
+  DEFAULT_CONVERSATIONAL_DECKS,
+} from '../data/defaultDecks';
 import { syncWorkspaceToSupabase } from './supabaseSync';
 
 export type DeckTintId =
@@ -423,6 +427,7 @@ const ARCHIVE_DUMMY_MIGRATION_KEY = 'wortschatz_archive_dummy_v1';
 export const ARCHIVE_FOLDER_ID = 'folder-archive-dummy';
 export const LEGACY_TEST_FOLDER_ID = 'folder-test-cefr';
 export const A2_NETZWERK_FOLDER_ID = 'folder-a2-netzwerk';
+export const ALLTAG_GESPRAECHE_FOLDER_ID = 'folder-alltag-gespraeche';
 
 export const DEFAULT_A2_FOLDER: DeckFolder = {
   id: A2_NETZWERK_FOLDER_ID,
@@ -432,6 +437,20 @@ export const DEFAULT_A2_FOLDER: DeckFolder = {
   order: 0,
   createdAt: 1700000000000,
 };
+
+export const DEFAULT_ALLTAG_FOLDER: DeckFolder = {
+  id: ALLTAG_GESPRAECHE_FOLDER_ID,
+  name: 'Alltag & Gespräche',
+  icon: 'MessageSquare',
+  tint: 'terracotta',
+  order: 1,
+  createdAt: 1700000010000,
+};
+
+export const DEFAULT_BUILTIN_FOLDERS: DeckFolder[] = [
+  DEFAULT_A2_FOLDER,
+  DEFAULT_ALLTAG_FOLDER,
+];
 
 export const DUMMY_BUILTIN_DECK_IDS = [
   'verb',
@@ -521,7 +540,19 @@ export function ensureBuiltInA2Workspace(params: {
   );
   const targetA2FolderId = existingA2Folder?.id || A2_NETZWERK_FOLDER_ID;
 
+  const existingAlltagFolder = params.folders.find(
+    (f) =>
+      f.id === ALLTAG_GESPRAECHE_FOLDER_ID ||
+      f.name.trim().toLowerCase() === 'alltag & gespräche'
+  );
+  const targetAlltagFolderId =
+    existingAlltagFolder?.id || ALLTAG_GESPRAECHE_FOLDER_ID;
+
   let nextFolders = [...params.folders];
+  if (!existingAlltagFolder) {
+    nextFolders = [DEFAULT_ALLTAG_FOLDER, ...nextFolders];
+    changed = true;
+  }
   if (!existingA2Folder) {
     nextFolders = [DEFAULT_A2_FOLDER, ...nextFolders];
     changed = true;
@@ -530,15 +561,25 @@ export function ensureBuiltInA2Workspace(params: {
   const defaultA2ById = new Map(
     DEFAULT_A2_CUSTOM_DECKS.map((d) => [d.id, d] as const)
   );
+  const defaultConvById = new Map(
+    DEFAULT_CONVERSATIONAL_DECKS.map((d) => [d.id, d] as const)
+  );
 
   const nextCustomDecks = params.customDecks.map((cd) => {
-    if (!cd.id.startsWith('a2-deck-')) return cd;
-    const canonical = defaultA2ById.get(cd.id);
+    const isA2Deck = cd.id.startsWith('a2-deck-');
+    const isConvDeck = cd.id.startsWith('chat-deck-');
+    if (!isA2Deck && !isConvDeck) return cd;
+
+    const canonical = isA2Deck
+      ? defaultA2ById.get(cd.id)
+      : defaultConvById.get(cd.id);
+    const targetFolderId = isA2Deck ? targetA2FolderId : targetAlltagFolderId;
+
     let deckChanged = false;
     let nextDeck = cd;
 
-    if (nextDeck.folderId !== targetA2FolderId) {
-      nextDeck = { ...nextDeck, folderId: targetA2FolderId };
+    if (nextDeck.folderId !== targetFolderId) {
+      nextDeck = { ...nextDeck, folderId: targetFolderId };
       deckChanged = true;
     }
 
@@ -567,6 +608,16 @@ export function ensureBuiltInA2Workspace(params: {
       changed = true;
     }
   }
+  for (const d of DEFAULT_CONVERSATIONAL_DECKS) {
+    if (!existingDeckIds.has(d.id)) {
+      nextCustomDecks.push({
+        ...d,
+        folderId: targetAlltagFolderId,
+        studyDirection: 'de-en',
+      });
+      changed = true;
+    }
+  }
 
   return {
     folders: nextFolders,
@@ -589,11 +640,24 @@ export function hasMissingBuiltInA2Workspace(params: {
   );
   if (!a2Folder) return true;
 
+  const alltagFolder = folders.find(
+    (f) =>
+      f.id === ALLTAG_GESPRAECHE_FOLDER_ID ||
+      f.name.trim().toLowerCase() === 'alltag & gespräche'
+  );
+  if (!alltagFolder) return true;
+
   const customDeckById = new Map(customDecks.map((d) => [d.id, d] as const));
   for (const def of DEFAULT_A2_CUSTOM_DECKS) {
     const existing = customDeckById.get(def.id);
     if (!existing) return true;
     if (existing.folderId !== a2Folder.id) return true;
+    if (existing.cardIds.length < def.cardIds.length) return true;
+  }
+  for (const def of DEFAULT_CONVERSATIONAL_DECKS) {
+    const existing = customDeckById.get(def.id);
+    if (!existing) return true;
+    if (existing.folderId !== alltagFolder.id) return true;
     if (existing.cardIds.length < def.cardIds.length) return true;
   }
 
@@ -603,22 +667,37 @@ export function hasMissingBuiltInA2Workspace(params: {
 export function loadFolders(): DeckFolder[] {
   try {
     const raw = localStorage.getItem(FOLDERS_STORAGE_KEY);
-    if (!raw) return [DEFAULT_A2_FOLDER];
+    if (!raw) return [...DEFAULT_BUILTIN_FOLDERS];
     const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed) || parsed.length === 0) return [DEFAULT_A2_FOLDER];
-    const hasA2 = parsed.some(
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      return [...DEFAULT_BUILTIN_FOLDERS];
+    }
+    let updated = [...parsed];
+    let mutated = false;
+    const hasAlltag = updated.some(
+      (f: DeckFolder) =>
+        f.id === ALLTAG_GESPRAECHE_FOLDER_ID ||
+        f.name.trim().toLowerCase() === 'alltag & gespräche'
+    );
+    if (!hasAlltag) {
+      updated = [DEFAULT_ALLTAG_FOLDER, ...updated];
+      mutated = true;
+    }
+    const hasA2 = updated.some(
       (f: DeckFolder) =>
         f.id === A2_NETZWERK_FOLDER_ID ||
         f.name.trim().toLowerCase() === 'a2 netzwerk'
     );
     if (!hasA2) {
-      const updated = [DEFAULT_A2_FOLDER, ...parsed];
-      saveFolders(updated, true);
-      return updated;
+      updated = [DEFAULT_A2_FOLDER, ...updated];
+      mutated = true;
     }
-    return parsed;
+    if (mutated) {
+      saveFolders(updated, true);
+    }
+    return updated;
   } catch {
-    return [DEFAULT_A2_FOLDER];
+    return [...DEFAULT_BUILTIN_FOLDERS];
   }
 }
 
@@ -639,10 +718,10 @@ export function saveFolders(
 export function loadCustomDecks(): CustomDeckRecord[] {
   try {
     const raw = localStorage.getItem(CUSTOM_DECKS_STORAGE_KEY);
-    if (!raw) return DEFAULT_A2_CUSTOM_DECKS;
+    if (!raw) return DEFAULT_BUILTIN_CUSTOM_DECKS;
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed) || parsed.length === 0) {
-      return DEFAULT_A2_CUSTOM_DECKS;
+      return DEFAULT_BUILTIN_CUSTOM_DECKS;
     }
     const folders = loadFolders();
     const normalized = ensureBuiltInA2Workspace({
@@ -654,7 +733,7 @@ export function loadCustomDecks(): CustomDeckRecord[] {
     }
     return normalized.customDecks;
   } catch {
-    return DEFAULT_A2_CUSTOM_DECKS;
+    return DEFAULT_BUILTIN_CUSTOM_DECKS;
   }
 }
 
@@ -755,7 +834,9 @@ export function archiveDummyDecksInWorkspace(params: {
   const archivedCustomDecks = params.customDecks.map((cd) => {
     if (
       cd.id.startsWith('a2-deck-') ||
-      cd.folderId === A2_NETZWERK_FOLDER_ID
+      cd.id.startsWith('chat-deck-') ||
+      cd.folderId === A2_NETZWERK_FOLDER_ID ||
+      cd.folderId === ALLTAG_GESPRAECHE_FOLDER_ID
     ) {
       return cd;
     }
