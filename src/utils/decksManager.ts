@@ -592,6 +592,13 @@ export function ensureBuiltInA2Workspace(params: {
         nextDeck = {
           ...nextDeck,
           cardIds: [...nextDeck.cardIds, ...missingCardIds],
+          subtitle: canonical.subtitle,
+        };
+        deckChanged = true;
+      } else if (isConvDeck && nextDeck.subtitle !== canonical.subtitle) {
+        nextDeck = {
+          ...nextDeck,
+          subtitle: canonical.subtitle,
         };
         deckChanged = true;
       }
@@ -659,6 +666,7 @@ export function hasMissingBuiltInA2Workspace(params: {
     if (!existing) return true;
     if (existing.folderId !== alltagFolder.id) return true;
     if (existing.cardIds.length < def.cardIds.length) return true;
+    if (existing.subtitle !== def.subtitle) return true;
   }
 
   return false;

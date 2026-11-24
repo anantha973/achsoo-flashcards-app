@@ -144,17 +144,26 @@ describe('decksManager multi-device A2 Netzwerk workspace sync', () => {
 });
 
 describe('curated A1-A2 conversational chunks deck collection', () => {
-  it('registers all 64 unique A1-A2 phrase cards across 4 themed mini-decks with clean anonymized 2-line exchanges', () => {
-    expect(CONVERSATIONAL_CHUNK_CARDS.length).toBe(64);
+  it('registers all 160 unique A1-A2 phrase cards across 4 themed mini-decks with clean anonymized 2-line exchanges', () => {
+    expect(CONVERSATIONAL_CHUNK_CARDS.length).toBe(160);
     expect(DEFAULT_CONVERSATIONAL_DECKS.length).toBe(4);
+    for (const deck of DEFAULT_CONVERSATIONAL_DECKS) {
+      expect(deck.cardIds.length).toBe(40);
+    }
 
     const cardIdSet = new Set(INITIAL_CARDS.map((c) => c.id));
     const deckCardIds = DEFAULT_CONVERSATIONAL_DECKS.flatMap((d) => d.cardIds);
-    expect(deckCardIds.length).toBe(64);
-    expect(new Set(deckCardIds).size).toBe(64);
+    expect(deckCardIds.length).toBe(160);
+    expect(new Set(deckCardIds).size).toBe(160);
 
-    const forbiddenNames = /\b(?:Matt|Vivian|Hetti|Oscar|Oskar|Cabo|Magdeburg)\b/i;
+    const normalizedLemmas = CONVERSATIONAL_CHUNK_CARDS.map((c) =>
+      c.lemma.trim().toLowerCase()
+    );
+    expect(new Set(normalizedLemmas).size).toBe(160);
+
+    const forbiddenNames = /\b(?:Matt|Vivian|Hetti|Oscar|Oskar|Cabo|Magdeburg|Jan|Ian)\b/i;
     const forbiddenSlang = /\b(?:safe|cringe|idk|niceu|yesu|oopsie|vibes|oldschool|cardio|dudes|naps|tea spillen)\b/i;
+    const emojiPattern = /\p{Extended_Pictographic}/u;
 
     for (const card of CONVERSATIONAL_CHUNK_CARDS) {
       expect(cardIdSet.has(card.id)).toBe(true);
@@ -168,18 +177,39 @@ describe('curated A1-A2 conversational chunks deck collection', () => {
       ).toBe(true);
       expect(card.phraseDetails?.miniDialog).toBeDefined();
 
-      const fullText = [
+      const germanText = [
         card.lemma,
+        card.spokenText,
         card.exampleDe,
-        card.exampleEn,
-        card.phraseDetails?.miniDialog.speakerA,
-        card.phraseDetails?.miniDialog.speakerB,
         card.phraseDetails?.miniDialog.promptDe,
         card.phraseDetails?.miniDialog.replyDe,
       ].join(' ');
+      const fullText = [
+        germanText,
+        card.translation,
+        card.exampleEn,
+        card.phraseDetails?.miniDialog.speakerA,
+        card.phraseDetails?.miniDialog.speakerB,
+      ].join(' ');
       expect(forbiddenNames.test(fullText)).toBe(false);
-      expect(forbiddenSlang.test(fullText)).toBe(false);
+      expect(forbiddenSlang.test(germanText)).toBe(false);
+      expect(emojiPattern.test(fullText)).toBe(false);
     }
+
+    const legacyConvDeck: CustomDeckRecord = {
+      ...DEFAULT_CONVERSATIONAL_DECKS[0],
+      subtitle: '16 Chunks · Begrüßung, Entwarnung & Abschied',
+      cardIds: DEFAULT_CONVERSATIONAL_DECKS[0].cardIds.slice(0, 16),
+    };
+    const upgraded = ensureBuiltInA2Workspace({
+      folders: [],
+      customDecks: [legacyConvDeck],
+    });
+    const healedConv = upgraded.customDecks.find(
+      (d) => d.id === DEFAULT_CONVERSATIONAL_DECKS[0].id
+    );
+    expect(healedConv?.cardIds.length).toBe(40);
+    expect(healedConv?.subtitle).toBe(DEFAULT_CONVERSATIONAL_DECKS[0].subtitle);
   });
 });
 
