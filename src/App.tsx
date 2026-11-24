@@ -52,6 +52,7 @@ import {
   Button,
   Card,
   ProgressBar,
+  ProgressBarSegment,
   SemanticIntent,
 } from './components/HeroPrimitives';
 import {
@@ -165,6 +166,8 @@ import {
   StudyStats,
   VocabCard,
   formatNounLemma,
+  normalizeRatingKey,
+  ratingToConfidence,
   stripLeadingGermanArticles,
 } from './data/vocabData';
 import {
@@ -180,6 +183,7 @@ import {
   getLast7DaysVelocityData,
   hydrateEngineFromIndexedDB,
   isCardLowConfidence,
+  isCardNew,
   loadAllCards,
   loadSrsMap,
   loadStudyStats,
@@ -1904,6 +1908,66 @@ export default function App() {
     () => computeDeckLoopProgressPct(activeLoopState),
     [activeLoopState]
   );
+
+  const studyConfidenceProgress = useMemo(() => {
+    const total = studyDeck.length;
+    const counts: Record<1 | 2 | 3 | 4 | 5, number> = {
+      5: 0,
+      4: 0,
+      3: 0,
+      2: 0,
+      1: 0,
+    };
+    let unratedCount = 0;
+
+    for (const card of studyDeck) {
+      const st = getCardSrsForDirection(srsMap, card.id, activeStudyDirection);
+      if (isCardNew(st)) {
+        unratedCount += 1;
+        continue;
+      }
+      const rawConf =
+        typeof st.confidence === 'number' && st.confidence > 0
+          ? st.confidence
+          : st.lastRating
+          ? ratingToConfidence(normalizeRatingKey(st.lastRating) ?? '1')
+          : 0;
+      const clamped = Math.max(1, Math.min(5, Math.round(rawConf))) as
+        | 1
+        | 2
+        | 3
+        | 4
+        | 5;
+      counts[clamped] += 1;
+    }
+
+    const keys: readonly RatingKey[] = ['5', '4', '3', '2', '1'];
+    const segments: ProgressBarSegment[] = keys.map((key) => {
+      const num = Number(key) as 1 | 2 | 3 | 4 | 5;
+      return {
+        key,
+        pct: total > 0 ? (counts[num] / total) * 100 : 0,
+        color: RATING_META[key].colorVar,
+        label: RATING_META[key].shortLabel,
+      };
+    });
+
+    const summaryParts: string[] = [];
+    for (const key of keys) {
+      const num = Number(key) as 1 | 2 | 3 | 4 | 5;
+      if (counts[num] > 0) {
+        summaryParts.push(`${counts[num]} ${RATING_META[key].shortLabel}`);
+      }
+    }
+    if (unratedCount > 0) {
+      summaryParts.push(`${unratedCount} offen`);
+    }
+
+    return {
+      segments,
+      valueText: summaryParts.join(' · ') || 'Keine Karten',
+    };
+  }, [studyDeck, srsMap, activeStudyDirection]);
 
   // Immediately refresh active study card, loop, and flip state whenever
   // the user toggles a deck's studyDirection (DE->EN <-> EN->DE)
@@ -4606,16 +4670,10 @@ export default function App() {
                   </div>
                   <ProgressBar
                     value={activeDeckMasteryProgressPct}
-                    intent={
-                      activeLoopState.phase === 'sweep' ? 'success' : 'primary'
-                    }
-                    accentColor={
-                      recentRatingEcho
-                        ? RATING_META[recentRatingEcho].colorVar
-                        : undefined
-                    }
-                    size="sm"
-                    label="Deck mastery loop progress"
+                    segments={studyConfidenceProgress.segments}
+                    valueText={studyConfidenceProgress.valueText}
+                    size="md"
+                    label="Deck confidence distribution"
                   />
                 </div>
 

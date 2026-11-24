@@ -109,12 +109,21 @@ export const Card = {
   Footer: CardFooter,
 };
 
+export interface ProgressBarSegment {
+  key: string;
+  pct: number;
+  color: string;
+  label?: string;
+}
+
 interface ProgressBarProps {
   value: number;
   intent?: SemanticIntent;
   accentColor?: string;
+  segments?: readonly ProgressBarSegment[];
   size?: 'sm' | 'md';
   label?: string;
+  valueText?: string;
   className?: string;
 }
 
@@ -131,8 +140,10 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
   value,
   intent = 'primary',
   accentColor,
+  segments,
   size = 'sm',
   label = 'Progress',
+  valueText,
   className = '',
 }) => {
   const clamped = Math.max(0, Math.min(100, Math.round(value)));
@@ -144,17 +155,32 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
       aria-valuenow={clamped}
       aria-valuemin={0}
       aria-valuemax={100}
-      className={`w-full ${heightClass} radius-pill bg-[var(--surface-3)] overflow-hidden ${className}`}
+      aria-valuetext={valueText}
+      title={valueText}
+      className={`w-full ${heightClass} radius-pill bg-[var(--surface-3)] overflow-hidden flex flex-nowrap ${className}`}
     >
-      <div
-        className={`h-full radius-pill transition-[width,background-color] duration-300 ${
-          accentColor ? '' : progressIntentBar[intent]
-        }`}
-        style={{
-          width: `${clamped}%`,
-          ...(accentColor ? { backgroundColor: accentColor } : {}),
-        }}
-      />
+      {segments && segments.length > 0 ? (
+        segments.map((seg) => (
+          <div
+            key={seg.key}
+            className="h-full shrink-0 transition-[width,background-color] duration-300 ease-out"
+            style={{
+              width: `${Math.max(0, Math.min(100, seg.pct))}%`,
+              backgroundColor: seg.color,
+            }}
+          />
+        ))
+      ) : (
+        <div
+          className={`h-full radius-pill transition-[width,background-color] duration-300 ${
+            accentColor ? '' : progressIntentBar[intent]
+          }`}
+          style={{
+            width: `${clamped}%`,
+            ...(accentColor ? { backgroundColor: accentColor } : {}),
+          }}
+        />
+      )}
     </div>
   );
 };
