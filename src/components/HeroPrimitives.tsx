@@ -128,12 +128,12 @@ interface ProgressBarProps {
 }
 
 const progressIntentBar: Record<SemanticIntent, string> = {
-  primary: 'bg-[var(--intent-primary)]',
-  secondary: 'bg-[var(--accent-secondary)]',
+  primary: 'bg-[var(--progress-bar-primary)]',
+  secondary: 'bg-[var(--progress-bar-secondary)]',
   tertiary: 'bg-[var(--fg-muted)]',
-  danger: 'bg-[var(--intent-danger)]',
-  warning: 'bg-[var(--intent-warning)]',
-  success: 'bg-[var(--intent-success)]',
+  danger: 'bg-[var(--progress-bar-danger)]',
+  warning: 'bg-[var(--progress-bar-warning)]',
+  success: 'bg-[var(--progress-bar-success)]',
 };
 
 export const ProgressBar: React.FC<ProgressBarProps> = ({
@@ -148,6 +148,31 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
 }) => {
   const clamped = Math.max(0, Math.min(100, Math.round(value)));
   const heightClass = size === 'sm' ? 'h-1.5' : 'h-2';
+
+  const activeSegments = segments
+    ? segments.filter((seg) => seg.pct > 0)
+    : [];
+
+  let runningPct = 0;
+  const stackedSegments = activeSegments.map((seg, idx) => {
+    const clampedPct = Math.max(0, seg.pct);
+    const prevCumPct = runningPct;
+    const cumPct = Math.min(100, runningPct + clampedPct);
+    runningPct = cumPct;
+
+    const useInsetStart = idx > 0 && prevCumPct >= 6;
+    const leftPct = useInsetStart ? prevCumPct - 4 : 0;
+    const widthPct = Math.max(0, cumPct - leftPct);
+
+    return {
+      ...seg,
+      leftPct,
+      widthPct,
+      useInsetStart,
+      zIndex: activeSegments.length - idx,
+    };
+  });
+
   return (
     <div
       role="progressbar"
@@ -157,22 +182,26 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
       aria-valuemax={100}
       aria-valuetext={valueText}
       title={valueText}
-      className={`w-full ${heightClass} radius-pill bg-[var(--surface-3)] overflow-hidden flex flex-nowrap ${className}`}
+      className={`relative w-full ${heightClass} radius-pill bg-[var(--surface-3)] overflow-hidden ${className}`}
     >
-      {segments && segments.length > 0 ? (
-        segments.map((seg) => (
+      {segments ? (
+        stackedSegments.map((seg) => (
           <div
             key={seg.key}
-            className="h-full shrink-0 transition-[width,background-color] duration-300 ease-out"
+            className={`absolute inset-y-0 transition-[left,width,background-color] duration-300 ease-out ${
+              seg.useInsetStart ? 'rounded-r-full' : 'rounded-full'
+            }`}
             style={{
-              width: `${Math.max(0, Math.min(100, seg.pct))}%`,
+              left: `${seg.leftPct}%`,
+              width: `${seg.widthPct}%`,
               backgroundColor: seg.color,
+              zIndex: seg.zIndex,
             }}
           />
         ))
       ) : (
         <div
-          className={`h-full radius-pill transition-[width,background-color] duration-300 ${
+          className={`h-full rounded-full transition-[width,background-color] duration-300 ease-out ${
             accentColor ? '' : progressIntentBar[intent]
           }`}
           style={{

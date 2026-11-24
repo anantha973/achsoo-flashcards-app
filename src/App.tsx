@@ -391,6 +391,7 @@ const RATING_META: Record<
     shortLabel: string;
     shortcutKey: '1' | '2' | '3' | '4' | '5';
     colorVar: string;
+    progressColorVar: string;
     softVar: string;
     borderVar: string;
     solidBgVar: string;
@@ -403,6 +404,7 @@ const RATING_META: Record<
     shortLabel: 'Gar nicht',
     shortcutKey: '1',
     colorVar: 'var(--conf-1)',
+    progressColorVar: 'var(--progress-conf-1)',
     softVar: 'var(--conf-1-soft)',
     borderVar: 'var(--conf-1-border)',
     solidBgVar: 'var(--conf-1-solid-bg)',
@@ -414,6 +416,7 @@ const RATING_META: Record<
     shortLabel: 'Kaum',
     shortcutKey: '2',
     colorVar: 'var(--conf-2)',
+    progressColorVar: 'var(--progress-conf-2)',
     softVar: 'var(--conf-2-soft)',
     borderVar: 'var(--conf-2-border)',
     solidBgVar: 'var(--conf-2-solid-bg)',
@@ -425,6 +428,7 @@ const RATING_META: Record<
     shortLabel: 'Mühsam',
     shortcutKey: '3',
     colorVar: 'var(--conf-3)',
+    progressColorVar: 'var(--progress-conf-3)',
     softVar: 'var(--conf-3-soft)',
     borderVar: 'var(--conf-3-border)',
     solidBgVar: 'var(--conf-3-solid-bg)',
@@ -436,6 +440,7 @@ const RATING_META: Record<
     shortLabel: 'Gut',
     shortcutKey: '4',
     colorVar: 'var(--conf-4)',
+    progressColorVar: 'var(--progress-conf-4)',
     softVar: 'var(--conf-4-soft)',
     borderVar: 'var(--conf-4-border)',
     solidBgVar: 'var(--conf-4-solid-bg)',
@@ -447,6 +452,7 @@ const RATING_META: Record<
     shortLabel: 'Sicher',
     shortcutKey: '5',
     colorVar: 'var(--conf-5)',
+    progressColorVar: 'var(--progress-conf-5)',
     softVar: 'var(--conf-5-soft)',
     borderVar: 'var(--conf-5-border)',
     solidBgVar: 'var(--conf-5-solid-bg)',
@@ -1910,7 +1916,6 @@ export default function App() {
   );
 
   const studyConfidenceProgress = useMemo(() => {
-    const total = studyDeck.length;
     const counts: Record<1 | 2 | 3 | 4 | 5, number> = {
       5: 0,
       4: 0,
@@ -1918,9 +1923,12 @@ export default function App() {
       2: 0,
       1: 0,
     };
+    const seenCardIds = new Set<string>();
     let unratedCount = 0;
 
     for (const card of studyDeck) {
+      if (seenCardIds.has(card.id)) continue;
+      seenCardIds.add(card.id);
       const st = getCardSrsForDirection(srsMap, card.id, activeStudyDirection);
       if (isCardNew(st)) {
         unratedCount += 1;
@@ -1941,13 +1949,17 @@ export default function App() {
       counts[clamped] += 1;
     }
 
+    const total = seenCardIds.size;
+    const ratedCount = total - unratedCount;
+    const ratedPct = total > 0 ? Math.round((ratedCount / total) * 100) : 0;
+
     const keys: readonly RatingKey[] = ['5', '4', '3', '2', '1'];
     const segments: ProgressBarSegment[] = keys.map((key) => {
       const num = Number(key) as 1 | 2 | 3 | 4 | 5;
       return {
         key,
         pct: total > 0 ? (counts[num] / total) * 100 : 0,
-        color: RATING_META[key].colorVar,
+        color: RATING_META[key].progressColorVar,
         label: RATING_META[key].shortLabel,
       };
     });
@@ -1965,6 +1977,7 @@ export default function App() {
 
     return {
       segments,
+      ratedPct,
       valueText: summaryParts.join(' · ') || 'Keine Karten',
     };
   }, [studyDeck, srsMap, activeStudyDirection]);
@@ -4669,7 +4682,7 @@ export default function App() {
                     </div>
                   </div>
                   <ProgressBar
-                    value={activeDeckMasteryProgressPct}
+                    value={studyConfidenceProgress.ratedPct}
                     segments={studyConfidenceProgress.segments}
                     valueText={studyConfidenceProgress.valueText}
                     size="md"

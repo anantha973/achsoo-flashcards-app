@@ -1097,9 +1097,9 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
                 <div
                   style={{
                     width: `${Math.min(100, deck.progressPct)}%`,
-                    backgroundColor: swatch.fgVar,
+                    backgroundColor: swatch.barVar,
                   }}
-                  className="h-full transition-all duration-300"
+                  className="h-full rounded-full transition-all duration-300"
                 />
               )}
             </div>
@@ -1230,9 +1230,9 @@ export const DecksPageView: React.FC<DecksPageViewProps> = ({
                 <div
                   style={{
                     width: `${Math.min(100, folder.progressPct)}%`,
-                    backgroundColor: swatch.fgVar,
+                    backgroundColor: swatch.barVar,
                   }}
-                  className="h-full transition-all duration-300"
+                  className="h-full rounded-full transition-all duration-300"
                 />
               )}
             </div>

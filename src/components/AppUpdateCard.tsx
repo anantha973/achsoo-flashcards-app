@@ -342,7 +342,7 @@ export const AppUpdateCard: React.FC = () => {
           </div>
           <div className="h-2 w-full rounded-full surface-2 overflow-hidden">
             <div
-              className="h-full rounded-full bg-[var(--intent-primary)] transition-[width] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]"
+              className="h-full rounded-full bg-[var(--progress-bar-primary)] transition-[width] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]"
               style={{ width: `${Math.max(4, downloadProgress.progress)}%` }}
             />
           </div>

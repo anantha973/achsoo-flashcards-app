@@ -65,6 +65,7 @@ export interface TintSwatchConfig {
   fgVar: string;
   bgVar: string;
   borderVar: string;
+  barVar: string;
 }
 
 export const DECK_TINT_SWATCHES: TintSwatchConfig[] = [
@@ -74,6 +75,7 @@ export const DECK_TINT_SWATCHES: TintSwatchConfig[] = [
     fgVar: 'var(--intent-primary)',
     bgVar: 'var(--intent-primary-soft)',
     borderVar: 'var(--intent-primary-border)',
+    barVar: 'var(--progress-bar-primary)',
   },
   {
     id: 'terracotta',
@@ -81,6 +83,7 @@ export const DECK_TINT_SWATCHES: TintSwatchConfig[] = [
     fgVar: 'var(--accent-terracotta)',
     bgVar: 'var(--accent-terracotta-soft)',
     borderVar: 'var(--intent-danger-border)',
+    barVar: 'var(--progress-conf-2)',
   },
   {
     id: 'ochre',
@@ -88,6 +91,7 @@ export const DECK_TINT_SWATCHES: TintSwatchConfig[] = [
     fgVar: 'var(--intent-warning)',
     bgVar: 'var(--intent-warning-soft)',
     borderVar: 'var(--intent-warning-border)',
+    barVar: 'var(--progress-bar-warning)',
   },
   {
     id: 'blue',
@@ -95,6 +99,7 @@ export const DECK_TINT_SWATCHES: TintSwatchConfig[] = [
     fgVar: 'var(--accent-secondary)',
     bgVar: 'var(--accent-secondary-soft)',
     borderVar: 'var(--accent-secondary-border)',
+    barVar: 'var(--progress-bar-secondary)',
   },
   {
     id: 'plum',
@@ -102,6 +107,7 @@ export const DECK_TINT_SWATCHES: TintSwatchConfig[] = [
     fgVar: 'var(--intent-danger)',
     bgVar: 'var(--intent-danger-soft)',
     borderVar: 'var(--intent-danger-border)',
+    barVar: 'var(--progress-bar-danger)',
   },
   {
     id: 'stone',
@@ -109,6 +115,7 @@ export const DECK_TINT_SWATCHES: TintSwatchConfig[] = [
     fgVar: 'var(--fg-secondary)',
     bgVar: 'var(--surface-3)',
     borderVar: 'var(--border-strong)',
+    barVar: 'var(--fg-muted)',
   },
 ];
 

@@ -113,6 +113,18 @@
     --conf-5-solid-bg: #2E6650;
     --conf-5-solid-fg: #FFFEFC;
 
+    /* Progress Bar Fills (True Botanical Sage & Earthy Nordic Linen Yellow) */
+    --progress-bar-primary: #7FA48B;
+    --progress-bar-secondary: #5496AA;
+    --progress-bar-success: #7FA48B;
+    --progress-bar-warning: #E3BE62;
+    --progress-bar-danger: #CC665E;
+    --progress-conf-1: #CC665E;
+    --progress-conf-2: #D6765C;
+    --progress-conf-3: #E3BE62;
+    --progress-conf-4: #5496AA;
+    --progress-conf-5: #7FA48B;
+
     /* Segmented Sliding Pill Switcher */
     --seg-track: #F3EFEA;
     --seg-track-border: #E2DBD0;
@@ -239,6 +251,18 @@
     --conf-5-border: rgb(116 176 148 / 0.48);
     --conf-5-solid-bg: #327057;
     --conf-5-solid-fg: #FFFEFC;
+
+    /* Progress Bar Fills (Luminous Sage & Soft Nordic Linen Flax Yellow) */
+    --progress-bar-primary: #8AB599;
+    --progress-bar-secondary: #67B7CA;
+    --progress-bar-success: #8AB599;
+    --progress-bar-warning: #EACD78;
+    --progress-bar-danger: #E57D75;
+    --progress-conf-1: #E57D75;
+    --progress-conf-2: #E58A72;
+    --progress-conf-3: #EACD78;
+    --progress-conf-4: #67B7CA;
+    --progress-conf-5: #8AB599;
 
     /* Segmented Sliding Pill Switcher */
     --seg-track: #1C1815;
@@ -379,6 +403,18 @@
     --conf-5-solid-bg: #059669;
     --conf-5-solid-fg: #FFFFFF;
 
+    /* Progress Bar Fills */
+    --progress-bar-primary: #3B82F6;
+    --progress-bar-secondary: #38BDF8;
+    --progress-bar-success: #7FA48B;
+    --progress-bar-warning: #E3BE62;
+    --progress-bar-danger: #F43F5E;
+    --progress-conf-1: #F43F5E;
+    --progress-conf-2: #F97316;
+    --progress-conf-3: #E3BE62;
+    --progress-conf-4: #3B82F6;
+    --progress-conf-5: #7FA48B;
+
     /* Segmented Sliding Pill Switcher */
     --seg-track: #F1F5F9;
     --seg-track-border: #E2E8F0;
@@ -505,6 +541,18 @@
     --conf-5-border: rgb(52 211 153 / 0.45);
     --conf-5-solid-bg: #047857;
     --conf-5-solid-fg: #FFFFFF;
+
+    /* Progress Bar Fills */
+    --progress-bar-primary: #60A5FA;
+    --progress-bar-secondary: #38BDF8;
+    --progress-bar-success: #8AB599;
+    --progress-bar-warning: #EACD78;
+    --progress-bar-danger: #FB7185;
+    --progress-conf-1: #FB7185;
+    --progress-conf-2: #FB923C;
+    --progress-conf-3: #EACD78;
+    --progress-conf-4: #60A5FA;
+    --progress-conf-5: #8AB599;
 
     /* Segmented Sliding Pill Switcher */
     --seg-track: #18181E;
@@ -645,6 +693,18 @@
     --conf-5-solid-bg: #047857;
     --conf-5-solid-fg: #FFFFFF;
 
+    /* Progress Bar Fills */
+    --progress-bar-primary: #7FA48B;
+    --progress-bar-secondary: #5496AA;
+    --progress-bar-success: #7FA48B;
+    --progress-bar-warning: #E3BE62;
+    --progress-bar-danger: #CC665E;
+    --progress-conf-1: #CC665E;
+    --progress-conf-2: #D6765C;
+    --progress-conf-3: #E3BE62;
+    --progress-conf-4: #5496AA;
+    --progress-conf-5: #7FA48B;
+
     /* Segmented Sliding Pill Switcher */
     --seg-track: #F4F4F5;
     --seg-track-border: #E4E4E7;
@@ -770,6 +830,18 @@
     --conf-5-border: rgb(52 211 153 / 0.45);
     --conf-5-solid-bg: #047857;
     --conf-5-solid-fg: #FFFFFF;
+
+    /* Progress Bar Fills */
+    --progress-bar-primary: #8AB599;
+    --progress-bar-secondary: #67B7CA;
+    --progress-bar-success: #8AB599;
+    --progress-bar-warning: #EACD78;
+    --progress-bar-danger: #E57D75;
+    --progress-conf-1: #E57D75;
+    --progress-conf-2: #E58A72;
+    --progress-conf-3: #EACD78;
+    --progress-conf-4: #67B7CA;
+    --progress-conf-5: #8AB599;
 
     /* Segmented Sliding Pill Switcher */
     --seg-track: #18181B;
