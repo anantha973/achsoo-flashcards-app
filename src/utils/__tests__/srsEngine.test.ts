@@ -26,12 +26,14 @@ import {
 } from '../confidenceLoopEngine';
 import {
   appendRatingEvent,
+  clearLocalUserStudyData,
   computeNextSrsState,
   createDefaultSrsState,
   deriveStudyStatsFromLogs,
   formatConfidenceBadge,
   getCardSrsForDirection,
   getLocalDateString,
+  getStoredAuthUid,
   hydrateEngineFromIndexedDB,
   isCardLowConfidence,
   isCardNew,
@@ -44,6 +46,7 @@ import {
   replayCardStateFromLogs,
   resetAllSrsProgress,
   resetCardsSrsProgress,
+  setStoredAuthUid,
   undoLastReview,
 } from '../srsEngine';
 
@@ -843,5 +846,33 @@ describe('Achsoo 1-5 Confidence Virtual-Clock Loop & Review Log Engine', () => {
       'en-de'
     );
     expect(replayedEnDe).toEqual(liveEnDe);
+  });
+
+  it('clears user study data and auth uid cleanly on sign-out without touching unrelated keys', async () => {
+    const now = new Date('2026-11-20T12:00:00.000Z');
+    setStoredAuthUid('user-abc-123');
+    expect(getStoredAuthUid()).toBe('user-abc-123');
+
+    const initialMap = loadSrsMap(INITIAL_CARDS);
+    appendRatingEvent({
+      cardId: 'v-ankommen',
+      rating: '5',
+      deckId: 'verb',
+      srsMap: initialMap,
+      now,
+      durationMs: 2500,
+    });
+    expect(loadReviewLogs().length).toBeGreaterThan(0);
+
+    localStorage.setItem('wortschatz_theme_v2', '{"themeId":"nordic","colorMode":"dark"}');
+
+    await clearLocalUserStudyData();
+
+    expect(getStoredAuthUid()).toBeNull();
+    expect(loadReviewLogs()).toEqual([]);
+    expect(await idbGetAllReviewLogs()).toEqual([]);
+    expect(localStorage.getItem('wortschatz_theme_v2')).toBe(
+      '{"themeId":"nordic","colorMode":"dark"}'
+    );
   });
 });

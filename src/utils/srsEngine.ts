@@ -29,6 +29,7 @@ import {
   generateUuid,
   getOrCreateDeviceId,
   idbAppendReviewLogAndState,
+  idbClearAllUserData,
   idbClearReviewsForCards,
   idbGetAllCardStates,
   idbGetAllCustomCards,
@@ -55,6 +56,47 @@ const REVIEW_LOGS_STORAGE_KEY = 'wortschatz_review_logs_v2';
 const STATS_STORAGE_KEY = 'wortschatz_stats_v2';
 const THEME_STORAGE_KEY = 'wortschatz_theme_v1';
 const CUSTOM_CARDS_STORAGE_KEY = 'wortschatz_custom_cards_v1';
+const LAST_AUTH_UID_STORAGE_KEY = 'achsoo_last_auth_uid_v1';
+
+export function getStoredAuthUid(): string | null {
+  try {
+    if (typeof localStorage === 'undefined') return null;
+    const raw = localStorage.getItem(LAST_AUTH_UID_STORAGE_KEY);
+    return raw && raw.trim() ? raw.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+export function setStoredAuthUid(uid: string | null): void {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    if (uid && uid.trim()) {
+      localStorage.setItem(LAST_AUTH_UID_STORAGE_KEY, uid.trim());
+    } else {
+      localStorage.removeItem(LAST_AUTH_UID_STORAGE_KEY);
+    }
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+export async function clearLocalUserStudyData(): Promise<void> {
+  clearPendingMirrors();
+  memoryReviewLogs = [];
+  if (typeof localStorage !== 'undefined') {
+    try {
+      localStorage.removeItem(SRS_STORAGE_KEY);
+      localStorage.removeItem(REVIEW_LOGS_STORAGE_KEY);
+      localStorage.removeItem(STATS_STORAGE_KEY);
+      localStorage.removeItem(CUSTOM_CARDS_STORAGE_KEY);
+      localStorage.removeItem(LAST_AUTH_UID_STORAGE_KEY);
+    } catch {
+      // Ignore storage errors
+    }
+  }
+  await idbClearAllUserData();
+}
 
 // In-memory append-only review log cache (authoritative runtime log, backed by IndexedDB + localStorage mirror)
 let memoryReviewLogs: ReviewLogEntry[] | null = null;

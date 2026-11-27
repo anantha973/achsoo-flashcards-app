@@ -14,6 +14,7 @@ import {
   DeckFolder,
   archiveDummyDecksInWorkspace,
   canStepTrailPrev,
+  clearLocalWorkspaceData,
   clearTrailRatingForUndo,
   ensureBuiltInA2Workspace,
   hasMissingBuiltInA2Workspace,
@@ -398,6 +399,40 @@ describe('per-deck card studyDirection persistence and safety', () => {
     expect(migratedUser?.studyDirection).toBe('en-de');
     expect(migrated.deckOverrides.all?.studyDirection).toBe('en-de');
     expect(migrated.deckOverrides.verb?.studyDirection).toBe('en-de');
+  });
+
+  it('clears workspace localStorage keys safely on account switch or sign-out', () => {
+    const store = new Map<string, string>();
+    const prevLS = globalThis.localStorage;
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: (k: string) => store.get(k) ?? null,
+        setItem: (k: string, v: string) => store.set(k, String(v)),
+        removeItem: (k: string) => store.delete(k),
+        clear: () => store.clear(),
+      },
+    });
+    try {
+      store.set('wortschatz_folders_v1', '[]');
+      store.set('wortschatz_custom_decks_v1', '[]');
+      store.set('achsoo_last_study_session_v1', '{}');
+      store.set('wortschatz_theme_v2', '{"themeId":"nordic","colorMode":"light"}');
+
+      clearLocalWorkspaceData();
+
+      expect(store.has('wortschatz_folders_v1')).toBe(false);
+      expect(store.has('wortschatz_custom_decks_v1')).toBe(false);
+      expect(store.has('achsoo_last_study_session_v1')).toBe(false);
+      expect(store.get('wortschatz_theme_v2')).toBe(
+        '{"themeId":"nordic","colorMode":"light"}'
+      );
+    } finally {
+      Object.defineProperty(globalThis, 'localStorage', {
+        configurable: true,
+        value: prevLS,
+      });
+    }
   });
 });
 

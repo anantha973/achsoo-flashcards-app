@@ -1447,4 +1447,21 @@ export function clearTrailRatingForUndo(
   };
 }
 
+export function clearLocalWorkspaceData(): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.removeItem(FOLDERS_STORAGE_KEY);
+    localStorage.removeItem(CUSTOM_DECKS_STORAGE_KEY);
+    localStorage.removeItem(DECK_OVERRIDES_STORAGE_KEY);
+    localStorage.removeItem(DECK_SORT_STORAGE_KEY);
+    localStorage.removeItem(TEST_FOLDER_SEED_KEY);
+    localStorage.removeItem(ARCHIVE_DUMMY_MIGRATION_KEY);
+    localStorage.removeItem(LAST_STUDY_SESSION_KEY);
+    localStorage.removeItem(STUDY_DECK_POSITIONS_KEY);
+    localStorage.removeItem(STUDY_DECK_TRAILS_KEY);
+  } catch {
+    // Ignore storage errors
+  }
+}
+
 

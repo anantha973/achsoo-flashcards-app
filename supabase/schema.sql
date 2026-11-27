@@ -1,16 +1,16 @@
 -- ============================================================================
--- ACHSOO! GERMAN FLASHCARDS — SUPABASE POSTGRES SCHEMA & RLS SETUP
+-- ACHSOO! GERMAN FLASHCARDS — MULTI-USER SUPABASE SCHEMA & RLS SETUP
 -- Project: ibwxofzqeaavnsongqoa (https://ibwxofzqeaavnsongqoa.supabase.co)
--- Run this entire script once in:
--- Supabase Dashboard -> SQL Editor -> New Query -> Run
+-- Note: For an EXISTING database that already has 'default' single-user rows,
+-- run supabase/migrate_to_google_auth.sql instead so your 2-week streak is
+-- safely preserved and claimed into your Google account!
 -- ============================================================================
 
 -- 1. APPEND-ONLY REVIEW LOGS (Authoritative Event History)
--- Every rating ('again' | 'hard' | 'good' | 'easy'), 'undo', and 'reset' event
--- is stored with a unique UUID so multiple devices merge idempotently without ever losing stats history.
 CREATE TABLE IF NOT EXISTS public.achsoo_review_logs (
   id UUID PRIMARY KEY,
-  profile_key TEXT NOT NULL DEFAULT 'default',
+  user_id UUID NOT NULL DEFAULT auth.uid() REFERENCES auth.users(id) ON DELETE CASCADE,
+  profile_key TEXT NOT NULL DEFAULT (auth.uid()::text),
   event_type TEXT NOT NULL DEFAULT 'review' CHECK (event_type IN ('review', 'undo', 'reset')),
   undo_target_id UUID NULL,
   card_id TEXT NOT NULL,
@@ -31,20 +31,19 @@ CREATE TABLE IF NOT EXISTS public.achsoo_review_logs (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_achsoo_review_logs_profile_reviewed
-  ON public.achsoo_review_logs (profile_key, reviewed_at ASC);
+CREATE INDEX IF NOT EXISTS idx_achsoo_review_logs_user_reviewed
+  ON public.achsoo_review_logs (user_id, reviewed_at ASC);
 
-CREATE INDEX IF NOT EXISTS idx_achsoo_review_logs_profile_card
-  ON public.achsoo_review_logs (profile_key, card_id);
+CREATE INDEX IF NOT EXISTS idx_achsoo_review_logs_user_card
+  ON public.achsoo_review_logs (user_id, card_id);
 
-CREATE INDEX IF NOT EXISTS idx_achsoo_review_logs_profile_day
-  ON public.achsoo_review_logs (profile_key, study_day_key);
+CREATE INDEX IF NOT EXISTS idx_achsoo_review_logs_user_day
+  ON public.achsoo_review_logs (user_id, study_day_key);
 
 -- 2. MATERIALIZED CARD SRS STATES (Per-Card FSRS Progress Snapshot)
--- Stores current interval, ease, FSRS stability/difficulty, due date, and mastery
--- for every vocabulary card.
 CREATE TABLE IF NOT EXISTS public.achsoo_card_states (
-  profile_key TEXT NOT NULL DEFAULT 'default',
+  user_id UUID NOT NULL DEFAULT auth.uid() REFERENCES auth.users(id) ON DELETE CASCADE,
+  profile_key TEXT NOT NULL DEFAULT (auth.uid()::text),
   card_id TEXT NOT NULL,
   interval_minutes INTEGER NOT NULL DEFAULT 0,
   ease_factor DOUBLE PRECISION NOT NULL DEFAULT 2.5,
@@ -66,14 +65,13 @@ CREATE TABLE IF NOT EXISTS public.achsoo_card_states (
   PRIMARY KEY (profile_key, card_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_achsoo_card_states_profile_due
-  ON public.achsoo_card_states (profile_key, due_at ASC);
+CREATE INDEX IF NOT EXISTS idx_achsoo_card_states_user_due
+  ON public.achsoo_card_states (user_id, due_at ASC);
 
 -- 3. USER STATISTICS SNAPSHOT (Streaks, Daily Reviews, Mastery Velocity, Study Time)
--- Mirrors derived StudyStats so you can inspect your streak, retention %,
--- and daily history directly inside Supabase Table Editor.
 CREATE TABLE IF NOT EXISTS public.achsoo_user_stats (
-  profile_key TEXT PRIMARY KEY DEFAULT 'default',
+  user_id UUID NOT NULL DEFAULT auth.uid() REFERENCES auth.users(id) ON DELETE CASCADE,
+  profile_key TEXT PRIMARY KEY DEFAULT (auth.uid()::text),
   streak_days INTEGER NOT NULL DEFAULT 0,
   last_study_date TEXT NULL,
   total_reviews_today INTEGER NOT NULL DEFAULT 0,
@@ -86,10 +84,13 @@ CREATE TABLE IF NOT EXISTS public.achsoo_user_stats (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_achsoo_user_stats_user_id
+  ON public.achsoo_user_stats (user_id);
+
 -- 4. USER-CREATED CUSTOM VOCABULARY CARDS
--- Stores custom German flashcards added via the "+ New Card" modal.
 CREATE TABLE IF NOT EXISTS public.achsoo_custom_cards (
-  profile_key TEXT NOT NULL DEFAULT 'default',
+  user_id UUID NOT NULL DEFAULT auth.uid() REFERENCES auth.users(id) ON DELETE CASCADE,
+  profile_key TEXT NOT NULL DEFAULT (auth.uid()::text),
   card_id TEXT NOT NULL,
   lemma TEXT NOT NULL,
   category TEXT NOT NULL,
@@ -99,10 +100,13 @@ CREATE TABLE IF NOT EXISTS public.achsoo_custom_cards (
   PRIMARY KEY (profile_key, card_id)
 );
 
+CREATE INDEX IF NOT EXISTS idx_achsoo_custom_cards_user_id
+  ON public.achsoo_custom_cards (user_id);
+
 -- 5. USER WORKSPACE & CUSTOMIZATION (Folders, Custom Decks, Deck Overrides, Theme)
--- Stores custom folders, custom decks, deck icon/color overrides, sort order, and theme.
 CREATE TABLE IF NOT EXISTS public.achsoo_user_workspace (
-  profile_key TEXT PRIMARY KEY DEFAULT 'default',
+  user_id UUID NOT NULL DEFAULT auth.uid() REFERENCES auth.users(id) ON DELETE CASCADE,
+  profile_key TEXT PRIMARY KEY DEFAULT (auth.uid()::text),
   folders JSONB NOT NULL DEFAULT '[]'::jsonb,
   custom_decks JSONB NOT NULL DEFAULT '[]'::jsonb,
   deck_overrides JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -111,8 +115,11 @@ CREATE TABLE IF NOT EXISTS public.achsoo_user_workspace (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_achsoo_user_workspace_user_id
+  ON public.achsoo_user_workspace (user_id);
+
 -- ============================================================================
--- ROW LEVEL SECURITY (RLS) POLICIES FOR CLIENT PUBLISHABLE KEY SYNC
+-- STRICT PER-USER ROW LEVEL SECURITY (RLS) POLICIES
 -- ============================================================================
 ALTER TABLE public.achsoo_review_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.achsoo_card_states ENABLE ROW LEVEL SECURITY;
@@ -121,41 +128,46 @@ ALTER TABLE public.achsoo_custom_cards ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.achsoo_user_workspace ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Allow public sync on achsoo_review_logs" ON public.achsoo_review_logs;
-CREATE POLICY "Allow public sync on achsoo_review_logs"
+DROP POLICY IF EXISTS "Users manage own achsoo_review_logs" ON public.achsoo_review_logs;
+CREATE POLICY "Users manage own achsoo_review_logs"
   ON public.achsoo_review_logs
   FOR ALL
-  TO anon, authenticated
-  USING (true)
-  WITH CHECK (true);
+  TO authenticated
+  USING (auth.uid() = user_id AND profile_key = auth.uid()::text)
+  WITH CHECK (auth.uid() = user_id AND profile_key = auth.uid()::text);
 
 DROP POLICY IF EXISTS "Allow public sync on achsoo_card_states" ON public.achsoo_card_states;
-CREATE POLICY "Allow public sync on achsoo_card_states"
+DROP POLICY IF EXISTS "Users manage own achsoo_card_states" ON public.achsoo_card_states;
+CREATE POLICY "Users manage own achsoo_card_states"
   ON public.achsoo_card_states
   FOR ALL
-  TO anon, authenticated
-  USING (true)
-  WITH CHECK (true);
+  TO authenticated
+  USING (auth.uid() = user_id AND profile_key = auth.uid()::text)
+  WITH CHECK (auth.uid() = user_id AND profile_key = auth.uid()::text);
 
 DROP POLICY IF EXISTS "Allow public sync on achsoo_user_stats" ON public.achsoo_user_stats;
-CREATE POLICY "Allow public sync on achsoo_user_stats"
+DROP POLICY IF EXISTS "Users manage own achsoo_user_stats" ON public.achsoo_user_stats;
+CREATE POLICY "Users manage own achsoo_user_stats"
   ON public.achsoo_user_stats
   FOR ALL
-  TO anon, authenticated
-  USING (true)
-  WITH CHECK (true);
+  TO authenticated
+  USING (auth.uid() = user_id AND profile_key = auth.uid()::text)
+  WITH CHECK (auth.uid() = user_id AND profile_key = auth.uid()::text);
 
 DROP POLICY IF EXISTS "Allow public sync on achsoo_custom_cards" ON public.achsoo_custom_cards;
-CREATE POLICY "Allow public sync on achsoo_custom_cards"
+DROP POLICY IF EXISTS "Users manage own achsoo_custom_cards" ON public.achsoo_custom_cards;
+CREATE POLICY "Users manage own achsoo_custom_cards"
   ON public.achsoo_custom_cards
   FOR ALL
-  TO anon, authenticated
-  USING (true)
-  WITH CHECK (true);
+  TO authenticated
+  USING (auth.uid() = user_id AND profile_key = auth.uid()::text)
+  WITH CHECK (auth.uid() = user_id AND profile_key = auth.uid()::text);
 
 DROP POLICY IF EXISTS "Allow public sync on achsoo_user_workspace" ON public.achsoo_user_workspace;
-CREATE POLICY "Allow public sync on achsoo_user_workspace"
+DROP POLICY IF EXISTS "Users manage own achsoo_user_workspace" ON public.achsoo_user_workspace;
+CREATE POLICY "Users manage own achsoo_user_workspace"
   ON public.achsoo_user_workspace
   FOR ALL
-  TO anon, authenticated
-  USING (true)
-  WITH CHECK (true);
+  TO authenticated
+  USING (auth.uid() = user_id AND profile_key = auth.uid()::text)
+  WITH CHECK (auth.uid() = user_id AND profile_key = auth.uid()::text);

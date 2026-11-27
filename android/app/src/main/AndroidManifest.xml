@@ -21,7 +21,14 @@
             android:label="@string/title_activity_main"
             android:theme="@style/AppTheme.NoActionBarLaunch"
             android:launchMode="singleTask"
-            android:exported="true" />
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="com.achsoo.app" android:host="auth" />
+            </intent-filter>
+        </activity>
 
         <!-- 6 Dynamic Time-of-Day Launcher Aliases (Midday HI! DE enabled by default) -->
         <activity-alias

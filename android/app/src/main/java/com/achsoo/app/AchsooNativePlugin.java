@@ -1,7 +1,10 @@
 package com.achsoo.app;
 
 import android.Manifest;
+import android.app.Activity;
 import android.content.Context;
+import android.content.Intent;
+import android.net.Uri;
 import android.os.Build;
 import android.view.HapticFeedbackConstants;
 import android.view.View;
@@ -289,6 +292,31 @@ public class AchsooNativePlugin extends Plugin {
             call.resolve(ret);
         } catch (Exception e) {
             call.reject(e.getMessage() != null ? e.getMessage() : "Could not launch Android installer.");
+        }
+    }
+
+    @PluginMethod
+    public void openExternalAuthUrl(PluginCall call) {
+        String rawUrl = call.getString("url", "");
+        if (rawUrl == null || (!rawUrl.startsWith("https://") && !rawUrl.startsWith("http://"))) {
+            call.reject("Invalid authentication URL.");
+            return;
+        }
+        try {
+            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(rawUrl));
+            intent.addCategory(Intent.CATEGORY_BROWSABLE);
+            Activity activity = getActivity();
+            if (activity != null) {
+                activity.startActivity(intent);
+            } else {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                getContext().startActivity(intent);
+            }
+            JSObject ret = new JSObject();
+            ret.put("opened", true);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage() != null ? e.getMessage() : "Could not open system browser for Google sign-in.");
         }
     }
 }

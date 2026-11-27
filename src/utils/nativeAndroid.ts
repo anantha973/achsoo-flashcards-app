@@ -96,6 +96,7 @@ interface AchsooNativePluginInterface {
     expectedSha256?: string;
   }): Promise<{ status: InstallUpdateStatus }>;
   installReadyUpdate(): Promise<{ status: InstallUpdateStatus }>;
+  openExternalAuthUrl(options: { url: string }): Promise<{ opened: boolean }>;
   addListener(
     eventName: 'updateDownloadProgress',
     listenerFunc: (event: UpdateDownloadProgress) => void
@@ -577,6 +578,61 @@ export function registerAndroidBackButton(
     } else {
       void CapApp.minimizeApp().catch(() => {});
     }
+  })
+    .then((handle) => {
+      if (disposed) {
+        void handle.remove();
+      } else {
+        removeHandle = () => handle.remove();
+      }
+    })
+    .catch(() => {});
+
+  return () => {
+    disposed = true;
+    if (removeHandle) {
+      void removeHandle().catch(() => {});
+    }
+  };
+}
+
+export async function openExternalAuthBrowser(url: string): Promise<boolean> {
+  if (!isNativeAndroidApp()) return false;
+  try {
+    const res = await AchsooNative.openExternalAuthUrl({ url });
+    return Boolean(res?.opened);
+  } catch {
+    return false;
+  }
+}
+
+export function registerAndroidAuthCallback(
+  onCallbackUrl: (url: string) => void
+): () => void {
+  if (!isNativeAndroidApp()) {
+    return () => {};
+  }
+
+  let disposed = false;
+  let removeHandle: (() => Promise<void>) | null = null;
+  let lastHandledUrl = '';
+
+  const dispatchIfAuthCallback = (url: string | undefined | null) => {
+    if (!url || disposed) return;
+    if (!url.startsWith('com.achsoo.app://auth')) return;
+    if (url === lastHandledUrl) return;
+    lastHandledUrl = url;
+    onCallbackUrl(url);
+  };
+
+  void CapApp.getLaunchUrl()
+    .then((res) => {
+      dispatchIfAuthCallback(res?.url);
+    })
+    .catch(() => {});
+
+  void CapApp.addListener('appUrlOpen', (event) => {
+    dispatchIfAuthCallback(event?.url);
   })
     .then((handle) => {
       if (disposed) {

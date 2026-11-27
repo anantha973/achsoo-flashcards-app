@@ -1,4 +1,4 @@
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js';
 import {
   normalizeRatingKey,
   type CardSrsState,
@@ -14,32 +14,108 @@ import type {
   DeckMetaOverride,
   DeckSortOption,
 } from './decksManager';
+import { isNativeAndroidApp, openExternalAuthBrowser } from './nativeAndroid';
 import type { ThemePreferences } from './srsEngine';
 
 const DEFAULT_SUPABASE_URL = 'https://ibwxofzqeaavnsongqoa.supabase.co';
 const DEFAULT_SUPABASE_PUBLISHABLE_KEY =
   'sb_publishable_3523PY-AllmXkVP44STg_A_niYQEs9T';
-const DEFAULT_PROFILE_KEY = 'default';
 
-const env = (import.meta as unknown as { env?: Record<string, string | undefined> }).env || {};
+const env =
+  (import.meta as unknown as { env?: Record<string, string | undefined> })
+    .env || {};
 
-export const SUPABASE_URL =
-  (env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL).trim();
+export const SUPABASE_URL = (
+  env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL
+).trim();
 export const SUPABASE_PUBLISHABLE_KEY = (
   env.VITE_SUPABASE_PUBLISHABLE_KEY ||
   env.VITE_SUPABASE_ANON_KEY ||
   DEFAULT_SUPABASE_PUBLISHABLE_KEY
 ).trim();
-export const SUPABASE_PROFILE_KEY = (
-  env.VITE_SUPABASE_PROFILE_KEY || DEFAULT_PROFILE_KEY
-).trim();
+
+export const NATIVE_AUTH_REDIRECT_URL = 'com.achsoo.app://auth/callback';
+
+export interface AuthUserSummary {
+  id: string;
+  email: string | null;
+  fullName: string | null;
+  avatarUrl: string | null;
+}
+
+export type SyncStatusKind = 'local' | 'syncing' | 'synced' | 'offline' | 'error';
+
+export interface SyncStatusState {
+  status: SyncStatusKind;
+  lastSyncedAt: string | null;
+  errorMessage: string | null;
+}
+
+let syncStatusState: SyncStatusState = {
+  status: 'local',
+  lastSyncedAt: null,
+  errorMessage: null,
+};
+
+const syncStatusListeners = new Set<(state: SyncStatusState) => void>();
+
+function updateSyncStatus(next: Partial<SyncStatusState>): void {
+  syncStatusState = { ...syncStatusState, ...next };
+  for (const listener of syncStatusListeners) {
+    try {
+      listener(syncStatusState);
+    } catch {
+      // Ignore subscriber errors
+    }
+  }
+}
+
+export function getSyncStatusSnapshot(): SyncStatusState {
+  return syncStatusState;
+}
+
+export function subscribeToSyncStatus(
+  listener: (state: SyncStatusState) => void
+): () => void {
+  syncStatusListeners.add(listener);
+  listener(syncStatusState);
+  return () => {
+    syncStatusListeners.delete(listener);
+  };
+}
+
+function isOfflineBrowser(): boolean {
+  return typeof navigator !== 'undefined' && navigator.onLine === false;
+}
+
+function markSyncError(message?: string): void {
+  if (isOfflineBrowser()) {
+    updateSyncStatus({ status: 'offline', errorMessage: null });
+    return;
+  }
+  updateSyncStatus({
+    status: 'error',
+    errorMessage: message || 'Cloud sync paused',
+  });
+}
+
+function markSyncSuccess(): void {
+  updateSyncStatus({
+    status: 'synced',
+    lastSyncedAt: new Date().toISOString(),
+    errorMessage: null,
+  });
+}
 
 function isTestEnvironment(): boolean {
   try {
     if (typeof process !== 'undefined' && process.env?.VITEST) {
       return true;
     }
-    if ((import.meta as unknown as { env?: { MODE?: string } }).env?.MODE === 'test') {
+    if (
+      (import.meta as unknown as { env?: { MODE?: string } }).env?.MODE ===
+      'test'
+    ) {
       return true;
     }
   } catch {
@@ -56,16 +132,273 @@ export function getSupabaseClient(): SupabaseClient | null {
   if (!supabaseInstance) {
     supabaseInstance = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
       auth: {
-        persistSession: false,
-        autoRefreshToken: false,
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: !isNativeAndroidApp(),
+        flowType: 'pkce',
       },
     });
   }
   return supabaseInstance;
 }
 
+export function toAuthUserSummary(user: User | null | undefined): AuthUserSummary | null {
+  if (!user || !user.id) return null;
+  const meta = (user.user_metadata || {}) as Record<string, unknown>;
+  const rawName =
+    (typeof meta.full_name === 'string' && meta.full_name.trim()) ||
+    (typeof meta.name === 'string' && meta.name.trim()) ||
+    null;
+  const rawAvatar =
+    (typeof meta.avatar_url === 'string' && meta.avatar_url.trim()) ||
+    (typeof meta.picture === 'string' && meta.picture.trim()) ||
+    null;
+
+  return {
+    id: user.id,
+    email: user.email || null,
+    fullName: rawName,
+    avatarUrl: rawAvatar,
+  };
+}
+
+function cleanOAuthParamsFromWindowUrl(): void {
+  if (typeof window === 'undefined' || isNativeAndroidApp()) return;
+  try {
+    const url = new URL(window.location.href);
+    const hasAuthParam =
+      url.searchParams.has('code') ||
+      url.searchParams.has('state') ||
+      url.searchParams.has('error') ||
+      url.searchParams.has('error_description');
+    if (!hasAuthParam) return;
+    url.searchParams.delete('code');
+    url.searchParams.delete('state');
+    url.searchParams.delete('error');
+    url.searchParams.delete('error_code');
+    url.searchParams.delete('error_description');
+    const clean =
+      url.pathname +
+      (url.searchParams.toString() ? `?${url.searchParams.toString()}` : '') +
+      url.hash;
+    window.history.replaceState(window.history.state, document.title, clean);
+  } catch {
+    // Ignore history cleanup errors
+  }
+}
+
+export async function getInitialAuthUser(): Promise<{
+  user: AuthUserSummary | null;
+  authError: string | null;
+}> {
+  const client = getSupabaseClient();
+  if (!client) return { user: null, authError: null };
+
+  let urlError: string | null = null;
+  if (typeof window !== 'undefined' && !isNativeAndroidApp()) {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      urlError =
+        params.get('error_description') || params.get('error') || null;
+    } catch {
+      urlError = null;
+    }
+  }
+
+  try {
+    const { data, error } = await client.auth.getSession();
+    cleanOAuthParamsFromWindowUrl();
+    if (error) {
+      return { user: null, authError: error.message || urlError };
+    }
+    const user = toAuthUserSummary(data.session?.user);
+    if (user) {
+      updateSyncStatus({
+        status: isOfflineBrowser() ? 'offline' : 'synced',
+        errorMessage: null,
+      });
+    } else {
+      updateSyncStatus({ status: 'local', lastSyncedAt: null, errorMessage: null });
+    }
+    return { user, authError: urlError };
+  } catch (err) {
+    cleanOAuthParamsFromWindowUrl();
+    return {
+      user: null,
+      authError:
+        err instanceof Error ? err.message : urlError || 'Unable to check sign-in status.',
+    };
+  }
+}
+
+export function subscribeToAuthState(
+  onUserChange: (user: AuthUserSummary | null) => void
+): () => void {
+  const client = getSupabaseClient();
+  if (!client) return () => {};
+
+  const { data } = client.auth.onAuthStateChange((_event, session) => {
+    const nextUser = toAuthUserSummary(session?.user);
+    if (nextUser) {
+      cleanOAuthParamsFromWindowUrl();
+      updateSyncStatus({
+        status: isOfflineBrowser() ? 'offline' : 'syncing',
+        errorMessage: null,
+      });
+    } else {
+      updateSyncStatus({ status: 'local', lastSyncedAt: null, errorMessage: null });
+    }
+    onUserChange(nextUser);
+  });
+
+  return () => {
+    data.subscription.unsubscribe();
+  };
+}
+
+export async function signInWithGoogle(): Promise<{ error: string | null }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { error: 'Cloud sign-in is not configured in this environment.' };
+  }
+
+  if (isOfflineBrowser()) {
+    return { error: 'You appear to be offline. Connect to the internet to sign in with Google.' };
+  }
+
+  try {
+    if (isNativeAndroidApp()) {
+      const { data, error } = await client.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: NATIVE_AUTH_REDIRECT_URL,
+          skipBrowserRedirect: true,
+          queryParams: {
+            prompt: 'select_account',
+          },
+        },
+      });
+      if (error) {
+        return { error: error.message };
+      }
+      if (!data?.url) {
+        return { error: 'Could not start Google sign-in.' };
+      }
+      const opened = await openExternalAuthBrowser(data.url);
+      if (!opened) {
+        return { error: 'Unable to open browser for Google sign-in.' };
+      }
+      return { error: null };
+    }
+
+    const redirectTo =
+      typeof window !== 'undefined' ? window.location.origin : undefined;
+    const { error } = await client.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo,
+        queryParams: {
+          prompt: 'select_account',
+        },
+      },
+    });
+    if (error) {
+      return { error: error.message };
+    }
+    return { error: null };
+  } catch (err) {
+    return {
+      error:
+        err instanceof Error ? err.message : 'Unable to sign in with Google.',
+    };
+  }
+}
+
+export async function handleNativeAuthCallbackUrl(
+  rawUrl: string
+): Promise<{ ok: boolean; error: string | null }> {
+  const client = getSupabaseClient();
+  if (!client) return { ok: false, error: 'Supabase client unavailable.' };
+
+  try {
+    const parsed = new URL(rawUrl);
+    const oauthError =
+      parsed.searchParams.get('error_description') ||
+      parsed.searchParams.get('error');
+    if (oauthError) {
+      return { ok: false, error: oauthError };
+    }
+
+    const code = parsed.searchParams.get('code');
+    if (code) {
+      const { error } = await client.auth.exchangeCodeForSession(code);
+      if (error) {
+        return { ok: false, error: error.message };
+      }
+      return { ok: true, error: null };
+    }
+
+    if (parsed.hash && parsed.hash.length > 1) {
+      const hashParams = new URLSearchParams(parsed.hash.slice(1));
+      const accessToken = hashParams.get('access_token');
+      const refreshToken = hashParams.get('refresh_token');
+      if (accessToken && refreshToken) {
+        const { error } = await client.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        });
+        if (error) {
+          return { ok: false, error: error.message };
+        }
+        return { ok: true, error: null };
+      }
+    }
+
+    return { ok: false, error: 'No sign-in code returned from Google.' };
+  } catch (err) {
+    return {
+      ok: false,
+      error:
+        err instanceof Error ? err.message : 'Invalid sign-in callback URL.',
+    };
+  }
+}
+
+async function getActiveUserId(): Promise<string | null> {
+  const client = getSupabaseClient();
+  if (!client) return null;
+  try {
+    const { data, error } = await client.auth.getSession();
+    if (error || !data.session?.user?.id) return null;
+    return data.session.user.id;
+  } catch {
+    return null;
+  }
+}
+
+export async function signOutFromSupabase(): Promise<void> {
+  // Flush any queued workspace changes for the outgoing user before ending session
+  await flushWorkspaceSnapshot();
+  if (pendingWorkspaceTimer !== null && typeof window !== 'undefined') {
+    window.clearTimeout(pendingWorkspaceTimer);
+    pendingWorkspaceTimer = null;
+  }
+  pendingWorkspaceSnapshot = null;
+
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      await client.auth.signOut();
+    } catch {
+      // Proceed with local cleanup even if network signOut fails
+    }
+  }
+  updateSyncStatus({ status: 'local', lastSyncedAt: null, errorMessage: null });
+}
+
 interface ReviewLogRow {
   id: string;
+  user_id: string;
   profile_key: string;
   event_type: string;
   undo_target_id: string | null;
@@ -87,6 +420,7 @@ interface ReviewLogRow {
 }
 
 interface CardStateRow {
+  user_id: string;
   profile_key: string;
   card_id: string;
   interval_minutes: number;
@@ -116,16 +450,15 @@ const CONFIDENCE_TO_SQL_COLUMN: Record<RatingKey, LegacyRatingKey> = {
   '5': 'easy',
 };
 
-function toReviewLogRow(entry: ReviewLogEntry): ReviewLogRow {
-  // Store 'reset' inside payload.eventType while keeping column event_type within ('review', 'undo')
-  // and map column rating within ('again', 'hard', 'good', 'easy') for deployed Postgres CHECK constraints.
+function toReviewLogRow(entry: ReviewLogEntry, userId: string): ReviewLogRow {
   const columnEventType =
     entry.eventType === 'reset' ? 'undo' : (entry.eventType ?? 'review');
   const normRating = normalizeRatingKey(entry.rating) ?? '1';
   const columnRating = CONFIDENCE_TO_SQL_COLUMN[normRating];
   return {
     id: entry.id,
-    profile_key: SUPABASE_PROFILE_KEY,
+    user_id: userId,
+    profile_key: userId,
     event_type: columnEventType,
     undo_target_id: entry.eventType === 'reset' ? null : (entry.undoTargetId ?? null),
     card_id: entry.cardId,
@@ -180,9 +513,10 @@ function fromReviewLogRow(row: ReviewLogRow): ReviewLogEntry {
   };
 }
 
-function toCardStateRow(state: CardSrsState): CardStateRow {
+function toCardStateRow(state: CardSrsState, userId: string): CardStateRow {
   return {
-    profile_key: SUPABASE_PROFILE_KEY,
+    user_id: userId,
+    profile_key: userId,
     card_id: state.cardId,
     interval_minutes: Math.round(state.intervalMinutes || 0),
     ease_factor: Number(state.easeFactor || 2.5),
@@ -248,30 +582,43 @@ function fromCardStateRow(row: CardStateRow): CardSrsState {
   };
 }
 
+async function upsertStudyStatsForUser(
+  client: SupabaseClient,
+  userId: string,
+  stats: StudyStats
+): Promise<boolean> {
+  const { error } = await client.from('achsoo_user_stats').upsert(
+    {
+      user_id: userId,
+      profile_key: userId,
+      streak_days: stats.streakDays || 0,
+      last_study_date: stats.lastStudyDate || null,
+      total_reviews_today: stats.totalReviewsToday || 0,
+      today_date: stats.todayDate,
+      retention_pct: stats.retentionPct ?? 100,
+      time_studied_ms_today: Math.round(stats.timeStudiedMsToday || 0),
+      total_time_studied_ms: Math.round(stats.totalTimeStudiedMs || 0),
+      daily_mastered_history: stats.dailyMasteredHistory || {},
+      daily_reviews_history: stats.dailyReviewsHistory || {},
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'profile_key' }
+  );
+  return !error;
+}
+
 export async function syncStudyStatsToSupabase(
   stats: StudyStats
 ): Promise<void> {
   const client = getSupabaseClient();
-  if (!client) return;
+  const userId = await getActiveUserId();
+  if (!client || !userId) return;
   try {
-    await client.from('achsoo_user_stats').upsert(
-      {
-        profile_key: SUPABASE_PROFILE_KEY,
-        streak_days: stats.streakDays || 0,
-        last_study_date: stats.lastStudyDate || null,
-        total_reviews_today: stats.totalReviewsToday || 0,
-        today_date: stats.todayDate,
-        retention_pct: stats.retentionPct ?? 100,
-        time_studied_ms_today: Math.round(stats.timeStudiedMsToday || 0),
-        total_time_studied_ms: Math.round(stats.totalTimeStudiedMs || 0),
-        daily_mastered_history: stats.dailyMasteredHistory || {},
-        daily_reviews_history: stats.dailyReviewsHistory || {},
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'profile_key' }
-    );
+    const ok = await upsertStudyStatsForUser(client, userId, stats);
+    if (ok) markSyncSuccess();
+    else markSyncError();
   } catch {
-    // Offline or table not created yet — local IndexedDB keeps everything safe
+    markSyncError();
   }
 }
 
@@ -281,21 +628,28 @@ export async function syncReviewEventToSupabase(
   stats: StudyStats
 ): Promise<void> {
   const client = getSupabaseClient();
-  if (!client) return;
+  const userId = await getActiveUserId();
+  if (!client || !userId) return;
+  updateSyncStatus({ status: 'syncing', errorMessage: null });
   try {
-    await Promise.all([
+    const [logRes, stateRes, statsOk] = await Promise.all([
       client
         .from('achsoo_review_logs')
-        .upsert(toReviewLogRow(logEntry), { onConflict: 'id' }),
+        .upsert(toReviewLogRow(logEntry, userId), { onConflict: 'id' }),
       client
         .from('achsoo_card_states')
-        .upsert(toCardStateRow(nextState), {
+        .upsert(toCardStateRow(nextState, userId), {
           onConflict: 'profile_key,card_id',
         }),
-      syncStudyStatsToSupabase(stats),
+      upsertStudyStatsForUser(client, userId, stats),
     ]);
+    if (logRes.error || stateRes.error || !statsOk) {
+      markSyncError();
+    } else {
+      markSyncSuccess();
+    }
   } catch {
-    // Offline fallback handled by bulk sync on next connection
+    markSyncError();
   }
 }
 
@@ -305,38 +659,48 @@ export async function syncBatchReviewEventsToSupabase(
   stats: StudyStats
 ): Promise<void> {
   const client = getSupabaseClient();
-  if (!client) return;
+  const userId = await getActiveUserId();
+  if (!client || !userId) return;
+  updateSyncStatus({ status: 'syncing', errorMessage: null });
   try {
-    const ops: PromiseLike<unknown>[] = [syncStudyStatsToSupabase(stats)];
-    if (logEntries.length > 0) {
-      ops.push(
-        client
-          .from('achsoo_review_logs')
-          .upsert(logEntries.map(toReviewLogRow), { onConflict: 'id' })
-      );
+    const [statsOk, logsRes, statesRes] = await Promise.all([
+      upsertStudyStatsForUser(client, userId, stats),
+      logEntries.length > 0
+        ? client
+            .from('achsoo_review_logs')
+            .upsert(
+              logEntries.map((entry) => toReviewLogRow(entry, userId)),
+              { onConflict: 'id' }
+            )
+        : Promise.resolve({ error: null }),
+      nextStates.length > 0
+        ? client
+            .from('achsoo_card_states')
+            .upsert(
+              nextStates.map((st) => toCardStateRow(st, userId)),
+              { onConflict: 'profile_key,card_id' }
+            )
+        : Promise.resolve({ error: null }),
+    ]);
+    if (!statsOk || logsRes.error || statesRes.error) {
+      markSyncError();
+    } else {
+      markSyncSuccess();
     }
-    if (nextStates.length > 0) {
-      ops.push(
-        client
-          .from('achsoo_card_states')
-          .upsert(nextStates.map(toCardStateRow), {
-            onConflict: 'profile_key,card_id',
-          })
-      );
-    }
-    await Promise.all(ops);
   } catch {
-    // Offline fallback handled by bulk sync on next connection
+    markSyncError();
   }
 }
 
 export async function syncCustomCardToSupabase(card: VocabCard): Promise<void> {
   const client = getSupabaseClient();
-  if (!client) return;
+  const userId = await getActiveUserId();
+  if (!client || !userId) return;
   try {
-    await client.from('achsoo_custom_cards').upsert(
+    const { error } = await client.from('achsoo_custom_cards').upsert(
       {
-        profile_key: SUPABASE_PROFILE_KEY,
+        user_id: userId,
+        profile_key: userId,
         card_id: card.id,
         lemma: card.lemma,
         category: card.category,
@@ -346,8 +710,10 @@ export async function syncCustomCardToSupabase(card: VocabCard): Promise<void> {
       },
       { onConflict: 'profile_key,card_id' }
     );
+    if (error) markSyncError();
+    else markSyncSuccess();
   } catch {
-    // Ignore when offline
+    markSyncError();
   }
 }
 
@@ -373,10 +739,12 @@ async function flushWorkspaceSnapshot(): Promise<void> {
   if (!snapshot) return;
 
   const client = getSupabaseClient();
-  if (!client) return;
+  const userId = await getActiveUserId();
+  if (!client || !userId) return;
   try {
     const payload: Record<string, unknown> = {
-      profile_key: SUPABASE_PROFILE_KEY,
+      user_id: userId,
+      profile_key: userId,
       updated_at: new Date().toISOString(),
     };
     if (snapshot.folders !== undefined) payload.folders = snapshot.folders;
@@ -388,11 +756,13 @@ async function flushWorkspaceSnapshot(): Promise<void> {
     if (snapshot.themePrefs !== undefined)
       payload.theme_prefs = snapshot.themePrefs;
 
-    await client
+    const { error } = await client
       .from('achsoo_user_workspace')
       .upsert(payload, { onConflict: 'profile_key' });
+    if (error) markSyncError();
+    else markSyncSuccess();
   } catch {
-    // Ignore when offline
+    markSyncError();
   }
 }
 
@@ -415,7 +785,8 @@ export async function syncWorkspaceToSupabase(
   snapshot: RemoteWorkspaceSnapshot
 ): Promise<void> {
   const client = getSupabaseClient();
-  if (!client) return;
+  const userId = await getActiveUserId();
+  if (!client || !userId) return;
 
   pendingWorkspaceSnapshot = {
     ...(pendingWorkspaceSnapshot || {}),
@@ -442,30 +813,31 @@ export async function deleteReviewsFromSupabase(
   updatedStats?: StudyStats
 ): Promise<void> {
   const client = getSupabaseClient();
-  if (!client) return;
+  const userId = await getActiveUserId();
+  if (!client || !userId) return;
   try {
     if (!cardIds) {
       await Promise.all([
         client
           .from('achsoo_review_logs')
           .delete()
-          .eq('profile_key', SUPABASE_PROFILE_KEY),
+          .eq('user_id', userId),
         client
           .from('achsoo_card_states')
           .delete()
-          .eq('profile_key', SUPABASE_PROFILE_KEY),
+          .eq('user_id', userId),
       ]);
     } else if (cardIds.length > 0) {
       await Promise.all([
         client
           .from('achsoo_review_logs')
           .delete()
-          .eq('profile_key', SUPABASE_PROFILE_KEY)
+          .eq('user_id', userId)
           .in('card_id', cardIds),
         client
           .from('achsoo_card_states')
           .delete()
-          .eq('profile_key', SUPABASE_PROFILE_KEY)
+          .eq('user_id', userId)
           .in('card_id', cardIds),
       ]);
     }
@@ -473,7 +845,7 @@ export async function deleteReviewsFromSupabase(
       await syncStudyStatsToSupabase(updatedStats);
     }
   } catch {
-    // Ignore when offline
+    markSyncError();
   }
 }
 
@@ -489,7 +861,10 @@ export async function pullAndSyncSupabaseState(params: {
   remoteWorkspace: RemoteWorkspaceSnapshot | null;
 } | null> {
   const client = getSupabaseClient();
-  if (!client) return null;
+  const userId = await getActiveUserId();
+  if (!client || !userId) return null;
+
+  updateSyncStatus({ status: 'syncing', errorMessage: null });
 
   try {
     const [logsRes, statesRes, customCardsRes, workspaceRes] =
@@ -497,25 +872,25 @@ export async function pullAndSyncSupabaseState(params: {
         client
           .from('achsoo_review_logs')
           .select('*')
-          .eq('profile_key', SUPABASE_PROFILE_KEY)
+          .eq('user_id', userId)
           .order('reviewed_at', { ascending: true }),
         client
           .from('achsoo_card_states')
           .select('*')
-          .eq('profile_key', SUPABASE_PROFILE_KEY),
+          .eq('user_id', userId),
         client
           .from('achsoo_custom_cards')
           .select('*')
-          .eq('profile_key', SUPABASE_PROFILE_KEY),
+          .eq('user_id', userId),
         client
           .from('achsoo_user_workspace')
           .select('*')
-          .eq('profile_key', SUPABASE_PROFILE_KEY)
+          .eq('user_id', userId)
           .maybeSingle(),
       ]);
 
-    // If tables aren't created in Supabase yet, return null gracefully
     if (logsRes.error && statesRes.error) {
+      markSyncError();
       return null;
     }
 
@@ -565,11 +940,9 @@ export async function pullAndSyncSupabaseState(params: {
         themePrefs: w.theme_prefs,
       };
     } else if (params.localWorkspace) {
-      // Seed initial workspace row if none exists remotely yet
       void syncWorkspaceToSupabase(params.localWorkspace);
     }
 
-    // Push any local review logs that do not exist in Supabase yet
     const remoteLogIds = new Set(remoteLogs.map((l) => l.id));
     const unsyncedLocalLogs = params.localLogs.filter(
       (l) => !remoteLogIds.has(l.id)
@@ -577,10 +950,12 @@ export async function pullAndSyncSupabaseState(params: {
     if (unsyncedLocalLogs.length > 0) {
       void client
         .from('achsoo_review_logs')
-        .upsert(unsyncedLocalLogs.map(toReviewLogRow), { onConflict: 'id' });
+        .upsert(
+          unsyncedLocalLogs.map((entry) => toReviewLogRow(entry, userId)),
+          { onConflict: 'id' }
+        );
     }
 
-    // Push any local custom cards not yet in Supabase
     const remoteCustomIds = new Set(remoteCustomCards.map((c) => c.id));
     const unsyncedCustomCards = params.localCustomCards.filter(
       (c) => !remoteCustomIds.has(c.id)
@@ -588,7 +963,8 @@ export async function pullAndSyncSupabaseState(params: {
     if (unsyncedCustomCards.length > 0) {
       void client.from('achsoo_custom_cards').upsert(
         unsyncedCustomCards.map((card) => ({
-          profile_key: SUPABASE_PROFILE_KEY,
+          user_id: userId,
+          profile_key: userId,
           card_id: card.id,
           lemma: card.lemma,
           category: card.category,
@@ -600,6 +976,7 @@ export async function pullAndSyncSupabaseState(params: {
       );
     }
 
+    markSyncSuccess();
     return {
       remoteLogs,
       remoteStates,
@@ -607,6 +984,7 @@ export async function pullAndSyncSupabaseState(params: {
       remoteWorkspace,
     };
   } catch {
+    markSyncError();
     return null;
   }
 }
@@ -616,23 +994,29 @@ export async function pushAllStatesAndStatsToSupabase(
   stats: StudyStats
 ): Promise<void> {
   const client = getSupabaseClient();
-  if (!client) return;
+  const userId = await getActiveUserId();
+  if (!client || !userId) return;
   try {
     const activeStates = Object.values(srsMap).filter(
       (st) => st && (st.reviewCount > 0 || st.lastReviewedAt !== null)
     );
-    const promises: PromiseLike<unknown>[] = [syncStudyStatsToSupabase(stats)];
-    if (activeStates.length > 0) {
-      promises.push(
-        client
-          .from('achsoo_card_states')
-          .upsert(activeStates.map(toCardStateRow), {
-            onConflict: 'profile_key,card_id',
-          })
-      );
+    const [statsOk, statesRes] = await Promise.all([
+      upsertStudyStatsForUser(client, userId, stats),
+      activeStates.length > 0
+        ? client
+            .from('achsoo_card_states')
+            .upsert(
+              activeStates.map((st) => toCardStateRow(st, userId)),
+              { onConflict: 'profile_key,card_id' }
+            )
+        : Promise.resolve({ error: null }),
+    ]);
+    if (!statsOk || statesRes.error) {
+      markSyncError();
+    } else {
+      markSyncSuccess();
     }
-    await Promise.all(promises);
   } catch {
-    // Ignore when offline
+    markSyncError();
   }
 }

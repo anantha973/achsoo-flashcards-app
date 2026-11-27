@@ -41,7 +41,6 @@ import {
   TrendingUp,
   Trophy,
   Volume2,
-  X,
 } from 'lucide-react';
 import {
   DeckSubScreen,
@@ -94,6 +93,7 @@ import {
   loadLastStudyTimestamp,
   loadReminderPreferences,
   recordLastStudyTimestamp,
+  registerAndroidAuthCallback,
   registerAndroidBackButton,
   saveDynamicIconAutoPreference,
   saveReminderPreferences,
@@ -102,6 +102,9 @@ import {
 } from './utils/nativeAndroid';
 import { AndroidExperienceCard } from './components/AndroidExperienceCard';
 import { AppUpdateCard } from './components/AppUpdateCard';
+import { AccountControl } from './components/AccountControl';
+import { AuthGateScreen } from './components/AuthGateScreen';
+import { AdminCardNoticeModal } from './components/AdminCardNoticeModal';
 
 const AnatomyDrawer = React.lazy(() =>
   import('./components/AnatomyDrawer').then((m) => ({
@@ -123,7 +126,6 @@ const MasteredArchetypeDonut = React.lazy(() =>
     default: m.MasteredArchetypeDonut,
   }))
 );
-import { useSheetSwipeDismiss } from './hooks/useMobileGestures';
 import {
   CustomDeckRecord,
   DeckFolder,
@@ -134,6 +136,7 @@ import {
   StudyDeckTrail,
   archiveDummyDecksInWorkspace,
   canStepTrailPrev,
+  clearLocalWorkspaceData,
   clearStudyDeckTrail,
   clearTrailRatingForUndo,
   ensureBuiltInA2Workspace,
@@ -156,7 +159,18 @@ import {
   stepTrailPrev,
   syncTrailWithDeck,
 } from './utils/decksManager';
-import { syncWorkspaceToSupabase } from './utils/supabaseSync';
+import {
+  type AuthUserSummary,
+  type SyncStatusState,
+  getInitialAuthUser,
+  getSyncStatusSnapshot,
+  handleNativeAuthCallbackUrl,
+  signInWithGoogle,
+  signOutFromSupabase,
+  subscribeToAuthState,
+  subscribeToSyncStatus,
+  syncWorkspaceToSupabase,
+} from './utils/supabaseSync';
 import {
   CardCategory,
   CardSrsState,
@@ -176,11 +190,13 @@ import {
   ThemePreferences,
   appendRatingEvent,
   applyThemePreferencesToDom,
+  clearLocalUserStudyData,
   createDefaultSrsState,
   formatConfidenceBadge,
   getCardSrsForDirection,
   getDeckSessionKey,
   getLast7DaysVelocityData,
+  getStoredAuthUid,
   hydrateEngineFromIndexedDB,
   isCardLowConfidence,
   isCardNew,
@@ -190,8 +206,8 @@ import {
   loadThemePreferences,
   parseSrsStateKey,
   resetCardsSrsProgress,
-  saveCustomCard,
   saveSrsMap,
+  setStoredAuthUid,
   speakGermanText,
   triggerHapticFeedback,
   undoLastReview,
@@ -478,6 +494,17 @@ function shuffleCardIds(
 }
 
 export default function App() {
+  // Google Authentication & Cloud Sync state
+  const [authReady, setAuthReady] = useState<boolean>(false);
+  const [authUser, setAuthUser] = useState<AuthUserSummary | null>(null);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [syncStatus, setSyncStatus] = useState<SyncStatusState>(() =>
+    getSyncStatusSnapshot()
+  );
+  const [isAccountPopoverOpen, setIsAccountPopoverOpen] =
+    useState<boolean>(false);
+  const manualSyncRef = useRef<(() => Promise<void>) | null>(null);
+
   // Two-Dimensional Theme Engine: themeId ('nordic' | 'hero' | 'coss') × colorMode ('light' | 'dark')
   const [themePrefs, setThemePrefs] = useState<ThemePreferences>(() =>
     loadThemePreferences()
@@ -688,126 +715,181 @@ export default function App() {
 
   useEffect(() => {
     let active = true;
+
+    void getInitialAuthUser().then(({ user, authError: initialErr }) => {
+      if (!active) return;
+      setAuthUser(user);
+      if (initialErr) setAuthError(initialErr);
+      setAuthReady(true);
+    });
+
+    const unsubAuth = subscribeToAuthState((nextUser) => {
+      if (!active) return;
+      setAuthUser(nextUser);
+      if (nextUser) setAuthError(null);
+      setAuthReady(true);
+    });
+
+    const unsubSync = subscribeToSyncStatus((nextStatus) => {
+      if (!active) return;
+      setSyncStatus(nextStatus);
+    });
+
+    const unsubAndroidAuth = registerAndroidAuthCallback((callbackUrl) => {
+      void handleNativeAuthCallbackUrl(callbackUrl).then((res) => {
+        if (!active) return;
+        if (!res.ok && res.error) {
+          setAuthError(res.error);
+        }
+      });
+    });
+
+    return () => {
+      active = false;
+      unsubAuth();
+      unsubSync();
+      unsubAndroidAuth();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!authReady || !authUser?.id) {
+      manualSyncRef.current = null;
+      return;
+    }
+
+    let active = true;
     let hasCompletedFirstSync = false;
 
-    const runSync = () => {
+    const runSync = async () => {
+      const prevUid = getStoredAuthUid();
+      if (prevUid && prevUid !== authUser.id) {
+        await clearLocalUserStudyData();
+        clearLocalWorkspaceData();
+      }
+      setStoredAuthUid(authUser.id);
+
       const seed = hasCompletedFirstSync
         ? ensureInitialTestFolderSeed()
         : initialBoot.seed;
       const currentCardsSnapshot = hasCompletedFirstSync
         ? latestCardsRef.current
-        : initialBoot.cards;
+        : loadAllCards();
       hasCompletedFirstSync = true;
 
-      hydrateEngineFromIndexedDB(currentCardsSnapshot, {
-        folders: seed.folders,
-        customDecks: seed.customDecks,
-        deckOverrides: seed.deckOverrides,
-        themePrefs: loadThemePreferences(),
-      })
-        .then((hydrated) => {
-          if (!active) return;
-          setCards(hydrated.cards);
-          setSrsMap(hydrated.srsMap);
-          setStats(hydrated.stats);
-          if (hydrated.remoteWorkspace) {
-            const rw = hydrated.remoteWorkspace;
-            const shouldMigrateRemote = needsRemoteArchiveDummyMigration({
-              folders: rw.folders,
-              deckOverrides: rw.deckOverrides,
-            });
+      try {
+        const hydrated = await hydrateEngineFromIndexedDB(currentCardsSnapshot, {
+          folders: seed.folders,
+          customDecks: seed.customDecks,
+          deckOverrides: seed.deckOverrides,
+          themePrefs: loadThemePreferences(),
+        });
+        if (!active) return;
+        setCards(hydrated.cards);
+        setSrsMap(hydrated.srsMap);
+        setStats(hydrated.stats);
+        if (hydrated.remoteWorkspace) {
+          const rw = hydrated.remoteWorkspace;
+          const shouldMigrateRemote = needsRemoteArchiveDummyMigration({
+            folders: rw.folders,
+            deckOverrides: rw.deckOverrides,
+          });
 
-            let nextFolders: DeckFolder[];
-            let nextCustomDecks: CustomDeckRecord[];
-            let nextOverrides: Record<string, DeckMetaOverride>;
+          let nextFolders: DeckFolder[];
+          let nextCustomDecks: CustomDeckRecord[];
+          let nextOverrides: Record<string, DeckMetaOverride>;
 
-            if (shouldMigrateRemote) {
-              const migrated = archiveDummyDecksInWorkspace({
-                folders:
-                  Array.isArray(rw.folders) && rw.folders.length > 0
-                    ? rw.folders
-                    : seed.folders,
-                customDecks:
-                  Array.isArray(rw.customDecks) && rw.customDecks.length > 0
-                    ? rw.customDecks
-                    : seed.customDecks,
-                deckOverrides:
-                  rw.deckOverrides && Object.keys(rw.deckOverrides).length > 0
-                    ? rw.deckOverrides
-                    : seed.deckOverrides,
-              });
-              nextFolders = migrated.folders;
-              nextCustomDecks = migrated.customDecks;
-              nextOverrides = migrated.deckOverrides;
-            } else {
-              const baseFolders =
+          if (shouldMigrateRemote) {
+            const migrated = archiveDummyDecksInWorkspace({
+              folders:
                 Array.isArray(rw.folders) && rw.folders.length > 0
                   ? rw.folders
-                  : seed.folders;
-              const baseCustomDecks =
+                  : seed.folders,
+              customDecks:
                 Array.isArray(rw.customDecks) && rw.customDecks.length > 0
                   ? rw.customDecks
-                  : seed.customDecks;
-              nextOverrides =
+                  : seed.customDecks,
+              deckOverrides:
                 rw.deckOverrides && Object.keys(rw.deckOverrides).length > 0
                   ? rw.deckOverrides
-                  : seed.deckOverrides;
+                  : seed.deckOverrides,
+            });
+            nextFolders = migrated.folders;
+            nextCustomDecks = migrated.customDecks;
+            nextOverrides = migrated.deckOverrides;
+          } else {
+            const baseFolders =
+              Array.isArray(rw.folders) && rw.folders.length > 0
+                ? rw.folders
+                : seed.folders;
+            const baseCustomDecks =
+              Array.isArray(rw.customDecks) && rw.customDecks.length > 0
+                ? rw.customDecks
+                : seed.customDecks;
+            nextOverrides =
+              rw.deckOverrides && Object.keys(rw.deckOverrides).length > 0
+                ? rw.deckOverrides
+                : seed.deckOverrides;
 
-              const ensured = ensureBuiltInA2Workspace({
-                folders: baseFolders,
-                customDecks: baseCustomDecks,
-              });
-              nextFolders = ensured.folders;
-              nextCustomDecks = ensured.customDecks;
-            }
-
-            setFolders(nextFolders);
-            saveFolders(nextFolders, true);
-            setCustomDecks(nextCustomDecks);
-            saveCustomDecks(nextCustomDecks, true);
-            if (Object.keys(nextOverrides).length > 0) {
-              setDeckOverrides(nextOverrides);
-              saveDeckOverrides(nextOverrides, true);
-            }
-
-            const remoteNeedsHeal =
-              shouldMigrateRemote ||
-              !Array.isArray(rw.folders) ||
-              rw.folders.length === 0 ||
-              !Array.isArray(rw.customDecks) ||
-              rw.customDecks.length === 0 ||
-              hasMissingBuiltInA2Workspace({
-                folders: rw.folders,
-                customDecks: rw.customDecks,
-              });
-
-            if (remoteNeedsHeal) {
-              void syncWorkspaceToSupabase({
-                folders: nextFolders,
-                customDecks: nextCustomDecks,
-                deckOverrides: nextOverrides,
-              });
-            }
-
-            if (
-              rw.themePrefs &&
-              rw.themePrefs.themeId &&
-              rw.themePrefs.colorMode
-            ) {
-              setThemePrefs(rw.themePrefs);
-              applyThemePreferencesToDom(rw.themePrefs, false);
-            }
+            const ensured = ensureBuiltInA2Workspace({
+              folders: baseFolders,
+              customDecks: baseCustomDecks,
+            });
+            nextFolders = ensured.folders;
+            nextCustomDecks = ensured.customDecks;
           }
-        })
-        .catch(() => {});
+
+          setFolders(nextFolders);
+          saveFolders(nextFolders, true);
+          setCustomDecks(nextCustomDecks);
+          saveCustomDecks(nextCustomDecks, true);
+          if (Object.keys(nextOverrides).length > 0) {
+            setDeckOverrides(nextOverrides);
+            saveDeckOverrides(nextOverrides, true);
+          }
+
+          const remoteNeedsHeal =
+            shouldMigrateRemote ||
+            !Array.isArray(rw.folders) ||
+            rw.folders.length === 0 ||
+            !Array.isArray(rw.customDecks) ||
+            rw.customDecks.length === 0 ||
+            hasMissingBuiltInA2Workspace({
+              folders: rw.folders,
+              customDecks: rw.customDecks,
+            });
+
+          if (remoteNeedsHeal) {
+            void syncWorkspaceToSupabase({
+              folders: nextFolders,
+              customDecks: nextCustomDecks,
+              deckOverrides: nextOverrides,
+            });
+          }
+
+          if (
+            rw.themePrefs &&
+            rw.themePrefs.themeId &&
+            rw.themePrefs.colorMode
+          ) {
+            setThemePrefs(rw.themePrefs);
+            applyThemePreferencesToDom(rw.themePrefs, false);
+          }
+        }
+      } catch {
+        // Offline fallback handled by IndexedDB
+      }
     };
 
-    runSync();
+    manualSyncRef.current = runSync;
+    void runSync();
 
-    const handleOnline = () => runSync();
+    const handleOnline = () => {
+      void runSync();
+    };
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') {
-        runSync();
+        void runSync();
       }
     };
 
@@ -815,10 +897,11 @@ export default function App() {
     document.addEventListener('visibilitychange', handleVisibility);
     return () => {
       active = false;
+      manualSyncRef.current = null;
       window.removeEventListener('online', handleOnline);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
-  }, []);
+  }, [authReady, authUser?.id, initialBoot.seed]);
 
   // Navigation, Directional Page Transitions, Filtering & Distraction-Free Zen Session Mode
   const [activeView, setActiveView] = useState<ActiveView>('decks');
@@ -1264,28 +1347,8 @@ export default function App() {
   // Layer 2: Expandable "Anatomie [D]" Drawer state
   const [detailCard, setDetailCard] = useState<VocabCard | null>(null);
 
-  // Add Custom Card Modal state (Supports all 6 archetypes)
+  // Admin Request Notice Modal state (opened via "+ New card")
   const [isAddModalOpen, setIsAddModalOpen] = useState<boolean>(false);
-  const addModalScrollRef = useRef<HTMLDivElement | null>(null);
-  const [newLemma, setNewLemma] = useState<string>('');
-  const [newTranslation, setNewTranslation] = useState<string>('');
-  const [newCategory, setNewCategory] = useState<CardCategory>('noun');
-  const [newCefr, setNewCefr] = useState<CefrLevel>('A1');
-  const [newGender, setNewGender] = useState<NounGender>('der');
-  const [newPlural, setNewPlural] = useState<string>('');
-  const [newPraesens, setNewPraesens] = useState<string>('');
-  const [newPraeteritum, setNewPraeteritum] = useState<string>('');
-  const [newPerfekt, setNewPerfekt] = useState<string>('');
-  const [newAux, setNewAux] = useState<'haben' | 'sein'>('haben');
-  const [newPrepCase, setNewPrepCase] = useState<string>('Dativ');
-  const [newAdjKomp, setNewAdjKomp] = useState<string>('');
-  const [newAdjSup, setNewAdjSup] = useState<string>('');
-  const [newConnRule, setNewConnRule] = useState<string>(
-    'Nebensatz · Verb am Ende'
-  );
-  const [newPhraseFrame, setNewPhraseFrame] = useState<string>('');
-  const [newExampleDe, setNewExampleDe] = useState<string>('');
-  const [newExampleEn, setNewExampleEn] = useState<string>('');
 
   // All 10 Curated Decks (2 Smart + 6 Grammar Archetypes + 2 CEFR Levels: A2 & B1)
   const deckDefinitions: DeckDefinition[] = useMemo(
@@ -3030,6 +3093,7 @@ export default function App() {
         detailCard ||
         isAddModalOpen ||
         isThemePopoverOpen ||
+        isAccountPopoverOpen ||
         (activeView === 'decks' && isDecksSubScreenOpen)
       ) {
         pageSwipeRef.current = null;
@@ -3056,6 +3120,7 @@ export default function App() {
       detailCard,
       isAddModalOpen,
       isThemePopoverOpen,
+      isAccountPopoverOpen,
     ]
   );
 
@@ -3087,17 +3152,6 @@ export default function App() {
     [activeView, navigateToView]
   );
 
-  const {
-    dragY: addModalDragY,
-    sheetTouchHandlers: addModalSheetTouchHandlers,
-    sheetStyle: addModalSheetStyle,
-  } = useSheetSwipeDismiss({
-    isOpen: isAddModalOpen,
-    onDismiss: () => setIsAddModalOpen(false),
-    scrollContainerRef: addModalScrollRef,
-    threshold: 88,
-  });
-
   // Phone / Browser Back Button Navigation Stack across All Decks, Folders, Deck Details, Study, Tabs & Modals
   const decksSubScreenDepth =
     decksSubScreen.type === 'folder'
@@ -3113,6 +3167,7 @@ export default function App() {
     decksSubScreenDepth +
     (activeView === 'decks' && isDecksOverlayOpen ? 1 : 0) +
     (isThemePopoverOpen ? 1 : 0) +
+    (isAccountPopoverOpen ? 1 : 0) +
     (isAddModalOpen ? 1 : 0) +
     (detailCard ? 1 : 0);
 
@@ -3123,6 +3178,7 @@ export default function App() {
     isZenMode,
     decksSubScreen,
     isThemePopoverOpen,
+    isAccountPopoverOpen,
     isAddModalOpen,
     detailCard,
   });
@@ -3131,12 +3187,17 @@ export default function App() {
     isZenMode,
     decksSubScreen,
     isThemePopoverOpen,
+    isAccountPopoverOpen,
     isAddModalOpen,
     detailCard,
   };
 
   const stepBackInApp = useCallback((): boolean => {
     const s = backStackStateRef.current;
+    if (s.isAccountPopoverOpen) {
+      setIsAccountPopoverOpen(false);
+      return true;
+    }
     if (s.isThemePopoverOpen) {
       setIsThemePopoverOpen(false);
       return true;
@@ -3231,6 +3292,10 @@ export default function App() {
       if (browserDepth >= prevSynced) return;
 
       const s = backStackStateRef.current;
+      if (s.isAccountPopoverOpen) {
+        setIsAccountPopoverOpen(false);
+        return;
+      }
       if (s.isThemePopoverOpen) {
         setIsThemePopoverOpen(false);
         return;
@@ -3285,6 +3350,11 @@ export default function App() {
       }
 
       if (e.key === 'Escape') {
+        if (isAccountPopoverOpen) {
+          e.preventDefault();
+          setIsAccountPopoverOpen(false);
+          return;
+        }
         if (isThemePopoverOpen) {
           e.preventDefault();
           setIsThemePopoverOpen(false);
@@ -3395,6 +3465,7 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [
     activeView,
+    isAccountPopoverOpen,
     isThemePopoverOpen,
     isAddModalOpen,
     isZenMode,
@@ -3584,228 +3655,37 @@ export default function App() {
     ]
   );
 
-  const handleCreateCustomCard = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newLemma.trim() || !newTranslation.trim()) return;
-
-    const id = `custom-${Date.now()}`;
-    const genderLabelMap: Record<
-      NounGender,
-      'Maskulin' | 'Feminin' | 'Neutrum'
-    > = {
-      der: 'Maskulin',
-      die: 'Feminin',
-      das: 'Neutrum',
-    };
-
-    let grammarLabel = 'Wortschatz';
-    if (newCategory === 'verb') {
-      grammarLabel = `Verb · ${
-        newAux === 'sein' ? 'Perfekt mit sein' : 'Perfekt mit haben'
-      }`;
-    } else if (newCategory === 'noun') {
-      grammarLabel = `Nomen · ${genderLabelMap[newGender]}`;
-    } else if (newCategory === 'adj') {
-      grammarLabel = 'Adjektiv · regelmäßig';
-    } else if (newCategory === 'preposition') {
-      grammarLabel = `Präposition · ${newPrepCase}`;
-    } else if (newCategory === 'conn') {
-      grammarLabel = 'Konnektor · Satzverbindung';
-    } else if (newCategory === 'phrase') {
-      grammarLabel = 'Wendung · Redemittel';
+  const handleManualSync = useCallback(async () => {
+    if (manualSyncRef.current) {
+      await manualSyncRef.current();
     }
+  }, []);
 
-    const formattedLemma =
-      newCategory === 'noun'
-        ? formatNounLemma(newLemma, newGender)
-        : newLemma.trim();
+  const handleSignOut = useCallback(async () => {
+    await signOutFromSupabase();
+    await clearLocalUserStudyData();
+    clearLocalWorkspaceData();
 
-    const baseWord = stripLeadingGermanArticles(formattedLemma);
-
-    const created: VocabCard = {
-      id,
-      lemma: formattedLemma,
-      spokenText: formattedLemma,
-      cefr: newCefr,
-      category: newCategory,
-      grammarLabel,
-      translation: newTranslation.trim(),
-      highlightTarget: baseWord,
-      verbDetails:
-        newCategory === 'verb'
-          ? {
-              praesens: newPraesens.trim() || `er/sie/es ${baseWord}`,
-              praeteritum: newPraeteritum.trim() || '—',
-              perfekt:
-                newPerfekt.trim() || `${newAux === 'sein' ? 'ist' : 'hat'} …`,
-              auxiliary: newAux,
-            }
-          : undefined,
-      nounDetails:
-        newCategory === 'noun'
-          ? {
-              gender: newGender,
-              genderLabel: genderLabelMap[newGender],
-              plural: newPlural.trim() || `die ${baseWord}`,
-              pluralSuffix: '-en',
-              genusRule: `${genderLabelMap[newGender]} (${newGender})`,
-            }
-          : undefined,
-      adjDetails:
-        newCategory === 'adj'
-          ? {
-              positiv: baseWord,
-              komparativ: newAdjKomp.trim() || `${baseWord}er`,
-              superlativ: newAdjSup.trim() || `am ${baseWord}sten`,
-              declensionExamples: {
-                weak: {
-                  nom: `der ${baseWord}e Weg`,
-                  akk: `den ${baseWord}en Weg`,
-                  dat: `dem ${baseWord}en Weg`,
-                  gen: `des ${baseWord}en Wegs`,
-                },
-                mixed: {
-                  nom: `ein ${baseWord}er Weg`,
-                  akk: `einen ${baseWord}en Weg`,
-                  dat: `einem ${baseWord}en Weg`,
-                  gen: `eines ${baseWord}en Wegs`,
-                },
-                strong: {
-                  nom: `${baseWord}er Weg`,
-                  akk: `${baseWord}en Weg`,
-                  dat: `${baseWord}em Weg`,
-                  gen: `${baseWord}en Wegs`,
-                },
-              },
-            }
-          : undefined,
-      prepDetails:
-        newCategory === 'preposition'
-          ? {
-              governedCase: `+ ${newPrepCase.trim() || 'Dativ'}`,
-              caseShort: 'Dat',
-              questionPrompt: `Mit ${newPrepCase.trim() || 'Dativ'}`,
-              collocations: [formattedLemma],
-            }
-          : undefined,
-      connDetails:
-        newCategory === 'conn'
-          ? {
-              connectorClass: 'Subordinierend (Nebensatz)',
-              verbPositionRule: newConnRule.trim() || 'Nebensatz · Verb am Ende',
-              hauptsatzFirstDe:
-                newExampleDe.trim() ||
-                `Beispielsatz mit „${formattedLemma}“ im Alltag.`,
-              hauptsatzFirstEn:
-                newExampleEn.trim() ||
-                `Example sentence using "${formattedLemma}".`,
-              nebensatzFirstDe:
-                newExampleDe.trim() ||
-                `Beispielsatz mit „${formattedLemma}“ im Alltag.`,
-              nebensatzFirstEn:
-                newExampleEn.trim() ||
-                `Example sentence using "${formattedLemma}".`,
-              contrastPair: {
-                partnerWord: 'Hauptsatz-Konnektor',
-                partnerRule: newConnRule.trim() || 'Wortstellung beachten',
-                partnerExample:
-                  newExampleDe.trim() || `Beispiel mit ${formattedLemma}.`,
-              },
-            }
-          : undefined,
-      phraseDetails:
-        newCategory === 'phrase'
-          ? {
-              framePattern: newPhraseFrame.trim() || formattedLemma,
-              casePattern: 'Redemittel im Kontext',
-              registerLabel: 'Alltag & Gespräch',
-              formalVariant: {
-                textDe: newExampleDe.trim() || formattedLemma,
-                textEn: newExampleEn.trim() || newTranslation.trim(),
-                contextNote: 'Formell / B1 Prüfung',
-              },
-              informalVariant: {
-                textDe: newExampleDe.trim() || formattedLemma,
-                textEn: newExampleEn.trim() || newTranslation.trim(),
-                contextNote: 'Alltag / Gespräch',
-              },
-              miniDialog: {
-                speakerA: 'Partner',
-                promptDe: 'Was meinst du dazu?',
-                promptEn: 'What do you think about that?',
-                speakerB: 'Du',
-                replyDe: newExampleDe.trim() || formattedLemma,
-                replyEn: newExampleEn.trim() || newTranslation.trim(),
-              },
-            }
-          : undefined,
-      exampleDe:
-        newExampleDe.trim() ||
-        `Beispielsatz mit „${formattedLemma}“ im Alltag.`,
-      exampleEn:
-        newExampleEn.trim() ||
-        `Example sentence using "${formattedLemma}" in daily context.`,
-      anatomy: {
-        conjugationTable:
-          newCategory === 'verb'
-            ? {
-                ich: `ich ${baseWord}`,
-                du: `du …`,
-                erSieEs: newPraesens.trim() || `er/sie/es ${baseWord}`,
-                wir: `wir ${baseWord}`,
-                ihr: `ihr …`,
-                sieSie: `sie/Sie ${baseWord}`,
-              }
-            : undefined,
-        nounDeclension:
-          newCategory === 'noun'
-            ? {
-                nominativ: `${formattedLemma} · ${newPlural.trim() || '—'}`,
-                akkusativ: `${
-                  newGender === 'der' ? 'den' : newGender
-                } ${baseWord}`,
-                dativ: `${newGender === 'die' ? 'der' : 'dem'} ${baseWord}`,
-                genitiv: `${newGender === 'die' ? 'der' : 'des'} ${baseWord}`,
-              }
-            : undefined,
-        caseGovernanceNote:
-          newCategory === 'verb'
-            ? `Custom verb entry using Perfekt auxiliary "${newAux}".`
-            : newCategory === 'noun'
-            ? `Custom ${genderLabelMap[newGender]} noun (${newGender}).`
-            : `Custom ${grammarLabel} entry.`,
-        synonyms: [],
-        antonyms: [],
-        collocations: [
-          newExampleDe.trim() || `${formattedLemma} im Kontext verwenden`,
-        ],
-        wordFamily: [formattedLemma],
-        b1ExamTip: `Practice using "${formattedLemma}" in a full sentence for active recall.`,
-      },
-    };
-
-    const updatedCards = saveCustomCard(created);
-    setCards(updatedCards);
-    const updatedSrs = {
-      ...srsMap,
-      [created.id]: createDefaultSrsState(created.id),
-    };
-    setSrsMap(updatedSrs);
-    saveSrsMap(updatedSrs);
-
-    setNewLemma('');
-    setNewTranslation('');
-    setNewPlural('');
-    setNewPraesens('');
-    setNewPraeteritum('');
-    setNewPerfekt('');
-    setNewAdjKomp('');
-    setNewAdjSup('');
-    setNewPhraseFrame('');
-    setNewExampleDe('');
-    setNewExampleEn('');
+    const freshCards = loadAllCards();
+    const freshSeed = ensureInitialTestFolderSeed();
+    setCards(freshCards);
+    setSrsMap(loadSrsMap(freshCards));
+    setStats(loadStudyStats());
+    setFolders(freshSeed.folders);
+    setCustomDecks(freshSeed.customDecks);
+    setDeckOverrides(freshSeed.deckOverrides);
+    setLoopStatesByDeck({});
+    setStudyTrailsByDeck({});
+    setCustomStudyQueue(null);
+    setDetailCard(null);
     setIsAddModalOpen(false);
-  };
+    setIsThemePopoverOpen(false);
+    setIsAccountPopoverOpen(false);
+    setIsZenMode(false);
+    setDecksSubScreen({ type: 'root' });
+    setActiveView('decks');
+    setAuthUser(null);
+  }, []);
 
   // Filtered vocabulary archive with progressive 60-item windowing
   const [archiveVisibleCount, setArchiveVisibleCount] = useState<number>(60);
@@ -4245,6 +4125,7 @@ export default function App() {
         type="button"
         onClick={() => {
           updateThemePopoverPosition();
+          setIsAccountPopoverOpen(false);
           setIsThemePopoverOpen((prev) => !prev);
         }}
         aria-expanded={isThemePopoverOpen}
@@ -6273,6 +6154,29 @@ export default function App() {
     </>
   );
 
+  if (!authReady) {
+    return (
+      <div className="min-h-[100dvh] flex items-center justify-center bg-[var(--bg-canvas)] text-[var(--fg-primary)]">
+        <div className="flex flex-col items-center gap-3 animate-pulse">
+          <FoxMascot pose="studio" size="md" />
+          <span className="font-display text-sm font-semibold text-[var(--fg-secondary)]">
+            Achsoo…
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!authUser) {
+    return (
+      <AuthGateScreen
+        onSignInWithGoogle={signInWithGoogle}
+        initialError={authError}
+        appearanceControls={renderAppearanceControls()}
+      />
+    );
+  }
+
   return (
     <div className="app-viewport-shell flex flex-col bg-[var(--bg-canvas)] text-[var(--fg-primary)] transition-colors duration-200">
       {/* ==================== TOP APP BAR (3-Zone Contract, Hidden in Zen Mode) ==================== */}
@@ -6416,10 +6320,21 @@ export default function App() {
               ))}
             </nav>
 
-            {/* Zone 3: PWA Install Action + Anchored Theme Popover + Light/Dark Mode Toggle */}
-            <div className="flex items-center gap-2 shrink-0">
+            {/* Zone 3: PWA Install Action + Anchored Theme Popover + Google Account Menu */}
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
               <PWAInstallButton />
               {renderAppearanceControls()}
+              <AccountControl
+                user={authUser}
+                syncStatus={syncStatus}
+                isOpen={isAccountPopoverOpen}
+                onOpenChange={(nextOpen) => {
+                  if (nextOpen) setIsThemePopoverOpen(false);
+                  setIsAccountPopoverOpen(nextOpen);
+                }}
+                onSyncNow={handleManualSync}
+                onSignOut={handleSignOut}
+              />
             </div>
           </div>
         </header>
@@ -6570,270 +6485,11 @@ export default function App() {
         </Suspense>
       )}
 
-      {/* ==================== MODAL: ADD CUSTOM VOCABULARY CARD (ALL 6 ARCHETYPES) ==================== */}
-      {isAddModalOpen && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="add-card-title"
-          onClick={() => setIsAddModalOpen(false)}
-          style={{ opacity: Math.max(0.1, 1 - addModalDragY / 280) }}
-          className="fixed inset-0 z-[60] h-[100dvh] w-screen flex items-end sm:items-center justify-center sm:p-4 bg-black/50 backdrop-blur-xs anatomy-backdrop-enter"
-        >
-          <div
-            ref={addModalScrollRef}
-            onClick={(e) => e.stopPropagation()}
-            style={addModalSheetStyle}
-            onTouchStart={addModalSheetTouchHandlers.onTouchStart}
-            onTouchMove={addModalSheetTouchHandlers.onTouchMove}
-            onTouchEnd={addModalSheetTouchHandlers.onTouchEnd}
-            onTouchCancel={addModalSheetTouchHandlers.onTouchCancel}
-            className="w-full max-w-lg rounded-t-3xl sm:rounded-[var(--radius-card)] surface-overlay border p-6 pt-3.5 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))] sm:pt-6 sm:pb-6 space-y-4 max-h-[90dvh] overflow-y-auto anatomy-sheet-enter"
-          >
-            <div
-              data-sheet-handle="true"
-              className="w-10 h-1 rounded-full bg-[var(--border-strong)] mx-auto sm:hidden"
-            />
-            <div
-              data-sheet-handle="true"
-              className="flex items-center justify-between pb-2 border-b border-[var(--border-subtle)]"
-            >
-              <h2
-                id="add-card-title"
-                className="font-display text-base font-bold text-[var(--fg-primary)]"
-              >
-                New Custom Flashcard
-              </h2>
-              <Button
-                intent="tertiary"
-                size="icon"
-                onClick={() => setIsAddModalOpen(false)}
-                aria-label="Close modal"
-              >
-                <X className="w-4 h-4" />
-              </Button>
-            </div>
-
-            <form
-              onSubmit={handleCreateCustomCard}
-              className="space-y-3.5 text-sm"
-            >
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-[var(--fg-secondary)] mb-1">
-                    Word Type (Archetype)
-                  </label>
-                  <select
-                    value={newCategory}
-                    onChange={(e) =>
-                      setNewCategory(e.target.value as CardCategory)
-                    }
-                    className="w-full px-3 py-2 rounded-xl border surface-2 text-xs font-medium text-[var(--fg-primary)]"
-                  >
-                    <option value="noun">Nomen (der/die/das)</option>
-                    <option value="verb">Verb (Stammformen)</option>
-                    <option value="adj">Adjektiv (Steigerung)</option>
-                    <option value="preposition">Präposition (Kasus)</option>
-                    <option value="conn">Konnektor (Satzbau)</option>
-                    <option value="phrase">Wendung / Redemittel</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-[var(--fg-secondary)] mb-1">
-                    CEFR Level
-                  </label>
-                  <select
-                    value={newCefr}
-                    onChange={(e) => setNewCefr(e.target.value as CefrLevel)}
-                    className="w-full px-3 py-2 rounded-xl border surface-2 text-xs font-medium text-[var(--fg-primary)]"
-                  >
-                    <option value="A1">A1</option>
-                    <option value="A2">A2</option>
-                    <option value="B1">B1</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-[var(--fg-secondary)] mb-1">
-                    German Word / Phrase *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={newLemma}
-                    onChange={(e) => setNewLemma(e.target.value)}
-                    placeholder="e.g. die Erfahrung / ankommen"
-                    className="w-full px-3 py-2 rounded-xl border surface-2 text-xs text-[var(--fg-primary)]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-[var(--fg-secondary)] mb-1">
-                    English Meaning *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={newTranslation}
-                    onChange={(e) => setNewTranslation(e.target.value)}
-                    placeholder="e.g. experience / to arrive"
-                    className="w-full px-3 py-2 rounded-xl border surface-2 text-xs text-[var(--fg-primary)]"
-                  />
-                </div>
-              </div>
-
-              {newCategory === 'noun' && (
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-[var(--fg-secondary)] mb-1">
-                      Article
-                    </label>
-                    <select
-                      value={newGender}
-                      onChange={(e) =>
-                        setNewGender(e.target.value as NounGender)
-                      }
-                      className="w-full px-3 py-2 rounded-xl border surface-2 text-xs text-[var(--fg-primary)]"
-                    >
-                      <option value="der">der (Blue)</option>
-                      <option value="die">die (Red)</option>
-                      <option value="das">das (Green)</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-[var(--fg-secondary)] mb-1">
-                      Plural
-                    </label>
-                    <input
-                      type="text"
-                      value={newPlural}
-                      onChange={(e) => setNewPlural(e.target.value)}
-                      placeholder="die Erfahrungen"
-                      className="w-full px-3 py-2 rounded-xl border surface-2 text-xs text-[var(--fg-primary)]"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {newCategory === 'verb' && (
-                <div className="grid grid-cols-2 gap-3">
-                  <input
-                    type="text"
-                    value={newPraesens}
-                    onChange={(e) => setNewPraesens(e.target.value)}
-                    placeholder="Präsens (er/sie/es …)"
-                    className="w-full px-3 py-2 rounded-xl border surface-2 text-xs text-[var(--fg-primary)]"
-                  />
-                  <input
-                    type="text"
-                    value={newPraeteritum}
-                    onChange={(e) => setNewPraeteritum(e.target.value)}
-                    placeholder="Präteritum (z.B. kam an)"
-                    className="w-full px-3 py-2 rounded-xl border surface-2 text-xs text-[var(--fg-primary)]"
-                  />
-                  <input
-                    type="text"
-                    value={newPerfekt}
-                    onChange={(e) => setNewPerfekt(e.target.value)}
-                    placeholder="Perfekt (z.B. ist angekommen)"
-                    className="w-full px-3 py-2 rounded-xl border surface-2 text-xs text-[var(--fg-primary)]"
-                  />
-                  <select
-                    value={newAux}
-                    onChange={(e) =>
-                      setNewAux(e.target.value as 'haben' | 'sein')
-                    }
-                    className="w-full px-3 py-2 rounded-xl border surface-2 text-xs text-[var(--fg-primary)]"
-                  >
-                    <option value="haben">Aux: haben</option>
-                    <option value="sein">Aux: sein</option>
-                  </select>
-                </div>
-              )}
-
-              {newCategory === 'adj' && (
-                <div className="grid grid-cols-2 gap-3">
-                  <input
-                    type="text"
-                    value={newAdjKomp}
-                    onChange={(e) => setNewAdjKomp(e.target.value)}
-                    placeholder="Komparativ (z.B. schneller)"
-                    className="w-full px-3 py-2 rounded-xl border surface-2 text-xs text-[var(--fg-primary)]"
-                  />
-                  <input
-                    type="text"
-                    value={newAdjSup}
-                    onChange={(e) => setNewAdjSup(e.target.value)}
-                    placeholder="Superlativ (z.B. am schnellsten)"
-                    className="w-full px-3 py-2 rounded-xl border surface-2 text-xs text-[var(--fg-primary)]"
-                  />
-                </div>
-              )}
-
-              {newCategory === 'preposition' && (
-                <input
-                  type="text"
-                  value={newPrepCase}
-                  onChange={(e) => setNewPrepCase(e.target.value)}
-                  placeholder="Governed case (e.g. Dativ / Genitiv)"
-                  className="w-full px-3 py-2 rounded-xl border surface-2 text-xs text-[var(--fg-primary)]"
-                />
-              )}
-
-              {newCategory === 'conn' && (
-                <input
-                  type="text"
-                  value={newConnRule}
-                  onChange={(e) => setNewConnRule(e.target.value)}
-                  placeholder="Word order rule (e.g. Nebensatz · Verb am Ende)"
-                  className="w-full px-3 py-2 rounded-xl border surface-2 text-xs text-[var(--fg-primary)]"
-                />
-              )}
-
-              {newCategory === 'phrase' && (
-                <input
-                  type="text"
-                  value={newPhraseFrame}
-                  onChange={(e) => setNewPhraseFrame(e.target.value)}
-                  placeholder="Sentence frame (e.g. Es kommt darauf an, ob …)"
-                  className="w-full px-3 py-2 rounded-xl border surface-2 text-xs text-[var(--fg-primary)]"
-                />
-              )}
-
-              <input
-                type="text"
-                value={newExampleDe}
-                onChange={(e) => setNewExampleDe(e.target.value)}
-                placeholder="German example sentence"
-                className="w-full px-3 py-2 rounded-xl border surface-2 text-xs text-[var(--fg-primary)]"
-              />
-
-              <input
-                type="text"
-                value={newExampleEn}
-                onChange={(e) => setNewExampleEn(e.target.value)}
-                placeholder="English translation of example"
-                className="w-full px-3 py-2 rounded-xl border surface-2 text-xs text-[var(--fg-primary)]"
-              />
-
-              <div className="pt-2 flex items-center justify-end gap-2">
-                <Button
-                  intent="tertiary"
-                  size="sm"
-                  onClick={() => setIsAddModalOpen(false)}
-                >
-                  Cancel
-                </Button>
-                <Button intent="primary" size="md" type="submit">
-                  Save Card
-                </Button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* ==================== MODAL: ADMIN REQUEST NOTICE FOR "+ NEW CARD" ==================== */}
+      <AdminCardNoticeModal
+        isOpen={isAddModalOpen}
+        onClose={() => setIsAddModalOpen(false)}
+      />
     </div>
   );
 }

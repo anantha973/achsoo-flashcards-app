@@ -307,3 +307,23 @@ export async function idbGetAllCustomCards(): Promise<VocabCard[]> {
     return [];
   }
 }
+
+export async function idbClearAllUserData(): Promise<void> {
+  try {
+    const db = await openAchsooDb();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(
+        [STORE_REVIEW_LOGS, STORE_CARD_STATES, STORE_CUSTOM_CARDS, STORE_META],
+        'readwrite'
+      );
+      tx.objectStore(STORE_REVIEW_LOGS).clear();
+      tx.objectStore(STORE_CARD_STATES).clear();
+      tx.objectStore(STORE_CUSTOM_CARDS).clear();
+      tx.objectStore(STORE_META).clear();
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch {
+    // Ignore IndexedDB errors
+  }
+}
